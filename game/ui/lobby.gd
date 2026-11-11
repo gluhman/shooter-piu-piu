@@ -27,6 +27,7 @@ var _host_button: Button
 var _join_button: Button
 var _cancel_button: Button
 var _map: OptionButton
+var _map_size: OptionButton
 var _weapons: OptionButton
 var _time_limit: OptionButton
 var _kill_limit: OptionButton
@@ -108,6 +109,7 @@ func refresh_room() -> void:
 		return
 	var game := _match()
 	_map.select(game.map_id)
+	_map_size.select(game.map_size)
 	_weapons.select(game.weapon_set)
 	_time_limit.select(game.time_option)
 	_kill_limit.select(game.kill_option)
@@ -260,14 +262,16 @@ func _show_room(screen: Screen) -> void:
 	var opponents := UI.card(setup, "Боты")
 
 	var game := _match()
-	var map_labels: Array = []
-	for id in game.MAP_NAMES.size():
-		var width: float = game.MAP.playable_width(id)
-		map_labels.append("%s · %d × %d м" % [game.MAP_NAMES[id], width, width])
-	_map = _options(map_labels, game.map_id)
+	_map = _options(game.MAP_NAMES, game.map_id)
+	var size_labels: Array = []
+	for index in game.MAP.SIZE_WIDTHS.size():
+		var width: float = game.MAP.SIZE_WIDTHS[index]
+		size_labels.append("%s · %d × %d м" % [game.MAP.SIZE_NAMES[index], width, width])
+	_map_size = _options(size_labels, game.map_size)
 	_first_action = _map
 	_weapons = _options(game.WEAPON_SET_NAMES, game.weapon_set)
 	UI.row(rules, "Карта", _map)
+	UI.row(rules, "Размер карты", _map_size)
 	UI.row(rules, "Набор оружия", _weapons)
 	_time_limit = _limit_options(game.TIME_LIMITS, game.time_option, 60, "%d мин")
 	_kill_limit = _limit_options(game.KILL_LIMITS, game.kill_option, 1, "%d")
@@ -293,7 +297,7 @@ func _show_room(screen: Screen) -> void:
 		UI.button(actions, "Назад", _show_main, &"", true)
 		UI.button(actions, "Начать матч", func() -> void:
 			bots.apply()
-			game.start_solo(int(bots.value), _difficulty.selected, _weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected))
+			game.start_solo(int(bots.value), _difficulty.selected, _weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _map_size.selected)
 		, &"PrimaryButton")
 		_first_action.grab_focus()
 		UI.reveal(_panel)
@@ -333,6 +337,7 @@ func _show_room(screen: Screen) -> void:
 		invite.custom_minimum_size.x = 340
 		invite.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_map.item_selected.connect(_on_rules_changed)
+		_map_size.item_selected.connect(_on_rules_changed)
 		_weapons.item_selected.connect(_on_rules_changed)
 		_time_limit.item_selected.connect(_on_rules_changed)
 		_kill_limit.item_selected.connect(_on_rules_changed)
@@ -340,6 +345,7 @@ func _show_room(screen: Screen) -> void:
 		_lan_bots.item_selected.connect(_on_rules_changed)
 	else:
 		_map.disabled = true
+		_map_size.disabled = true
 		_weapons.disabled = true
 		_time_limit.disabled = true
 		_kill_limit.disabled = true
@@ -387,7 +393,7 @@ func _save_display_name() -> void:
 
 
 func _on_rules_changed(_index: int) -> void:
-	_match().update_host_rules(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, _lan_bots.selected)
+	_match().update_host_rules(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, _lan_bots.selected, _map_size.selected)
 
 
 func _on_solo() -> void:

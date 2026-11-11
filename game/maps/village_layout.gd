@@ -49,7 +49,7 @@ func build(width: float, rng: RandomNumberGenerator) -> Array[Transform3D]:
 			Vector3(road_length, 0.02, ROAD_HALF_WIDTH * 2), road)
 		_solid(Vector3(0, 1.4, edge), Vector3(width + 0.8, 2.8, 0.4), _fence)
 		_solid(Vector3(edge, 1.4, 0), Vector3(0.4, 2.8, width), _fence)
-		for along in range(-75, 80, 5):
+		for along in range(-floori(half) + 5, ceili(half), 5):
 			_paint(Vector3(along, 1.47, edge), Vector3(0.32, 2.94, 0.6), _trim)
 			_paint(Vector3(edge, 1.47, along), Vector3(0.6, 2.94, 0.32), _trim)
 
@@ -58,21 +58,25 @@ func build(width: float, rng: RandomNumberGenerator) -> Array[Transform3D]:
 		_map._world_mat("planks", Color(0.74, 0.51, 0.37), 0.0, 0.82, 0.8, true),
 		_map._world_mat("planks", Color(0.53, 0.63, 0.71), 0.0, 0.82, 0.8, true),
 	]
-	var houses := [
-		Vector2(-25, -24), Vector2(25, -24), Vector2(-25, 24), Vector2(25, 24),
-		Vector2(-39, -13), Vector2(38, -39), Vector2(-37, 39), Vector2(39, 12),
-	]
+	var compact := width == 20.0
+	var offset := 5.0 if compact else (11.0 if width == 40.0 else 16.0)
+	var houses := [Vector2(-offset, -offset), Vector2(offset, offset)]
+	if not compact:
+		houses.append(Vector2(-offset, offset))
+		houses.append(Vector2(offset, -offset))
 	for index in houses.size():
-		var width_x := 8.0 if index % 2 == 0 else 10.0
 		var center: Vector2 = houses[index]
-		_house(center, Vector2(width_x, 8.0), siding[index % siding.size()])
-		_driveway(center, road)
-		if index < 4:
-			_yard(houses[index])
-	_add_supply(Vector2(-12, -11))
-	_add_supply(Vector2(13, 11))
-	_add_supply(Vector2(-13, 12))
-	_add_supply(Vector2(11, -13))
+		var house_size := Vector2(6.0, 5.0) if compact else Vector2(8.0 + 2.0 * (index % 2), 8.0)
+		_house(center, house_size, siding[index % siding.size()])
+		if not compact:
+			_driveway(center, road)
+		if width == 70.0:
+			_yard(center)
+	if compact:
+		_add_supply(Vector2(5.0, -5.0))
+	else:
+		_add_supply(Vector2(-6.0, -6.0))
+		_add_supply(Vector2(6.0, 6.0))
 	_plant_forest(half)
 	for material in _batches:
 		var visual := MeshInstance3D.new()
@@ -188,10 +192,11 @@ func _plant_forest(half: float) -> void:
 	var groups: Array[Array] = [[], [], [], []]
 	var shrubs: Array[Transform3D] = []
 	var grass: Array[Transform3D] = []
-	for x in range(-14, 15):
-		for z in range(-14, 15):
+	var forest_steps := floori(half / 5.25)
+	for x in range(-forest_steps, forest_steps + 1):
+		for z in range(-forest_steps, forest_steps + 1):
 			var point := Vector2(x, z) * 5.25 + Vector2(_rng.randf_range(-1.6, 1.6), _rng.randf_range(-1.6, 1.6))
-			var outer := maxf(absf(point.x), absf(point.y)) > 46.0
+			var outer := maxf(absf(point.x), absf(point.y)) > half * 0.65
 			if minf(absf(point.x), absf(point.y)) < ROAD_HALF_WIDTH + 2.0:
 				continue
 			var trunk_area := Rect2(point - Vector2.ONE * 1.0, Vector2.ONE * 2.0)

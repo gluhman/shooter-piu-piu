@@ -49,18 +49,21 @@ var _ground: StandardMaterial3D
 var _trim: StandardMaterial3D
 var _wood: StandardMaterial3D
 var _shade: StandardMaterial3D
+var _patrol: Array[Vector3] = []
 
 
 func _init(map: Node3D) -> void:
 	_map = map
 
 
-func build() -> Array[Transform3D]:
+func build(width: float) -> Array[Transform3D]:
 	_stone = _map._world_mat("concrete", Color(0.89, 0.73, 0.52), 0.0, 0.58, 0.66, false)
 	_ground = _map._world_mat("concrete", Color(0.83, 0.71, 0.51), 0.0, 0.62, 0.8, false)
 	_trim = _map._world_mat("concrete", Color(0.93, 0.81, 0.62), 0.0, 0.75, 0.6, false)
 	_shade = _map._world_mat("concrete", Color(0.65, 0.55, 0.41), 0.0, 0.7, 0.8, false)
 	_wood = _map._world_mat("planks", Color(0.64, 0.49, 0.32), 0.0, 0.86, 0.85, true)
+	if width < 70.0:
+		return _build_compact(width)
 	_add_sectors()
 	for sector in _sectors:
 		_floor(sector)
@@ -76,7 +79,77 @@ func build() -> Array[Transform3D]:
 			Vector2(62.5, 6.6), Vector2(8.3, -35.7), Vector2(-22, 3.4), Vector2(14.1, -30.7),
 			Vector2(-42.5, 52.0), Vector2(40.7, 7.6)]:
 		supplies.append(Transform3D(Basis.IDENTITY, _position(point)))
+	for point in PATROL:
+		_patrol.append(_position(point, 0.2))
+	_fit_full_layout(width, supplies)
 	return supplies
+
+
+func _build_compact(width: float) -> Array[Transform3D]:
+	var half := width * 0.5
+	var sector := Sector.new(-half, -half, half, half, 0.0, 0.0)
+	_sectors.append(sector)
+	_floor(sector)
+	_boundary_walls(sector)
+	_map._build_spawn_ring(half - 1.35)
+	var supplies: Array[Transform3D] = []
+	# Two blocks divide the middle into three routes, with crossovers at either end.
+	for side in [-1.0, 1.0]:
+		var x: float = side * width * 0.24
+		for end in [-1.0, 1.0]:
+			var z: float = end * width * 0.12
+			var block := Vector3(width * 0.15, 3.6, width * 0.17)
+			_map._add_box(Vector3(x, block.y * 0.5, z), block, _stone, 0.0, "brick")
+			_map._occupied.append(Rect2(Vector2(x, z) - Vector2(block.x, block.z) * 0.5,
+				Vector2(block.x, block.z)))
+		var site := Vector2(x, -width * 0.33)
+		_sign(site, "A" if side > 0.0 else "B")
+		var cover := site + Vector2(side * 2.0, 1.5)
+		var cover_size := Vector3(1.6, 1.45, 1.1)
+		_crate(cover, cover_size)
+		_map._occupied.append(Rect2(cover - Vector2(0.8, 0.55), Vector2(1.6, 1.1)))
+		for point in [site + Vector2(-side * 1.8, 0), Vector2(x, width * 0.32)]:
+			supplies.append(Transform3D(Basis.IDENTITY, _position(point)))
+			_map._occupied.append(Rect2(point - Vector2.ONE * 0.8, Vector2.ONE * 1.6))
+	var spacing := width * 0.14
+	_map._build_respawn_grid(3, spacing, half)
+	_patrol.assign(_map.respawn_points)
+	return supplies
+
+
+func _fit_full_layout(width: float, supplies: Array[Transform3D]) -> void:
+	# Fit the original routes horizontally while preserving headroom and step heights.
+	var ratio := width / WIDTH
+	var scale := Vector3(ratio, 1.0, ratio)
+	var center := Vector3(5.5, 0.0, 0.0)
+	for child: Node3D in _map.get_children():
+		child.position = (child.position - center) * scale
+		if child is StaticBody3D:
+			for piece: Node3D in child.get_children():
+				if piece is CollisionShape3D:
+					var shape: Shape3D = piece.shape
+					if shape is BoxShape3D:
+						shape.size *= scale
+					elif shape is ConvexPolygonShape3D:
+						var points: PackedVector3Array = shape.points
+						for index in points.size():
+							points[index] *= scale
+						shape.points = points
+				else:
+					piece.position *= scale
+					piece.basis = piece.basis.scaled(scale)
+			if child.has_meta(&"ballistic_size"):
+				child.set_meta(&"ballistic_size", child.get_meta(&"ballistic_size") * scale)
+		elif child is Label3D:
+			child.pixel_size *= ratio
+	for index in _map._initial_spawns.size():
+		_map._initial_spawns[index] = (_map._initial_spawns[index] - center) * scale
+	for index in _map.respawn_points.size():
+		_map.respawn_points[index] = (_map.respawn_points[index] - center) * scale
+	for index in _patrol.size():
+		_patrol[index] = (_patrol[index] - center) * scale
+	for index in supplies.size():
+		supplies[index].origin = (supplies[index].origin - center) * scale
 
 
 func _add_sectors() -> void:
@@ -119,10 +192,7 @@ func _add_sectors() -> void:
 
 
 func patrol_route() -> Array[Vector3]:
-	var route: Array[Vector3] = []
-	for point in PATROL:
-		route.append(_position(point, 0.2))
-	return route
+	return _patrol
 
 
 func _position(point: Vector2, offset: float = 0.0) -> Vector3:

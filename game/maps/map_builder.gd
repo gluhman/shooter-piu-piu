@@ -22,12 +22,12 @@ const LENGTH_40 := 12.19
 const PANEL_THICKNESS := 0.12
 const CRATE_SIGHT_RADIUS := 15.0
 const MAX_SUPPLY_CRATES := 12
-const ARENA_HALF_EXTENT := 35.0
-const ARENA_WIDTH := 2.0 * ARENA_HALF_EXTENT
+const ARENA_WIDTH := 70.0
+const SIZE_WIDTHS := [20.0, 40.0, ARENA_WIDTH]
+const SIZE_NAMES := ["Маленькая", "Средняя", "Большая"]
+const DEFAULT_SIZE := 2
 const VILLAGE_ID := 3
-const VILLAGE_WIDTH := 160.0
 const DUST2_ID := 4
-const SPAWN_RING := 32.75
 
 class Cover:
 	var center: Vector2
@@ -57,11 +57,6 @@ const PATROL_ROUTES := [
 		Vector3(0, 0.2, 32), Vector3(-32, 0.2, 32), Vector3(-32, 0.2, -32),
 		Vector3(0, 0.2, -32), Vector3(0, 0.2, 0),
 	],
-	[
-		Vector3(-48, 0.2, 0), Vector3(-19, 0.2, -17), Vector3(0, 0.2, -48),
-		Vector3(18, 0.2, -18), Vector3(48, 0.2, 0), Vector3(18, 0.2, 18),
-		Vector3(0, 0.2, 48), Vector3(-19, 0.2, 18), Vector3(0, 0.2, 0),
-	],
 ]
 
 var _perforated: Array[PerforatedCover] = []
@@ -71,7 +66,8 @@ var _passages: Array[Transform3D] = []
 var _wood_floors: Array[Rect2] = []
 var _initial_spawns := PackedVector3Array()
 var respawn_points := PackedVector3Array()
-var _dust2_patrol: Array[Vector3] = []
+var _patrol: Array[Vector3] = []
+var _half_extent := 35.0
 var _district_origin := Vector3.ZERO
 var _district_yaw := 0.0
 var _floor_mat: StandardMaterial3D
@@ -87,15 +83,8 @@ const ARENA_TEXTURES := {
 var _textures: Dictionary[String, Texture2D] = {}
 
 
-static func playable_width(map_id: int) -> float:
-	match map_id:
-		VILLAGE_ID: return VILLAGE_WIDTH
-		DUST2_ID: return DUST2.WIDTH
-		_: return ARENA_WIDTH
-
-
-func patrol_route(map_id: int) -> Array:
-	return _dust2_patrol if map_id == DUST2_ID else PATROL_ROUTES[map_id]
+func patrol_route() -> Array[Vector3]:
+	return _patrol
 
 
 func preload_textures() -> void:
@@ -124,41 +113,70 @@ func _load_textures() -> void:
 	_wood_mat = _world_mat("planks", Color(0.9, 0.84, 0.74), 0.0, 0.7, 1.0, true)
 
 
-func build(map_id: int, layout_seed: int = 0) -> Array[Transform3D]:
+func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = layout_seed
+	_half_extent = width * 0.5
 	if map_id == DUST2_ID:
 		var dust2 := DUST2.new(self)
-		var supplies := dust2.build()
-		_dust2_patrol = dust2.patrol_route()
+		var supplies := dust2.build(width)
+		_patrol = dust2.patrol_route()
 		return supplies
+
+	_build_spawn_ring(_half_extent - (2.25 if width == 70.0 else 1.35))
+	var spacing := 2.8 if width == 20.0 else 5.6
+	var steps := floori((_half_extent - 1.0) / spacing)
 	if map_id == VILLAGE_ID:
-		_build_spawn_ring(53.0)
-		var supplies := VILLAGE.new(self).build(VILLAGE_WIDTH, rng)
-		_build_respawn_grid(9, 8.0, VILLAGE_WIDTH * 0.5)
+		var supplies := VILLAGE.new(self).build(width, rng)
+		_build_respawn_grid(steps, spacing, _half_extent)
+		_patrol.assign(respawn_points)
 		return supplies
 
 	_load_textures()
-	var width := ARENA_WIDTH
 	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(width + 2.0, 0.5, width + 2.0), _floor_mat)
 	for side in [-1.0, 1.0]:
-		var edge: float = side * (ARENA_HALF_EXTENT + 0.25)
+		var edge: float = side * (_half_extent + 0.25)
 		_add_box(Vector3(0.0, 2.75, edge), Vector3(width + 1.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
 		_add_box(Vector3(edge, 2.75, 0.0), Vector3(0.5, 5.5, width), _wall_mat, 0.0, "brick")
 
-	for district in 4:
-		_district_origin = Vector3(17.25, 0, 17.25).rotated(Vector3.UP, district * PI * 0.5)
-		_district_yaw = float(district * 90)
-		match map_id:
-			1: _build_storage()
-			2: _build_crossroads()
-			_: _build_container_yard()
-	_build_spawn_ring(SPAWN_RING)
-	_scatter_passages(rng)
+	if width == 20.0:
+		_build_small_yard(map_id)
+	else:
+		for district in (4 if width == 70.0 else 1):
+			_district_origin = Vector3(17.25, 0, 17.25).rotated(Vector3.UP, district * PI * 0.5) if width == 70.0 else Vector3.ZERO
+			_district_yaw = float(district * 90)
+			match map_id:
+				1: _build_storage()
+				2: _build_crossroads()
+				_: _build_container_yard()
+		_scatter_passages(rng)
 	var crates := _scatter_crates(rng)
-	_build_respawn_grid(5, 5.6, ARENA_HALF_EXTENT)
+	_build_respawn_grid(steps, spacing, _half_extent)
 	_scatter_foliage(rng)
+	if width == 70.0:
+		_patrol.assign(PATROL_ROUTES[map_id])
+	else:
+		_patrol.assign(respawn_points)
 	return crates
+
+
+func _build_small_yard(map_id: int) -> void:
+	match map_id:
+		1:
+			for x in [-4.5, 0.0, 4.5]:
+				_add_container(Vector3(x, 1.295, 0.0), CONTAINER_WIDTH, LENGTH_20, COLOR_BLUE)
+				_add_crate(Vector3(x + 1.3, 0.55, 5.5))
+		2:
+			for x in [-4.7, 4.7]:
+				for z in [-4.7, 4.7]:
+					_add_container(Vector3(x, 1.295, z), LENGTH_20, CONTAINER_WIDTH,
+						COLOR_RED if x * z > 0 else COLOR_ORANGE)
+		_:
+			_add_container(Vector3(-5.4, 1.295, -2.5), CONTAINER_WIDTH, LENGTH_20, COLOR_BLUE)
+			_add_container(Vector3(1.3, 1.295, -4.5), LENGTH_20, CONTAINER_WIDTH, COLOR_GREEN)
+			_add_container(Vector3(4.6, 1.295, 2.0), CONTAINER_WIDTH, LENGTH_20, COLOR_ORANGE)
+			_add_crate(Vector3(-2.0, 0.55, 4.2))
+			_add_crate(Vector3(-3.2, 0.55, 5.1))
 
 
 func clear_map() -> void:
@@ -172,7 +190,9 @@ func clear_map() -> void:
 	_wood_floors.clear()
 	_initial_spawns.clear()
 	respawn_points.clear()
-	_dust2_patrol.clear()
+	_patrol.clear()
+	_district_origin = Vector3.ZERO
+	_district_yaw = 0.0
 
 
 func _build_spawn_ring(radius: float) -> void:
@@ -311,20 +331,22 @@ func _is_clear(area: Rect2, limit: float, spawn_clearance: float) -> bool:
 
 func _scatter_passages(rng: RandomNumberGenerator) -> void:
 	var count := 0
+	var target := 6 if _half_extent == 35.0 else 3
+	var scatter_extent := _half_extent - 5.0
 	for attempt in 900:
-		var center := Vector2(rng.randf_range(-30.0, 30.0), rng.randf_range(-30.0, 30.0))
+		var center := Vector2(rng.randf_range(-scatter_extent, scatter_extent), rng.randf_range(-scatter_extent, scatter_extent))
 		var across := rng.randi_range(0, 1) == 1
 		var size := Vector2(CONTAINER_WIDTH + 0.35, LENGTH_20 + 1.5)
 		if across:
 			size = Vector2(size.y, size.x)
 		var area := _footprint(center, size)
-		if not _is_clear(area, 32.0, 0.9):
+		if not _is_clear(area, _half_extent - 3.0, 0.9):
 			continue
 		_occupied.append(area)
 		_add_passage(count, Vector3(center.x, 0, center.y), 90.0 if across else 0.0,
 			COLOR_GREEN.lerp(COLOR_ORANGE, rng.randf_range(0.0, 0.65)))
 		count += 1
-		if count == 6:
+		if count == target:
 			break
 
 
@@ -376,12 +398,14 @@ func _scatter_crates(rng: RandomNumberGenerator) -> Array[Transform3D]:
 			crates.append(placement)
 
 	var candidates: Array[Dictionary] = []
+	var scatter_extent := _half_extent - 1.5
+	var target := clampi(roundi(_half_extent / 3.0), 3, MAX_SUPPLY_CRATES)
 	for _sample in 950:
-		var center := Vector2(rng.randf_range(-33.5, 33.5), rng.randf_range(-33.5, 33.5))
+		var center := Vector2(rng.randf_range(-scatter_extent, scatter_extent), rng.randf_range(-scatter_extent, scatter_extent))
 		var quarter_turn := rng.randi_range(0, 3)
 		var size := Vector2(2.28, 2.88) if quarter_turn % 2 == 0 else Vector2(2.88, 2.28)
 		var area := _footprint(center, size)
-		if not _is_clear(area, 34.85, 0.85):
+		if not _is_clear(area, _half_extent - 0.15, 0.85):
 			continue
 		var cover := 0
 		for sample in 12:
@@ -399,7 +423,7 @@ func _scatter_crates(rng: RandomNumberGenerator) -> Array[Transform3D]:
 			continue
 		crates.append(placement)
 		_occupied.append(candidate.area)
-		if crates.size() == MAX_SUPPLY_CRATES:
+		if crates.size() >= target:
 			break
 	return crates
 
@@ -452,9 +476,10 @@ func _scatter_foliage(rng: RandomNumberGenerator) -> void:
 	var shrubs: Array[Transform3D] = []
 	var shrub_clusters := 0
 	var obstacle_count := _occupied.size()
+	var half := _half_extent
 	for attempt in 240:
 		var side := rng.randi_range(0, 3)
-		var center := Vector2(rng.randf_range(-34.0, 34.0), rng.randf_range(33.0, 34.3)).rotated(side * PI * 0.5)
+		var center := Vector2(rng.randf_range(-half + 1.0, half - 1.0), rng.randf_range(half - 2.0, half - 0.7)).rotated(side * PI * 0.5)
 		if attempt % 3 == 0:
 			var obstacle := _occupied[rng.randi_range(0, obstacle_count - 1)]
 			var along := rng.randf_range(0.15, 0.85)
@@ -464,7 +489,7 @@ func _scatter_foliage(rng: RandomNumberGenerator) -> void:
 				2: center = Vector2(lerpf(obstacle.position.x, obstacle.end.x, along), obstacle.position.y - 0.59)
 				3: center = Vector2(lerpf(obstacle.position.x, obstacle.end.x, along), obstacle.end.y + 0.59)
 		var area := _footprint(center, Vector2.ONE * 0.9)
-		if not _is_clear(area, 34.85, 0.65):
+		if not _is_clear(area, half - 0.15, 0.65):
 			continue
 		_occupied.append(area)
 		if shrub_clusters < 12 and (grass.is_empty() or rng.randf() < 0.35):

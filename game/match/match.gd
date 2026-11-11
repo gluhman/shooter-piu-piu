@@ -21,6 +21,7 @@ const WEAPON_SETS := [
 ]
 
 var map_id := 0
+var map_size := MAP.DEFAULT_SIZE
 var weapon_set := 0
 var bot_difficulty := 1
 var time_option := 4
@@ -149,7 +150,7 @@ func combatant(id: int) -> Node:
 
 
 func arena_width() -> float:
-	return MAP.playable_width(map_id)
+	return MAP.SIZE_WIDTHS[map_size]
 
 
 func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
@@ -214,7 +215,7 @@ func start_next_map(arena: int) -> void:
 	else:
 		var bot_count := _solo_bot_count if Net.solo else maxi(1, lan_bot_count)
 		_clear_match_map()
-		await start_solo(bot_count, bot_difficulty, weapon_set, arena, Vector2i(time_option, kill_option))
+		await start_solo(bot_count, bot_difficulty, weapon_set, arena, Vector2i(time_option, kill_option), map_size)
 
 
 @rpc("authority", "reliable")
@@ -308,7 +309,7 @@ func net_score_snapshot(scores: Dictionary) -> void:
 	$HUD.apply_score_snapshot(scores)
 
 
-func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limits: Vector2i) -> void:
+func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limits: Vector2i, size: int) -> void:
 	if _started or _loading or Net.active:
 		return
 	_show_loading()
@@ -316,6 +317,7 @@ func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limit
 	_set_limits(limits)
 	weapon_set = weapons
 	map_id = arena
+	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	_solo_bot_count = clampi(bot_count, 1, MAX_BOTS)
 	await _load_arena(randi(), _solo_bot_count, bot_difficulty)
@@ -324,11 +326,12 @@ func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limit
 	await _finish_loading()
 
 
-func update_host_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int = 1) -> void:
+func update_host_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
 	if _started or _loading or not Net.active or not multiplayer.is_server():
 		return
 	weapon_set = weapons
 	map_id = arena
+	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 	_set_limits(limits)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	lan_bot_count = clampi(bot_count, 0, MAX_BOTS)
@@ -343,12 +346,12 @@ func start_host_match() -> void:
 		if peer > 1:
 			net_wait_for_arena.rpc_id(peer)
 	_layout_seed = randi()
-	await _begin_network_match(weapon_set, map_id, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count)
+	await _begin_network_match(weapon_set, map_id, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, map_size)
 	if _reloading or not Net.active:
 		return
 	for peer in player_slots:
 		if peer > 1:
-			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision)
+			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size)
 	if player_slots.count(0) == Net.MAX_PLAYERS - 1:
 		$HUD.show_host_ip(Net.lan_addresses())
 
@@ -357,16 +360,17 @@ func _send_room_state() -> void:
 	$HUD/Lobby.refresh_room()
 	for peer in player_slots:
 		if peer > 1:
-			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _display_names)
+			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _display_names, map_size)
 
 
 @rpc("authority", "reliable")
 func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: Vector2i,
-		difficulty: int, bot_count: int, names: Dictionary[int, String]) -> void:
+		difficulty: int, bot_count: int, names: Dictionary[int, String], size: int) -> void:
 	if _started or _loading:
 		return
 	weapon_set = weapons
 	map_id = arena
+	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 	player_slots = roster
 	_set_limits(limits)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
@@ -387,7 +391,7 @@ func net_wait_for_arena() -> void:
 
 @rpc("authority", "reliable")
 func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int, limits: Vector2i,
-		difficulty: int, bot_count: int, revision: int) -> void:
+		difficulty: int, bot_count: int, revision: int, size: int) -> void:
 	if revision < _map_revision:
 		return
 	if revision > _map_revision:
@@ -401,14 +405,15 @@ func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: 
 		return
 	player_slots = roster
 	_show_loading()
-	await _begin_network_match(weapons, arena, layout_seed, limits, difficulty, bot_count)
+	await _begin_network_match(weapons, arena, layout_seed, limits, difficulty, bot_count, size)
 	if not _reloading and Net.active:
 		net_ready.rpc_id(1, revision)
 
 
-func _begin_network_match(weapons: int, arena: int, layout_seed: int, limits: Vector2i, difficulty: int, bot_count: int) -> void:
+func _begin_network_match(weapons: int, arena: int, layout_seed: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
 	weapon_set = weapons
 	map_id = arena
+	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 	_set_limits(limits)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	lan_bot_count = bot_count
@@ -470,7 +475,7 @@ func _finish_loading() -> void:
 func _build_arena(layout_seed: int) -> void:
 	$WorldEnvironment.current_time = ARENA_HOURS[map_id]
 	_apply_graphics()
-	$Loot.build_crates($Map.build(map_id, layout_seed))
+	$Loot.build_crates($Map.build(map_id, layout_seed, arena_width()))
 	if not Net.active or multiplayer.is_server():
 		var mesh := NavigationMesh.new()
 		mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
@@ -483,7 +488,7 @@ func _build_arena(layout_seed: int) -> void:
 		mesh.filter_walkable_low_height_spans = true
 		var width := arena_width()
 		if map_id == MAP.DUST2_ID:
-			mesh.filter_baking_aabb = AABB(Vector3(5.0 - width * 0.5, -3.0, -width * 0.5), Vector3(width, 7.5, width))
+			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -3.0, -width * 0.5), Vector3(width, 7.5, width))
 		else:
 			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -0.5, -width * 0.5), Vector3(width, 2.8, width))
 		var geometry := NavigationMeshSourceGeometryData3D.new()
@@ -592,7 +597,7 @@ func _spawn_bots(count: int, difficulty: int) -> void:
 		bot.combatant_id = -index
 		bot.position = $Map.initial_spawn(Net.MAX_PLAYERS + index)
 		bot.spawn_position = bot.position
-		bot.patrol_route = $Map.patrol_route(map_id)
+		bot.patrol_route = $Map.patrol_route()
 		bot.difficulty = difficulty
 		bot.floor_snap_length = 0.2
 		add_child(bot)
@@ -723,7 +728,7 @@ func _welcome(id: int) -> void:
 	_set_slot(slot, id)
 	if _started:
 		_send_slot(slot, id, id)
-		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision)
+		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size)
 	else:
 		_send_room_state()
 
