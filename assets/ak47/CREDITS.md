@@ -4,4 +4,6 @@
 - Firing audio from [AK47 Shot](https://freesound.org/people/LeMudCrab/sounds/163457/) by LeMudCrab. Trimmed and faded for automatic fire.
 - Reload audio from [AK47 SFX.mp3](https://freesound.org/people/kennysvoice/sounds/351778/) by kennysvoice. The reload segment was extracted, mixed to mono, and faded.
 
+The current game uses the firing and reload sounds described in [Classic Weapons Pack credits](../classic_weapons/CREDITS.md).
+
 The source assets are licensed under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).

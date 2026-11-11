@@ -2,6 +2,7 @@ extends SkeletonModifier3D
 
 const VEST_MESH := "Object_105"
 const MODEL := preload("res://assets/operator/operator.glb")
+const LOCOMOTION := preload("res://assets/animations/operator_locomotion.res")
 const FABRIC_TEXTURES := {
 	"Mil_Suit_R5": [
 		preload("res://assets/operator/textures/uniform_albedo.jpg"),
@@ -19,8 +20,6 @@ const FABRIC_TEXTURES := {
 
 const RIGHT_ARM := [&"mixamorig_RightArm_09", &"mixamorig_RightForeArm_010", &"mixamorig_RightHand_011"]
 const LEFT_ARM := [&"mixamorig_LeftArm_033", &"mixamorig_LeftForeArm_034", &"mixamorig_LeftHand_035"]
-const RIGHT_LEG := [&"mixamorig_RightUpLeg_057", &"mixamorig_RightLeg_058", &"mixamorig_RightFoot_059"]
-const LEFT_LEG := [&"mixamorig_LeftUpLeg_063", &"mixamorig_LeftLeg_064", &"mixamorig_LeftFoot_065"]
 
 var actor: Node3D
 var right_wrist: Marker3D
@@ -34,13 +33,10 @@ var _right_arm: PackedInt32Array
 var _left_arm: PackedInt32Array
 var _right_fingers: Array[PackedInt32Array]
 var _left_fingers: Array[PackedInt32Array]
-var _right_leg: PackedInt32Array
-var _left_leg: PackedInt32Array
-var _right_foot: Transform3D
-var _left_foot: Transform3D
-var _walk_phase := 0.0
-var _walk_blend := 0.0
-var _jump_blend := 0.0
+var _locomotion: AnimationPlayer
+var _was_grounded := true
+var _transition_left := 0.0
+var _stride_yaw := 0.0
 var _head := -1
 var _hips := -1
 var _right_reach: float
@@ -54,28 +50,104 @@ func _ready() -> void:
 	_left_arm = _chain(skeleton, LEFT_ARM)
 	_right_fingers = _finger_chains(skeleton, "Right")
 	_left_fingers = _finger_chains(skeleton, "Left")
-	_right_leg = _chain(skeleton, RIGHT_LEG)
-	_left_leg = _chain(skeleton, LEFT_LEG)
-	_right_foot = skeleton.get_bone_global_rest(_right_leg[2])
-	_left_foot = skeleton.get_bone_global_rest(_left_leg[2])
 	_head = skeleton.find_bone(&"mixamorig_Head_06")
 	_hips = skeleton.find_bone(&"mixamorig_Hips_01")
 	_right_reach = _arm_reach(skeleton, _right_arm)
 	_left_reach = _arm_reach(skeleton, _left_arm)
+	_locomotion = AnimationPlayer.new()
+	_locomotion.root_node = NodePath("../..")
+	_locomotion.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	_locomotion.add_animation_library(&"", LOCOMOTION)
+	add_child(_locomotion)
+	reset_locomotion()
 
 
-func weapon_reach_correction() -> Vector3:
-	var skeleton := get_skeleton()
-	var right_shoulder := skeleton.to_global(skeleton.get_bone_global_rest(_right_arm[0]).origin)
-	var left_shoulder := skeleton.to_global(skeleton.get_bone_global_rest(_left_arm[0]).origin)
-	right_shoulder += actor.global_basis * stance_offset
-	left_shoulder += actor.global_basis * stance_offset
+func reset_locomotion() -> void:
+	_was_grounded = true
+	_transition_left = 0.0
+	_stride_yaw = 0.0
+	_locomotion.speed_scale = 1.0
+	_locomotion.play(&"idle")
+	_locomotion.advance(0.0)
+
+
+func update_locomotion(delta: float, crouched: bool, vertical_speed: float) -> void:
+	var speed := planar_velocity.length()
+	var current := _locomotion.current_animation
+	var clip: StringName = &"idle"
+	var rate := 1.0
+	var travel := actor.global_basis.inverse() * planar_velocity
+	var backwards := travel.z > absf(travel.x) * 0.8
+	_transition_left = maxf(0.0, _transition_left - delta)
+	if not grounded:
+		if _was_grounded and vertical_speed > 1.0:
+			_transition_left = 0.20
+			clip = &"jump_start"
+		else:
+			clip = &"jump_start" if current == &"jump_start" and _transition_left > 0.0 else &"jump_air"
+		rate = 4.0 if clip == &"jump_start" else 1.0
+	elif (not _was_grounded and vertical_speed < -1.1) or (current == &"jump_land" and _transition_left > 0.0):
+		if current != &"jump_land":
+			_transition_left = 0.30
+		clip = &"jump_land"
+		rate = 3.0
+	elif crouched:
+		clip = &"crouch_walk" if speed > 0.24 else &"crouch_idle"
+		rate = clampf(speed / 1.8, 0.75, 1.5) if clip == &"crouch_walk" else 1.0
+	elif speed > 0.24:
+		if speed > 6.2:
+			clip = &"sprint"
+			rate = clampf(speed / 6.8, 0.8, 1.35)
+		elif speed > 3.8:
+			clip = &"jog"
+			rate = clampf(speed / 4.5, 0.8, 1.35)
+		else:
+			clip = &"walk"
+			rate = clampf(speed / 2.5, 0.7, 1.5)
+	var moving := clip in [&"crouch_walk", &"walk", &"jog", &"sprint"]
+	var turn := clampf(atan2(-travel.x, maxf(absf(travel.z), 0.3)), -0.55, 0.55) if moving else 0.0
+	_stride_yaw = move_toward(_stride_yaw, turn, delta * 5.0)
+	_was_grounded = grounded
+	_locomotion.speed_scale = -rate if moving and backwards else rate
+	if current != clip:
+		_locomotion.play(clip, 0.12, 1.0, moving and backwards)
+	_locomotion.advance(delta)
+
+
+func weapon_reach_correction(two_handed: bool) -> Vector3:
+	var right_shoulder := _animated_shoulder(_right_arm)
+	if not two_handed:
+		return _reach_offset(right_wrist.global_position, right_shoulder, _right_reach)
+	var left_shoulder := _animated_shoulder(_left_arm)
 	var correction := Vector3.ZERO
-	# Project both targets back within reach, preserving the spacing of the weapon's grips.
-	for _pass_index in 3:
-		correction += _reach_offset(right_wrist.global_position + correction, right_shoulder, _right_reach)
+	for _pass_index in 6:
 		correction += _reach_offset(left_wrist.global_position + correction, left_shoulder, _left_reach)
+		correction += _reach_offset(right_wrist.global_position + correction, right_shoulder, _right_reach)
 	return correction
+
+
+func weapon_reach_along(axis: Vector3) -> float:
+	var right := _reach_along(right_wrist.global_position, _animated_shoulder(_right_arm), _right_reach, axis)
+	var left := _reach_along(left_wrist.global_position, _animated_shoulder(_left_arm), _left_reach, axis)
+	return maxf(right, left)
+
+
+func _reach_along(wrist: Vector3, shoulder: Vector3, reach: float, axis: Vector3) -> float:
+	var offset := wrist - shoulder
+	var depth := offset.dot(axis)
+	var lateral_sq := maxf(0.0, offset.length_squared() - depth * depth)
+	return maxf(0.0, -depth - sqrt(maxf(0.0, reach * reach - lateral_sq)))
+
+
+func clamp_support_hand(point: Vector3) -> Vector3:
+	return point + _reach_offset(point, _animated_shoulder(_left_arm), _left_reach)
+
+
+func _animated_shoulder(chain: PackedInt32Array) -> Vector3:
+	var skeleton := get_skeleton()
+	var shoulder := skeleton.to_global(skeleton.get_bone_global_pose(chain[0]).origin)
+	var hips := skeleton.to_global(skeleton.get_bone_global_pose(_hips).origin)
+	return hips + (shoulder - hips).rotated(actor.global_basis.y.normalized(), _stride_yaw)
 
 
 func _arm_reach(skeleton: Skeleton3D, chain: PackedInt32Array) -> float:
@@ -90,20 +162,13 @@ func _reach_offset(wrist: Vector3, shoulder: Vector3, reach: float) -> Vector3:
 	return away.limit_length(reach) - away
 
 
-func _process_modification_with_delta(delta: float) -> void:
+func _process_modification_with_delta(_delta: float) -> void:
 	var skeleton := get_skeleton()
-	if not stance_offset.is_zero_approx():
+	if not is_zero_approx(_stride_yaw):
 		var hips := skeleton.get_bone_global_pose(_hips)
-		hips.origin += skeleton.global_basis.inverse() * (actor.global_basis * stance_offset)
+		var up := skeleton.global_basis.inverse() * actor.global_basis.y
+		hips.basis = Basis(up.normalized(), _stride_yaw) * hips.basis
 		skeleton.set_bone_global_pose(_hips, hips)
-	var speed := planar_velocity.length()
-	var moving := grounded and speed > 0.15
-	_walk_phase = fmod(_walk_phase + speed * delta * 3.2, TAU)
-	_walk_blend = move_toward(_walk_blend, minf(speed / 4.0, 1.0) if moving else 0.0, delta * 6.0)
-	_jump_blend = move_toward(_jump_blend, 0.0 if grounded else 1.0, delta * 6.0)
-	var stride := planar_velocity.normalized() * minf(0.39, speed * 0.073) * _walk_blend
-	_step_leg(skeleton, _right_leg, _right_foot, stride, _walk_phase)
-	_step_leg(skeleton, _left_leg, _left_foot, stride, _walk_phase + PI)
 
 	if _head >= 0:
 		var head := skeleton.get_bone_global_pose(_head)
@@ -114,8 +179,8 @@ func _process_modification_with_delta(delta: float) -> void:
 	if is_instance_valid(right_wrist) and is_instance_valid(left_wrist):
 		_pose_arm(skeleton, _right_arm, right_wrist, 1.0)
 		_pose_arm(skeleton, _left_arm, left_wrist, -1.0)
-		_pose_fingers(skeleton, _right_arm[2], _right_fingers, [0.13, -0.13, 0.28, 0.34, 0.35])
-		_pose_fingers(skeleton, _left_arm[2], _left_fingers, [
+		_pose_fingers(skeleton, _right_fingers, [0.18, -0.13, 0.36, 0.42, 0.44])
+		_pose_fingers(skeleton, _left_fingers, [
 			lerpf(0.18, 0.08, support_grip),
 			lerpf(0.27, 0.02, support_grip),
 			lerpf(0.31, 0.10, support_grip),
@@ -145,26 +210,14 @@ func _finger_chains(skeleton: Skeleton3D, side: String) -> Array[PackedInt32Arra
 	return chains
 
 
-func _pose_fingers(skeleton: Skeleton3D, wrist: int, chains: Array[PackedInt32Array], curls: Array) -> void:
-	var wrist_basis := skeleton.get_bone_global_pose(wrist).basis
-	var curl_axis := wrist_basis.x.normalized()
+func _pose_fingers(skeleton: Skeleton3D, chains: Array[PackedInt32Array], curls: Array) -> void:
 	for digit in chains.size():
+		var axis := Vector3.RIGHT
 		for joint in chains[digit]:
-			var pose := skeleton.get_bone_global_pose(joint)
-			pose.basis = Basis(curl_axis, float(curls[digit])) * pose.basis
-			skeleton.set_bone_global_pose(joint, pose)
-
-
-func _step_leg(skeleton: Skeleton3D, chain: PackedInt32Array, rest: Transform3D, stride: Vector3, phase: float) -> void:
-	if _walk_blend <= 0.001 and _jump_blend <= 0.001 and stance_offset.is_zero_approx():
-		return
-	var forward := -actor.global_basis.z
-	var lift := maxf(0.0, sin(phase)) * 0.15 * _walk_blend + 0.10 * _jump_blend
-	var offset := stride * cos(phase) + Vector3.UP * lift + forward * (0.06 * _jump_blend)
-	var goal := rest
-	goal.origin += skeleton.global_basis.inverse() * offset
-	var pole := skeleton.to_local(actor.to_global(Vector3(0.0, 0.49, -1.0)))
-	_solve(skeleton, chain, goal, pole)
+			var rotation := skeleton.get_bone_pose_rotation(joint)
+			skeleton.set_bone_pose_rotation(joint, Quaternion(axis, float(curls[digit])) * rotation)
+			# Rotating around the curl axis leaves it unchanged in the next joint's parent space.
+			axis = (rotation.inverse() * axis).normalized()
 
 
 func _pose_arm(skeleton: Skeleton3D, chain: PackedInt32Array, wrist: Marker3D, side: float) -> void:
@@ -219,19 +272,21 @@ func _solve(skeleton: Skeleton3D, chain: PackedInt32Array, goal: Transform3D, po
 	skeleton.set_bone_global_pose(chain[2], goal)
 
 
+static var _fabric_materials: Dictionary = {}
+
+
 static func apply_textures(avatar: Node3D) -> void:
-	var upgraded: Dictionary = {}
 	for mesh: MeshInstance3D in avatar.find_children("*", "MeshInstance3D", true, false):
 		for surface in mesh.mesh.get_surface_count():
 			var original := mesh.get_active_material(surface) as BaseMaterial3D
 			if original == null or not FABRIC_TEXTURES.has(original.resource_name):
 				continue
 			var name := original.resource_name
-			if not upgraded.has(name):
+			if not _fabric_materials.has(name):
 				var material := original.duplicate() as BaseMaterial3D
 				material.albedo_texture = FABRIC_TEXTURES[name][0]
 				material.normal_texture = FABRIC_TEXTURES[name][1]
 				material.normal_enabled = true
 				material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-				upgraded[name] = material
-			mesh.set_surface_override_material(surface, upgraded[name])
+				_fabric_materials[name] = material
+			mesh.set_surface_override_material(surface, _fabric_materials[name])

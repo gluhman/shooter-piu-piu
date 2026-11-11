@@ -1,6 +1,7 @@
 extends Node
 
 const PORT := 7777
+const CHANNEL_COUNT := 4
 const MAX_PLAYERS := 10
 const MAX_NAME_LENGTH := 24
 
@@ -84,7 +85,7 @@ func play_solo() -> void:
 func host_game() -> Error:
 	_close()
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_server(PORT, MAX_PLAYERS - 1)
+	var err := peer.create_server(PORT, MAX_PLAYERS - 1, CHANNEL_COUNT)
 	if err != OK:
 		return err
 	multiplayer.multiplayer_peer = peer
@@ -95,7 +96,7 @@ func host_game() -> Error:
 func join_game(ip: String) -> Error:
 	_close()
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_client(ip, PORT)
+	var err := peer.create_client(ip, PORT, CHANNEL_COUNT)
 	if err != OK:
 		return err
 	multiplayer.multiplayer_peer = peer

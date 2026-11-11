@@ -4,12 +4,18 @@ const Effects := preload("res://projectile_effects.gd")
 
 # These profiles are tuned for the container arena's scale and sight lines.
 const AMMO := {
-	"m249": {"speed": 375.0, "drag": 0.24, "trail": 2.9, "width": 0.009, "color": Color(1.0, 0.66, 0.31)},
-	"m14": {"speed": 420.0, "drag": 0.17, "trail": 1.85, "width": 0.010, "color": Color(1.0, 0.70, 0.40)},
-	"m1": {"speed": 440.0, "drag": 0.14, "trail": 1.8, "width": 0.009, "color": Color(1.0, 0.70, 0.40)},
-	"ak47": {"speed": 360.0, "drag": 0.20, "trail": 2.4, "width": 0.012, "color": Color(1.0, 0.63, 0.24)},
-	"deagle": {"speed": 220.0, "drag": 0.58, "trail": 0.65, "width": 0.007, "color": Color(0.96, 0.75, 0.50)},
-	"shotgun": {"speed": 250.0, "drag": 1.32, "trail": 0.0, "width": 0.0, "color": Color.WHITE},
+	"m249": {"mass_g": 4.0, "diameter_mm": 5.56, "weapon_kg": 7.5, "speed": 875.0, "drag": 0.24, "trail": 2.9, "width": 0.009, "color": Color(1.0, 0.66, 0.31)},
+	"m1": {"mass_g": 9.7, "diameter_mm": 7.82, "weapon_kg": 4.4, "speed": 820.0, "drag": 0.14, "trail": 1.8, "width": 0.009, "color": Color(1.0, 0.70, 0.40)},
+	"ak47": {"mass_g": 7.9, "diameter_mm": 7.92, "weapon_kg": 3.6, "speed": 715.0, "drag": 0.26, "trail": 2.4, "width": 0.012, "color": Color(1.0, 0.63, 0.24)},
+	"deagle": {"mass_g": 19.4, "diameter_mm": 12.7, "weapon_kg": 2.0, "speed": 445.0, "drag": 0.82, "trail": 0.65, "width": 0.007, "color": Color(0.96, 0.75, 0.50)},
+	"shotgun": {"mass_g": 3.5, "diameter_mm": 8.4, "weapon_kg": 3.25, "speed": 400.0, "drag": 1.65, "trail": 0.0, "width": 0.0, "color": Color.WHITE},
+	"m1911": {"mass_g": 14.9, "diameter_mm": 11.43, "weapon_kg": 1.1, "speed": 255.0, "drag": 0.86, "trail": 0.72, "width": 0.007, "color": Color(1.0, 0.68, 0.36)},
+	"mac10": {"mass_g": 14.9, "diameter_mm": 11.43, "weapon_kg": 2.8, "speed": 265.0, "drag": 0.91, "trail": 0.74, "width": 0.007, "color": Color(1.0, 0.68, 0.36)},
+	"mp5": {"mass_g": 8.0, "diameter_mm": 9.01, "weapon_kg": 2.6, "speed": 395.0, "drag": 0.68, "trail": 1.0, "width": 0.008, "color": Color(1.0, 0.68, 0.36)},
+	"m700": {"mass_g": 10.9, "diameter_mm": 7.82, "weapon_kg": 3.9, "speed": 850.0, "drag": 0.14, "trail": 2.65, "width": 0.012, "color": Color(1.0, 0.68, 0.36)},
+	"tec9": {"mass_g": 8.0, "diameter_mm": 9.01, "weapon_kg": 1.4, "speed": 355.0, "drag": 0.78, "trail": 0.8, "width": 0.007, "color": Color(1.0, 0.68, 0.36)},
+	"lever": {"mass_g": 19.4, "diameter_mm": 11.63, "weapon_kg": 3.35, "speed": 475.0, "drag": 0.43, "trail": 1.45, "width": 0.01, "color": Color(1.0, 0.68, 0.36)},
+	"m14": {"mass_g": 9.5, "diameter_mm": 7.82, "weapon_kg": 4.1, "speed": 820.0, "drag": 0.20, "trail": 2.35, "width": 0.011, "color": Color(1.0, 0.68, 0.36)},
 }
 
 class Projectile:
@@ -32,6 +38,7 @@ class Projectile:
 var _effects: Node3D
 var _shots: Dictionary[int, Projectile] = {}
 var _pending: Array[Dictionary] = []
+var _remote_finished: Dictionary[int, bool] = {}
 var _next_id := 1
 var _gravity := Vector3.DOWN * 9.8
 
@@ -45,17 +52,56 @@ func _ready() -> void:
 
 func reset_round() -> void:
 	_pending.clear()
+	_remote_finished.clear()
 	for id in _shots.keys():
 		_remove(id)
 	_effects.clear()
 
 
+func prepare_acoustics() -> void:
+	_effects.prepare_acoustics()
+
+
+func warm_effects() -> void:
+	await _effects.warm_rendering(AMMO)
+
+
+func grenade_effect(at: Vector3, flash: bool) -> void:
+	_effects.grenade_burst(at, flash)
+
+
+func play_explosion_sound(clip: AudioStream, at: Vector3, gain: float, reach: float) -> void:
+	_effects.play_combat_sound(clip, at, gain, reach, &"Explosions")
+
+
 func shot_sound(profile: String) -> AudioStream:
-	return Effects.SHOT_SOUNDS[profile]
+	return Effects.shot_sound(profile)
 
 
 func muzzle_effect(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio: bool) -> void:
 	_effects.muzzle(profile, barrel, motion, spatial_audio)
+
+
+func recoil_factor(profile: String, pellets: int) -> float:
+	if not AMMO.has(profile):
+		return 1.0
+	var ammo: Dictionary = AMMO[profile]
+	var impulse_per_kg := float(ammo.mass_g) * float(ammo.speed) * pellets / float(ammo.weapon_kg)
+	return clampf(0.76 + 0.24 * sqrt(impulse_per_kg / 1700.0), 0.90, 1.24)
+
+
+func penetration_density(profile: String, speed: float) -> float:
+	var ammo: Dictionary = AMMO[profile]
+	var area := PI * pow(float(ammo.diameter_mm) * 0.5, 2.0)
+	return float(ammo.mass_g) * 0.0005 * speed * speed / area
+
+
+func aim_ahead(profile: String, origin: Vector3, target: Vector3, relative_velocity: Vector3) -> Vector3:
+	var ammo: Dictionary = AMMO[profile]
+	var drag: float = ammo.drag
+	var scaled_distance := origin.distance_to(target) * drag / float(ammo.speed)
+	var travel_time := -log(maxf(0.1, 1.0 - scaled_distance)) / drag
+	return target + relative_velocity * travel_time - _gravity * (0.5 * travel_time * travel_time)
 
 
 func queue_shot(profile: String, stats: Dictionary, source: CollisionObject3D, shooter: int,
@@ -119,34 +165,6 @@ func _launch(shot: Dictionary, space: PhysicsDirectSpaceState3D) -> void:
 		net_launch.rpc_id(peer, start_id, profile, muzzle, velocities, reach, shot.shooter)
 
 
-func predict_impact(profile: String, barrel: Transform3D, barrel_length: float, reach: float,
-		motion: Vector3, exclude: RID) -> Vector3:
-	var space := get_world_3d().direct_space_state
-	var query := _query(exclude)
-	var obstruction := _barrel_obstruction(space, query, barrel, barrel_length)
-	if not obstruction.is_empty():
-		return obstruction.position
-	var ammo: Dictionary = AMMO[profile]
-	var position := barrel.origin
-	var velocity := -barrel.basis.z * float(ammo.speed) + motion
-	var remaining := reach
-	var delta := 1.0 / Engine.physics_ticks_per_second
-	while remaining > 0.0001:
-		var next_velocity := _next_velocity(velocity, ammo.drag, delta)
-		var travel := _flight_segment(velocity, next_velocity, delta, remaining)
-		var distance := travel.length()
-		if distance <= 0.0001:
-			break
-		var end := position + travel
-		var hit := _ray(space, query, position, end)
-		if not hit.is_empty():
-			return hit.position
-		position = end
-		velocity = next_velocity
-		remaining -= distance
-	return position
-
-
 func _barrel_obstruction(space: PhysicsDirectSpaceState3D, query: PhysicsRayQueryParameters3D,
 		barrel: Transform3D, length: float) -> Dictionary:
 	return _ray(space, query, barrel.origin + barrel.basis.z * length, barrel.origin)
@@ -208,9 +226,14 @@ func _step(id: int, projectile: Projectile, delta: float, space: PhysicsDirectSp
 			_continue(id, projectile, hit, direction, path)
 			return
 		_impact(id, hit, direction, projectile.profile, projectile.shooter, projectile.stats,
-			projectile.distance, projectile.damage_scale)
+			projectile.distance, projectile.damage_scale * _energy_damage_factor(projectile.profile, next_velocity.length_squared()))
 	_finish_tracer(projectile, end, direction, projectile.distance)
 	_remove(id)
+
+
+func _energy_damage_factor(profile: String, speed_squared: float) -> float:
+	var launch_speed: float = AMMO[profile].speed
+	return 0.74 + 0.26 * minf(1.0, speed_squared / (launch_speed * launch_speed))
 
 
 func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3) -> Dictionary:
@@ -221,7 +244,8 @@ func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3) -> D
 	var surface: String = collider.get_meta(&"impact_surface", "concrete")
 	var incidence := clampf(-direction.dot(normal), 0.0, 1.0)
 	var speed := projectile.velocity.length()
-	var heavy := projectile.profile in ["ak47", "m14", "m1"]
+	var penetration := penetration_density(projectile.profile, speed)
+	var heavy := penetration >= 32.0
 	if surface == "metal" and not heavy and not projectile.bounced:
 		var grazing_limit := 0.27 if projectile.profile == "shotgun" else 0.36
 		if incidence <= grazing_limit and speed >= float(AMMO[projectile.profile].speed) * 0.38:
@@ -236,12 +260,12 @@ func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3) -> D
 	if not collider.has_meta(&"ballistic_size") or speed < float(AMMO[projectile.profile].speed) * 0.40:
 		return {}
 	var steel := surface == "metal" and heavy and not projectile.crossed_steel and incidence >= 0.55
-	var wood := surface == "wood" and projectile.profile != "shotgun" and not projectile.crossed_wood and incidence >= 0.33
+	var wood := surface == "wood" and penetration >= 7.5 and not projectile.crossed_wood and incidence >= 0.33
 	if not steel and not wood:
 		return {}
 	var size: Vector3 = collider.get_meta(&"ballistic_size")
 	var thickness := _box_exit_distance(collider, size * 0.5, hit.position, direction)
-	var limit := 0.36 if steel else 1.9
+	var limit := clampf(penetration * 0.0046, 0.13, 0.42) if steel else clampf(penetration * 0.037, 0.18, 1.9)
 	if thickness <= 0.001 or thickness > limit or projectile.distance + thickness + 0.02 >= projectile.reach:
 		return {}
 	if steel:
@@ -256,7 +280,7 @@ func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3) -> D
 	if randf() < 0.5:
 		deflection = -deflection
 	var outgoing := direction.rotated(axis.normalized(), deflection)
-	var loss := 0.68 if steel else 0.76
+	var loss := lerpf(0.84, 0.55 if steel else 0.63, thickness / limit)
 	return {
 		"position": hit.position + direction * (thickness + 0.018),
 		"velocity": outgoing * speed * loss,
@@ -298,15 +322,16 @@ func _continue(id: int, projectile: Projectile, hit: Dictionary, direction: Vect
 
 
 func _redirect_effects(entry: Vector3, normal: Vector3, surface: String, profile: String, exit: Vector3, through: bool) -> void:
-	_effects.impact(entry, normal, surface, profile, not through)
+	_effects.impact(entry, normal, surface, profile, 1.0, not through)
 	if through:
-		_effects.impact(exit, -normal, surface, profile, false)
+		_effects.impact(exit, -normal, surface, profile, 1.0, false)
 
 
 func _impact(id: int, hit: Dictionary, direction: Vector3, profile: String, shooter: int,
 		stats: Dictionary, distance: float, damage_scale: float = 1.0) -> void:
 	var collider := hit["collider"] as Node
 	var surface: String = collider.get_meta(&"impact_surface", "concrete") if collider else "concrete"
+	var remaining_damage := _damage_at(distance, stats) * damage_scale
 	var damaged := false
 	var headshot := false
 	if collider and (collider.is_in_group("player") or collider.is_in_group("bot")):
@@ -314,47 +339,52 @@ func _impact(id: int, hit: Dictionary, direction: Vector3, profile: String, shoo
 		var health: int = collider.health
 		var armor: int = collider.armor
 		var zone: String = collider.projectile_zone(hit.position)
-		if shooter > 0 or collider.is_in_group("player"):
-			collider.take_damage(maxi(1, roundi(_damage_at(distance, stats) * damage_scale)), shooter, zone)
+		collider.take_damage(maxi(1, roundi(remaining_damage)), shooter, zone)
 		damaged = collider.health < health or collider.armor < armor
 		headshot = damaged and zone == "head"
 	var normal: Vector3 = hit["normal"]
 	if normal.is_zero_approx():
 		normal = -direction
 	var position: Vector3 = hit["position"]
-	_show_impact(position, normal, surface, profile, shooter, damaged, headshot)
+	var force := remaining_damage / float(stats["damage"])
+	_show_impact(position, normal, surface, profile, shooter, damaged, force, headshot)
 	for peer in get_parent().match_peers():
-		net_impact.rpc_id(peer, id, position, normal, surface, profile, shooter, damaged, headshot)
+		net_impact.rpc_id(peer, id, position, normal, surface, profile, shooter, damaged, force, headshot)
 
 
-func _show_impact(at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int, damaged: bool, headshot: bool) -> void:
-	_effects.impact(at, normal, surface, profile)
+func _show_impact(at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int, damaged: bool, force: float, headshot: bool) -> void:
+	_effects.impact(at, normal, surface, profile, force)
 	if damaged and shooter == Net.local_id():
 		get_parent().get_node("HUD").confirm_projectile_hit(headshot)
 
 
-@rpc("authority", "reliable")
+@rpc("authority", "call_remote", "unreliable", 2)
 func net_launch(first_id: int, profile: String, muzzle: Vector3, velocities: PackedVector3Array, reach: float, shooter: int) -> void:
 	var source := get_parent().combatant(shooter) as CollisionObject3D
 	var exclude := source.get_rid() if source else RID()
 	for index in velocities.size():
-		_spawn(first_id + index, profile, muzzle, velocities[index], reach, shooter, exclude, {})
+		var id := first_id + index
+		if not _remote_finished.has(id):
+			_spawn(id, profile, muzzle, velocities[index], reach, shooter, exclude, {})
 
 
-@rpc("authority", "reliable")
-func net_impact(id: int, at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int, damaged: bool, headshot: bool) -> void:
+@rpc("authority", "call_remote", "unreliable", 2)
+func net_impact(id: int, at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int, damaged: bool, force: float, headshot: bool) -> void:
+	if _remote_finished.size() >= 512:
+		_remote_finished.erase(_remote_finished.keys()[0])
+	_remote_finished[id] = true
 	_end_remote_segment(id, at)
-	_show_impact(at, normal, surface, profile, shooter, damaged, headshot)
+	_show_impact(at, normal, surface, profile, shooter, damaged, force, headshot)
 
 
-@rpc("authority", "reliable")
+@rpc("authority", "call_remote", "reliable", 3)
 func net_redirect(id: int, profile: String, shooter: int, entry: Vector3, normal: Vector3, surface: String,
 		exit: Vector3, velocity: Vector3, reach: float, through: bool, cover_id: int) -> void:
 	_end_remote_segment(id, entry)
 	if through and cover_id >= 0:
 		get_parent().get_node("Map").add_bullet_hole(cover_id, entry, (exit - entry).normalized(), profile)
 	_redirect_effects(entry, normal, surface, profile, exit, through)
-	if reach > 0.0:
+	if reach > 0.0 and not _remote_finished.has(id):
 		var source := get_parent().combatant(shooter) as CollisionObject3D
 		var exclude := source.get_rid() if source else RID()
 		_spawn(id, profile, exit, velocity, reach, shooter, exclude, {})

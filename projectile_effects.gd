@@ -1,5 +1,9 @@
 extends Node3D
 
+const Classic := preload("res://classic_weapons.gd")
+const Weapon := preload("res://weapon.gd")
+const SHOT_HEARING_DISTANCE := 125.0
+
 const SURFACES := {
 	"metal": [Color(1.0, 0.61, 0.22), Color(0.38, 0.42, 0.44), 11, 0.0],
 	"brick": [Color(0.66, 0.34, 0.24), Color(0.48, 0.29, 0.23), 7, 0.22],
@@ -16,8 +20,18 @@ const SHOT_SOUNDS := {
 	"launcher": preload("res://assets/arsenal/launcher_fire.wav"),
 	"deagle": preload("res://assets/weapon_audio/deagle_fire.wav"),
 	"shotgun": preload("res://assets/weapon_audio/shotgun_fire.wav"),
-	"ak47": preload("res://assets/ak47/fire.wav"),
 }
+const IMPACT_SOUNDS := {
+	"concrete": preload("res://assets/match_audio/hit_concrete.wav"),
+	"metal": preload("res://assets/match_audio/hit_metal.wav"),
+	"wood": preload("res://assets/match_audio/hit_wood.wav"),
+	"operator": preload("res://assets/match_audio/hit_operator.wav"),
+}
+const IMPACT_HEARING_DISTANCE := 24.0
+const MAX_BURSTS := 32
+const MUZZLE_VISUAL_DISTANCE := 58.0
+const MUZZLE_LIGHT_DISTANCE := 27.0
+const MAX_IMPACT_VISUAL_DISTANCE := 46.0
 
 var _soft: Texture2D
 var _flare: Texture2D
@@ -25,18 +39,91 @@ var _pit: Texture2D
 var _particle_meshes: Dictionary = {}
 var _trace_meshes: Dictionary = {}
 var _marks: Array[MeshInstance3D] = []
+var _mark_meshes: Dictionary[bool, QuadMesh] = {}
+var _flash_mesh: QuadMesh
+var _explosion_mesh: QuadMesh
+var _burst_pool: Array[CPUParticles3D] = []
+var _active_bursts := 0
+var _burst_gradients: Dictionary[Color, Gradient] = {}
+var _burst_curves: Dictionary[bool, Curve] = {}
+var _combat_voices: Dictionary[StringName, Array] = {}
+var _voice_cursor: Dictionary[StringName, int] = {}
+var _last_impact_sound := -50
 
 
 func _ready() -> void:
 	_soft = _mask("smoke")
 	_flare = _mask("flash")
 	_pit = _mask("pit")
+	_flash_mesh = QuadMesh.new()
+	var material := _sprite(_flare, Color.WHITE)
+	material.emission_enabled = true
+	material.emission = Color(1.0, 0.57, 0.19)
+	material.emission_energy_multiplier = 2.2
+	material.emission_texture = _flare
+	_flash_mesh.material = material
+	_explosion_mesh = QuadMesh.new()
+	var core := _sprite(_flare, Color(1.0, 0.52, 0.17))
+	core.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_explosion_mesh.material = core
+
+
+func prepare_acoustics() -> void:
+	if not _combat_voices.is_empty() or DisplayServer.get_name() == "headless":
+		return
+	for bus: StringName in [&"Gunfire", &"Explosions"]:
+		var voices: Array[AudioStreamPlayer3D] = []
+		for _index in (24 if bus == &"Gunfire" else 8):
+			var voice := AudioStreamPlayer3D.new()
+			voice.bus = bus
+			voice.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
+			voice.attenuation_filter_cutoff_hz = 5200.0
+			voice.attenuation_filter_db = -4.0
+			voice.panning_strength = 2.0
+			add_child(voice)
+			voices.append(voice)
+		_combat_voices[bus] = voices
+		_voice_cursor[bus] = 0
 
 
 func clear() -> void:
+	_burst_pool.clear()
 	for child in get_children():
-		child.queue_free()
+		if child is AudioStreamPlayer3D and child in _combat_voices.get(child.bus, []):
+			child.stop()
+		elif child is CPUParticles3D:
+			child.emitting = false
+			child.hide()
+			_burst_pool.append(child)
+		else:
+			child.queue_free()
+	_active_bursts = 0
 	_marks.clear()
+	_last_impact_sound = -50
+
+
+func warm_rendering(ammo: Dictionary) -> void:
+	var camera := get_viewport().get_camera_3d()
+	if not camera:
+		return
+	var barrel := camera.global_transform.translated_local(Vector3(0, 0, -2.0))
+	var at := barrel.origin
+	muzzle("ak47", barrel, Vector3.ZERO, false)
+	for data in SURFACES.values():
+		_burst(at, Vector3.UP, data[0], 2, 0.24, 1.5, 35.0, 0.03, Vector3.DOWN,
+			"spark" if data == SURFACES["metal"] else "chip", float(data[3]))
+	_mark(at, Vector3.UP, "concrete", 0.05)
+	_mark(at, Vector3.UP, "metal", 0.05)
+	for profile in ammo.values():
+		if profile.trail > 0:
+			var sample := tracer(profile)
+			sample.set_meta("trail", float(profile.trail))
+			move_tracer(sample, at, -barrel.basis.z, 0.4)
+	grenade_burst(at, false)
+	grenade_burst(at, true)
+	await RenderingServer.frame_post_draw
+	await get_tree().process_frame
+	clear()
 
 
 func muzzle(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio: bool) -> void:
@@ -44,57 +131,101 @@ func muzzle(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio
 	var position := barrel.origin
 	if spatial_audio:
 		_play_spatial_shot(profile, position)
-	var size: float = FLASH_SIZE[profile]
+	var camera := get_viewport().get_camera_3d()
+	if not camera or DisplayServer.get_name() == "headless":
+		return
+	var distance_sq := camera.global_position.distance_squared_to(position)
+	if distance_sq > MUZZLE_VISUAL_DISTANCE * MUZZLE_VISUAL_DISTANCE:
+		return
+	var size: float = FLASH_SIZE.get(profile, 0.23 * sqrt(float(Weapon.WEAPONS[profile].kick) / 0.045))
 	var flash := MeshInstance3D.new()
 	flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var quad := QuadMesh.new()
-	quad.size = Vector2.ONE * size * randf_range(0.83, 1.15)
-	var flash_material := _sprite(_flare, Color(1.0, 0.61, 0.19))
-	flash_material.emission_enabled = true
-	flash_material.emission = Color(1.0, 0.57, 0.19)
-	flash_material.emission_energy_multiplier = 2.2
-	flash_material.emission_texture = _flare
-	quad.material = flash_material
-	flash.mesh = quad
+	flash.mesh = _flash_mesh
+	flash.scale = Vector3.ONE * size * randf_range(0.83, 1.15)
 	add_child(flash)
 	flash.global_position = position + forward * size * 0.25
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.71, 0.38)
-	light.light_energy = size * 16.0
-	light.omni_range = 3.0
-	flash.add_child(light)
 	var fade := flash.create_tween()
-	fade.tween_property(flash_material, "albedo_color:a", 0.0, 0.045)
-	fade.parallel().tween_property(light, "light_energy", 0.0, 0.045)
+	fade.tween_property(flash, "transparency", 1.0, 0.045)
+	if distance_sq <= MUZZLE_LIGHT_DISTANCE * MUZZLE_LIGHT_DISTANCE:
+		var light := OmniLight3D.new()
+		light.light_color = Color(1.0, 0.71, 0.38)
+		light.light_energy = size * 16.0
+		light.omni_range = 3.0
+		flash.add_child(light)
+		fade.parallel().tween_property(light, "light_energy", 0.0, 0.045)
+		var drift := (forward * 1.6 + motion * 0.22 + Vector3.UP * 0.4).normalized()
+		_burst(position + forward * size * 0.33, drift, Color(0.60, 0.60, 0.56, 0.12), 4,
+			0.34, 1.7 + motion.length() * 0.15, 24.0, size * 0.29, Vector3.UP * 0.9, "smoke")
 	fade.tween_callback(flash.queue_free)
-	var drift := (forward * 1.6 + motion * 0.22 + Vector3.UP * 0.4).normalized()
-	_burst(position + forward * size * 0.33, drift, Color(0.60, 0.60, 0.56, 0.12), 4,
-		0.34, 1.7 + motion.length() * 0.15, 24.0, size * 0.29, Vector3.UP * 0.9, "smoke")
+
+
+static func shot_sound(profile: String) -> AudioStream:
+	if Classic.SHOT_COUNTS.has(profile):
+		return Classic.shot_sound(profile)
+	return SHOT_SOUNDS[profile]
 
 
 func _play_spatial_shot(profile: String, at: Vector3) -> void:
-	# Keep each report at the point where it was fired, even if the shooter moves.
+	var level := -4.0 if profile in ["ak47", "m249"] else -2.0
+	play_combat_sound(shot_sound(profile), at, level, SHOT_HEARING_DISTANCE, &"Gunfire")
+
+
+func play_combat_sound(clip: AudioStream, at: Vector3, gain: float, reach: float, bus: StringName) -> void:
+	var camera := get_viewport().get_camera_3d()
+	if not camera or not _combat_voices.has(bus) or camera.global_position.distance_squared_to(at) > reach * reach:
+		return
+	var voices: Array = _combat_voices[bus]
+	var index := _voice_cursor[bus]
+	for offset in voices.size():
+		var candidate := (index + offset) % voices.size()
+		if not voices[candidate].playing:
+			index = candidate
+			break
+	_voice_cursor[bus] = (index + 1) % voices.size()
+	var voice: AudioStreamPlayer3D = voices[index]
+	voice.stop()
+	voice.stream = clip
+	voice.volume_db = gain
+	voice.max_db = gain
+	voice.pitch_scale = randf_range(0.97, 1.03)
+	voice.max_distance = reach
+	voice.global_position = at
+	voice.play()
+
+
+func _play_impact_sound(at: Vector3, surface: String, strength: float) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_impact_sound < 45:
+		return
+	var camera := get_viewport().get_camera_3d()
+	if not camera or camera.global_position.distance_squared_to(at) > IMPACT_HEARING_DISTANCE * IMPACT_HEARING_DISTANCE:
+		return
+	_last_impact_sound = now
 	var sound := AudioStreamPlayer3D.new()
-	sound.stream = SHOT_SOUNDS[profile]
-	sound.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
-	sound.unit_size = 4.0
-	sound.max_distance = 56.0
-	sound.volume_db = -5.0 if profile in ["ak47", "m249"] else 0.0
-	sound.max_db = sound.volume_db - 5.0
-	sound.attenuation_filter_db = -12.0
-	sound.panning_strength = 1.5
-	sound.pitch_scale = randf_range(0.97, 1.03)
+	sound.bus = &"Gunfire"
+	sound.stream = IMPACT_SOUNDS.get(surface, IMPACT_SOUNDS["concrete"])
+	sound.unit_size = 2.6
+	sound.max_distance = IMPACT_HEARING_DISTANCE
+	sound.volume_db = -10.0 + linear_to_db(strength)
+	sound.max_db = sound.volume_db + 2.0
+	sound.attenuation_filter_db = -16.0
+	sound.pitch_scale = randf_range(0.92, 1.08)
 	add_child(sound)
 	sound.global_position = at
 	sound.finished.connect(sound.queue_free)
 	sound.play()
 
 
-func impact(at: Vector3, normal: Vector3, surface: String, profile: String, leave_mark: bool = true) -> void:
+func impact(at: Vector3, normal: Vector3, surface: String, profile: String, remaining_force: float = 1.0, leave_mark: bool = true) -> void:
+	var power := 0.68 if profile == "shotgun" else sqrt(float(Weapon.WEAPONS[profile].damage) / 45.0)
+	var strength := clampf(power * remaining_force, 0.32, 1.45)
+	_play_impact_sound(at, surface, strength)
+	var camera := get_viewport().get_camera_3d()
+	if not camera or camera.global_position.distance_squared_to(at) > MAX_IMPACT_VISUAL_DISTANCE * MAX_IMPACT_VISUAL_DISTANCE:
+		return
 	var data: Array = SURFACES.get(surface, SURFACES["concrete"])
 	var position := at + normal * 0.012
 	var amount: int = data[2]
-	var strength := 0.68 if profile == "shotgun" else 1.0
 	var dust: Color = data[1]
 	dust.a = 0.19 if surface == "metal" else 0.31
 	var lifetime := 0.33 if surface == "operator" else 0.49
@@ -106,10 +237,42 @@ func impact(at: Vector3, normal: Vector3, surface: String, profile: String, leav
 			9.0 if metal else 4.0, 55.0, 0.018 * strength, Vector3.DOWN * 12.0,
 			"spark" if metal else "chip", float(data[3]))
 		if leave_mark:
-			_mark(at, normal, surface, float(MARK_SIZE[profile]))
+			_mark(at, normal, surface, float(MARK_SIZE.get(profile, 0.05)) * sqrt(strength))
 	else:
 		_burst(position, normal, data[0], amount, 0.24, 3.6, 46.0, 0.015,
 			Vector3.DOWN * 9.8, "chip")
+
+
+func grenade_burst(at: Vector3, flash: bool) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var camera := get_viewport().get_camera_3d()
+	if not camera or camera.global_position.distance_squared_to(at) > 95.0 * 95.0:
+		return
+	var center := at + Vector3.UP * 0.36
+	var core := MeshInstance3D.new()
+	core.mesh = _flash_mesh if flash else _explosion_mesh
+	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	core.position = center
+	core.scale = Vector3.ONE * (1.7 if flash else 2.6)
+	add_child(core)
+	var light := OmniLight3D.new()
+	light.light_color = Color(0.85, 0.91, 1.0) if flash else Color(1.0, 0.66, 0.30)
+	light.light_energy = 6.4 if flash else 8.0
+	light.omni_range = 12.0 if flash else 15.0
+	core.add_child(light)
+	var fade := core.create_tween()
+	fade.tween_property(core, "transparency", 1.0, 0.22)
+	fade.parallel().tween_property(core, "scale", core.scale * 1.6, 0.22)
+	fade.parallel().tween_property(light, "light_energy", 0.0, 0.18)
+	fade.tween_callback(core.queue_free)
+	_burst(center, Vector3.UP, Color(1.0, 0.76, 0.33), 10 if flash else 34, 0.52, 13.0, 130.0,
+		0.05, Vector3.DOWN * 9.8, "spark")
+	if not flash:
+		_burst(at + Vector3.UP * 0.18, Vector3.UP, Color(0.53, 0.45, 0.34, 0.60),
+			18, 0.86, 6.3, 125.0, 1.05, Vector3.UP * 0.40, "smoke")
+		_burst(center, Vector3.UP, Color(0.28, 0.27, 0.25, 0.67),
+			22, 1.8, 4.8, 62.0, 1.45, Vector3.UP * 0.65, "smoke")
 
 
 func tracer(ammo: Dictionary) -> MeshInstance3D:
@@ -145,13 +308,24 @@ func move_tracer(streak: MeshInstance3D, at: Vector3, direction: Vector3, distan
 
 func _burst(at: Vector3, axis: Vector3, tint: Color, amount: int, duration: float,
 		speed: float, spread: float, size: float, gravity: Vector3, kind: String, stretch: float = 0.0) -> void:
-	var particles := CPUParticles3D.new()
-	particles.emitting = false
-	particles.one_shot = true
+	if DisplayServer.get_name() == "headless" or _active_bursts >= MAX_BURSTS:
+		return
+	var particles: CPUParticles3D
+	if _burst_pool.is_empty():
+		particles = CPUParticles3D.new()
+		particles.emitting = false
+		particles.one_shot = true
+		particles.local_coords = false
+		particles.explosiveness = 0.92
+		particles.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		particles.finished.connect(_recycle_burst.bind(particles))
+		add_child(particles)
+	else:
+		particles = _burst_pool.pop_back()
+	_active_bursts += 1
+	particles.show()
 	particles.amount = amount
 	particles.lifetime = duration
-	particles.explosiveness = 0.92
-	particles.local_coords = false
 	particles.direction = axis
 	particles.spread = spread
 	particles.initial_velocity_min = speed * 0.34
@@ -163,18 +337,28 @@ func _burst(at: Vector3, axis: Vector3, tint: Color, amount: int, duration: floa
 	particles.scale_amount_max = size
 	particles.particle_flag_align_y = kind != "smoke"
 	particles.mesh = _particle_mesh(kind, stretch)
-	particles.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var gradient := Gradient.new()
-	gradient.colors = PackedColorArray([tint, Color(tint.r, tint.g, tint.b, 0.0)])
-	particles.color_ramp = gradient
-	var curve := Curve.new()
-	curve.add_point(Vector2(0.0, 0.36 if kind == "smoke" else 1.0))
-	curve.add_point(Vector2(1.0, 1.0 if kind == "smoke" else 0.30))
-	particles.scale_amount_curve = curve
-	add_child(particles)
+	if not _burst_gradients.has(tint):
+		var gradient := Gradient.new()
+		gradient.colors = PackedColorArray([tint, Color(tint.r, tint.g, tint.b, 0.0)])
+		_burst_gradients[tint] = gradient
+	var smoke := kind == "smoke"
+	if not _burst_curves.has(smoke):
+		var curve := Curve.new()
+		curve.add_point(Vector2(0.0, 0.36 if smoke else 1.0))
+		curve.add_point(Vector2(1.0, 1.0 if smoke else 0.30))
+		_burst_curves[smoke] = curve
+	particles.color_ramp = _burst_gradients[tint]
+	particles.scale_amount_curve = _burst_curves[smoke]
 	particles.global_position = at
-	particles.emitting = true
-	get_tree().create_timer(duration + 0.16, false).timeout.connect(particles.queue_free)
+	particles.restart()
+
+
+func _recycle_burst(particles: CPUParticles3D) -> void:
+	if particles.is_queued_for_deletion() or particles in _burst_pool:
+		return
+	particles.hide()
+	_active_bursts -= 1
+	_burst_pool.append(particles)
 
 
 func _particle_mesh(kind: String, stretch: float) -> Mesh:
@@ -202,19 +386,23 @@ func _particle_mesh(kind: String, stretch: float) -> Mesh:
 
 func _mark(at: Vector3, normal: Vector3, surface: String, size: float) -> void:
 	var mark := MeshInstance3D.new()
-	var quad := QuadMesh.new()
-	quad.size = Vector2.ONE * size * randf_range(0.85, 1.16)
-	var tint := Color(0.16, 0.17, 0.16, 0.84) if surface == "metal" else Color(0.12, 0.09, 0.07, 0.82)
-	var material := _sprite(_pit, tint)
-	material.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
-	quad.material = material
-	mark.mesh = quad
+	var metal := surface == "metal"
+	if not _mark_meshes.has(metal):
+		var mesh := QuadMesh.new()
+		var tint := Color(0.16, 0.17, 0.16, 0.84) if metal else Color(0.12, 0.09, 0.07, 0.82)
+		var material := _sprite(_pit, tint)
+		material.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+		mesh.material = material
+		_mark_meshes[metal] = mesh
+	mark.mesh = _mark_meshes[metal]
 	mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mark.visibility_range_end = MAX_IMPACT_VISUAL_DISTANCE
 	add_child(mark)
 	var up := Vector3.RIGHT if absf(normal.dot(Vector3.UP)) > 0.96 else Vector3.UP
 	mark.global_transform = Transform3D(Basis.looking_at(-normal, up), at + normal * 0.0025)
 	mark.rotate_object_local(Vector3.FORWARD, randf() * TAU)
+	mark.scale = Vector3.ONE * size * randf_range(0.85, 1.16)
 	_marks.append(mark)
 	if _marks.size() > 96:
 		_marks.pop_front().queue_free()

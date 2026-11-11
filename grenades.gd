@@ -2,14 +2,17 @@ extends Node3D
 
 const ASSETS := preload("res://arsenal_assets.gd")
 const SMOKE_SHADER := preload("res://smoke_cloud.gdshader")
-const EXPLOSION := preload("res://assets/arsenal/explosion.wav")
+const EXPLOSION := preload("res://assets/match_audio/explosion_body.wav")
 const FLASH_BANG := preload("res://assets/arsenal/flash_bang.wav")
 const SMOKE_HISS := preload("res://assets/arsenal/smoke_hiss.wav")
 const GRAVITY := Vector3.DOWN * 9.8
 const LAUNCH_SPEED := 29.0
 const ROUND_FUSE := 3.0
 const SMOKE_RADIUS := 4.2
-const SMOKE_TIME := 12.0
+const SMOKE_TIME := 18.0
+const FRAG_RADIUS := 8.5
+const ROUND_RADIUS := 6.5
+const FLASH_RADIUS := 16.0
 
 class Flight:
 	var id: int
@@ -143,7 +146,7 @@ func _process(delta: float) -> void:
 			continue
 		cloud.age += delta
 		var growth := _smoke_growth(cloud.age)
-		cloud.material.set_shader_parameter("density", minf(1.0, cloud.left / 2.5) * growth)
+		cloud.material.set_shader_parameter("density", minf(1.0, cloud.left / 4.0) * growth)
 		for j in cloud.offsets.size():
 			var puff := cloud.node.get_child(j) as MeshInstance3D
 			var offset := cloud.offsets[j] * growth
@@ -158,8 +161,9 @@ func _throw(actor: Node, kind: String, space: PhysicsDirectSpaceState3D) -> void
 	if not actor.consume_grenade(kind):
 		return
 	var camera := actor.get_node("Camera3D") as Camera3D
-	var direction := -camera.global_basis.z
-	var query := PhysicsRayQueryParameters3D.create(camera.global_position, camera.global_position + direction * 0.42, 1, [actor.get_rid()])
+	var shot_camera: Transform3D = actor.current_shot_transform(camera.global_transform)
+	var direction := -shot_camera.basis.z
+	var query := PhysicsRayQueryParameters3D.create(shot_camera.origin, shot_camera.origin + direction * 0.42, 1, [actor.get_rid()])
 	var hit := space.intersect_ray(query)
 	var origin: Vector3 = query.to if hit.is_empty() else hit.position + hit.normal * 0.07
 	var velocity: Vector3 = direction * 12.4 + Vector3.UP * 3.1 + actor.shot_motion()
@@ -240,24 +244,25 @@ func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) ->
 		net_detonate.rpc_id(peer, id, kind, at)
 	if kind == "smoke":
 		return
-	var radius := 14.0 if kind == "flash" else (5.0 if kind == "round" else 6.0)
+	var radius := FLASH_RADIUS if kind == "flash" else (ROUND_RADIUS if kind == "round" else FRAG_RADIUS)
 	var space := get_world_3d().direct_space_state
 	for actor in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
 		if not actor.control_enabled or _match.round_finished():
 			continue
 		var camera := actor.get_node("Camera3D") as Camera3D
-		var target: Vector3 = camera.global_position if kind == "flash" else actor.aim_center()
+		var shot_camera: Transform3D = actor.current_shot_transform(camera.global_transform)
+		var target: Vector3 = shot_camera.origin if kind == "flash" else actor.aim_center()
 		var distance := target.distance_to(at)
 		if distance >= radius:
 			continue
-		var query := PhysicsRayQueryParameters3D.create(at, target, 1, [actor.get_rid()])
+		var query := PhysicsRayQueryParameters3D.create(at, target, 2)
 		if not space.intersect_ray(query).is_empty():
 			continue
 		var strength := 1.0 - distance / radius
 		if kind == "flash":
-			var facing := (-camera.global_basis.z).dot((at - target).normalized())
-			actor.apply_flash(strength * lerpf(0.26, 1.0, smoothstep(-0.15, 0.75, facing)))
-		elif shooter > 0 or actor.is_in_group("player"):
+			var facing := (-shot_camera.basis.z).dot((at - target).normalized())
+			actor.apply_flash(pow(strength, 0.7) * lerpf(0.19, 1.0, smoothstep(-0.15, 0.75, facing)))
+		else:
 			actor.take_damage(roundi(damage * pow(strength, 0.70)), shooter)
 
 
@@ -266,13 +271,15 @@ func net_detonate(id: int, kind: String, at: Vector3) -> void:
 	if _flights.has(id):
 		_flights[id].model.queue_free()
 		_flights.erase(id)
+	var effects := _match.get_node("Ballistics")
 	if kind == "smoke":
 		net_smoke(at, SMOKE_TIME, 0.0)
-		_play_sound(SMOKE_HISS, at, -10.0, 24.0)
+		effects.play_explosion_sound(SMOKE_HISS, at, -13.0, 28.0)
 	else:
 		var flash := kind == "flash"
-		_play_sound(FLASH_BANG if flash else EXPLOSION, at, -2.0 if flash else 1.0, 68.0)
-		_blast(at, flash)
+		effects.play_explosion_sound(FLASH_BANG if flash else EXPLOSION, at, -5.0 if flash else -1.5,
+			105.0 if flash else 155.0)
+		effects.grenade_effect(at, flash)
 
 
 @rpc("authority", "reliable")
@@ -310,53 +317,3 @@ func net_smoke(at: Vector3, left: float, age: float) -> void:
 
 func _smoke_growth(age: float) -> float:
 	return maxf(0.05, smoothstep(0.0, 1.7, age))
-
-
-func _play_sound(stream: AudioStream, at: Vector3, gain: float, reach: float) -> void:
-	var sound := AudioStreamPlayer3D.new()
-	sound.stream = stream
-	sound.volume_db = gain
-	sound.unit_size = 9.0
-	sound.max_distance = reach
-	add_child(sound)
-	sound.global_position = at
-	sound.finished.connect(sound.queue_free)
-	sound.play()
-
-
-func _blast(at: Vector3, flash: bool) -> void:
-	var light := OmniLight3D.new()
-	light.light_color = Color("#eff6ff") if flash else Color("#ffad69")
-	light.light_energy = 5.0
-	light.omni_range = 10.0
-	add_child(light)
-	light.global_position = at
-	var tween := light.create_tween()
-	tween.tween_property(light, "light_energy", 0.0, 0.16)
-	tween.tween_callback(light.queue_free)
-	var burst := GPUParticles3D.new()
-	burst.amount = 26 if flash else 44
-	burst.lifetime = 0.52
-	burst.one_shot = true
-	burst.explosiveness = 1.0
-	var particles := ParticleProcessMaterial.new()
-	particles.direction = Vector3.UP
-	particles.spread = 85.0
-	particles.initial_velocity_min = 3.0
-	particles.initial_velocity_max = 11.0
-	particles.gravity = GRAVITY
-	burst.process_material = particles
-	var mesh := SphereMesh.new()
-	mesh.radius = 0.028
-	mesh.height = 0.056
-	mesh.radial_segments = 6
-	mesh.rings = 3
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = light.light_color
-	mesh.material = material
-	burst.draw_pass_1 = mesh
-	add_child(burst)
-	burst.global_position = at
-	burst.finished.connect(burst.queue_free)
-	burst.restart()

@@ -12,16 +12,18 @@ const MOUSE_SENS := 0.0022
 const MAX_HEALTH := 100
 const MAX_ARMOR := 65
 const ARSENAL := preload("res://arsenal_assets.gd")
-const Footsteps := preload("res://footsteps.gd")
-const NETWORK_POSE_SIZE := 11
+const NETWORK_POSE_SIZE := 13
+const REMOTE_BLEND_TIME := 0.045
 const COVER_SPEED := 1.85
 const COVER_PEEK_SPEED := 4.6
 const COVER_PEEK_DISTANCE := 0.55
 const COVER_EDGE_PROBE := 0.34
 const COVER_WALL_REACH := 0.60
 const COVER_LOOK_LIMIT := 1.45
+const FIRST_PERSON_BODY_LAYER := 3
 const OperatorPose := preload("res://operator_pose.gd")
 const Weapon := preload("res://weapon.gd")
+const MovementAudio := preload("res://movement_audio.gd")
 const MEDKIT_HEAL := 45
 
 signal health_changed(current: int, maximum: int)
@@ -29,20 +31,26 @@ signal respawned
 signal inventory_changed
 
 var control_enabled := false
+var slot := 0
 var health := MAX_HEALTH
 var armor := 0
 var flash_left := 0.0
 var grenade_type := "frag"
 var _grenades: Dictionary[String, int] = {}
 var _throw_wait := 0.0
+var _pose_sequence := 0
+var _latest_pose := PackedFloat32Array()
+var _pose_elapsed := 0.0
+var _pose_origin := Vector3.ZERO
+var _pose_yaw := 0.0
+var _pose_pitch := 0.0
 var _net_grounded := true
-var _footsteps: Footsteps
 var _vest: Node3D
 var _scoped := false
 var weapon_id := ""
-var slot := 0
 var spawn_position: Vector3
-var _spawn_yaw := 0.0
+var _last_spawn_position: Vector3
+var _spawn_revision := 0
 var _spawn_loadout := ""
 var medkits := 0
 var _stored: Dictionary[String, Vector2i] = {}
@@ -79,6 +87,8 @@ var _name_label: Label3D
 var _prev_pos := Vector3.ZERO
 var _visual_velocity := Vector3.ZERO
 var _visual_vertical := 0.0
+var _operator_elapsed := 0.0
+var _movement_audio: MovementAudio
 
 @onready var _camera: Camera3D = $Camera3D
 @onready var _collision: CollisionShape3D = $CollisionShape3D
@@ -90,11 +100,8 @@ func _ready() -> void:
 	_standing_capsule = _collision.shape as CapsuleShape3D
 	_collision.shape = _standing_capsule.duplicate()
 	_prev_pos = global_position
-	match slot:
-		0: _spawn_yaw = deg_to_rad(-40.0)
-		1: _spawn_yaw = deg_to_rad(140.0)
-		_: _spawn_yaw = atan2(spawn_position.x, spawn_position.z)
-	rotation.y = _spawn_yaw
+	_last_spawn_position = spawn_position
+	rotation.y = atan2(spawn_position.x, spawn_position.z)
 	if _is_local():
 		_camera.current = true
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -102,8 +109,11 @@ func _ready() -> void:
 		_camera.current = false
 		_build_bar()
 	_build_operator()
-	_footsteps = Footsteps.new()
-	add_child(_footsteps)
+	_movement_audio = MovementAudio.new()
+	_movement_audio.name = "MovementAudio"
+	_movement_audio.actor = self
+	_movement_audio.use_acoustics = not _is_local()
+	add_child(_movement_audio)
 	_reset_support()
 
 
@@ -118,7 +128,7 @@ func _server_rules() -> bool:
 
 
 func take_damage(amount: int, killer_id: int = 0, zone: String = "torso") -> void:
-	if not _server_rules():
+	if not _server_rules() or get_parent().round_finished():
 		return
 	if _dead or amount <= 0 or _hurt_lock > 0.0 or get_parent().round_finished():
 		return
@@ -166,7 +176,7 @@ func consume_grenade(kind: String) -> bool:
 func apply_flash(strength: float) -> void:
 	if not _server_rules() or strength < 0.04:
 		return
-	flash_left = maxf(flash_left, strength * 2.75)
+	flash_left = maxf(flash_left, _flash_duration(strength))
 	if _is_local():
 		net_flash(strength)
 	elif score_id() > 1:
@@ -177,14 +187,17 @@ func apply_flash(strength: float) -> void:
 func net_flash(strength: float) -> void:
 	if multiplayer.get_remote_sender_id() not in [0, 1] or not _is_local():
 		return
-	get_parent().get_node("HUD").show_flashbang(strength)
+	get_parent().get_node("HUD").show_flashbang(strength, _flash_duration(strength))
+
+
+func _flash_duration(strength: float) -> float:
+	return 0.24 + 3.3 * pow(clampf(strength, 0.0, 1.0), 1.17)
 
 
 func set_scoped_view(scoped: bool) -> void:
-	if _scoped != scoped and _is_local():
+	if _is_local():
 		_scoped = scoped
-		for child in _avatar.find_children("*", "MeshInstance3D", true, false):
-			child.set_layer_mask_value(1, not scoped)
+		set_first_person_body_visible(not scoped)
 
 
 func restore_health(amount: int) -> void:
@@ -234,7 +247,13 @@ func owns_weapon(id: String) -> bool:
 
 
 func stock_for(id: String) -> Vector2i:
+	if id == "knife" and not is_in_group("bot"):
+		return Vector2i.ZERO
 	return gun.ammo_counts() if id == weapon_id else _stored.get(id, Vector2i(-1, 0))
+
+
+func ammo_reward_weapon() -> String:
+	return _spawn_loadout if weapon_id == "knife" else weapon_id
 
 
 func ammo_capacity(id: String) -> int:
@@ -273,7 +292,7 @@ func grant_medkits(amount: int) -> void:
 
 func inventory_stock() -> Dictionary[String, Vector2i]:
 	var stock := _stored.duplicate()
-	if weapon_id != "":
+	if weapon_id != "" and weapon_id != "knife":
 		stock[weapon_id] = gun.ammo_counts()
 	return stock
 
@@ -309,12 +328,13 @@ func _consume_medkit() -> void:
 
 
 func _switch_weapon(id: String) -> void:
-	if not control_enabled or not _stored.has(id) or _stored[id].x < 0:
+	var stock := stock_for(id)
+	if not control_enabled or id == weapon_id or stock.x < 0:
 		_send_inventory()
 		return
-	var stock := _stored[id]
 	_stored.erase(id)
-	_stored[weapon_id] = gun.ammo_counts()
+	if weapon_id != "knife":
+		_stored[weapon_id] = gun.ammo_counts()
 	_set_active_weapon(id, stock.x, stock.y, true)
 	_send_inventory()
 
@@ -353,6 +373,7 @@ func _send_equipment(id: String) -> void:
 
 
 func send_status_to(peer: int) -> void:
+	net_spawn_revision.rpc_id(peer, _spawn_revision)
 	if peer != get_multiplayer_authority():
 		if weapon_id != "":
 			net_equip.rpc_id(peer, weapon_id, _spawn_loadout)
@@ -360,17 +381,30 @@ func send_status_to(peer: int) -> void:
 
 
 func network_pose() -> PackedFloat32Array:
+	if not _latest_pose.is_empty() and not _is_local() and not is_in_group("bot"):
+		return _latest_pose
+	_pose_sequence += 1
 	var grounded := is_on_floor() if _is_local() or (_server_rules() and is_in_group("bot")) else _net_grounded
 	return PackedFloat32Array([
 		position.x, position.y, position.z, rotation.y, _camera.rotation.x, float(crouched), float(aiming),
-		_cover_normal.x, _cover_normal.z, _cover_peek, float(grounded),
+		_cover_normal.x, _cover_normal.z, _cover_peek, float(grounded), float(_spawn_revision), float(_pose_sequence),
 	])
 
 
 func apply_network_pose(pose: PackedFloat32Array) -> void:
-	position = Vector3(pose[0], pose[1], pose[2])
-	rotation.y = pose[3]
-	_camera.rotation.x = pose[4]
+	if pose.size() != NETWORK_POSE_SIZE or pose[11] != float(_spawn_revision):
+		return
+	if not _latest_pose.is_empty() and pose[12] <= _latest_pose[12]:
+		return
+	var target := Vector3(pose[0], pose[1], pose[2])
+	var snap := _latest_pose.is_empty() or position.distance_squared_to(target) > 25.0
+	_latest_pose = pose
+	_pose_origin = position
+	_pose_yaw = rotation.y
+	_pose_pitch = _camera.rotation.x
+	_pose_elapsed = REMOTE_BLEND_TIME if snap else 0.0
+	if snap:
+		_interpolate_network_pose(0.0)
 	crouched = pose[5] > 0.0
 	aiming = pose[6] > 0.0
 	_cover_normal = Vector3(clampf(pose[7], -1.0, 1.0), 0.0, clampf(pose[8], -1.0, 1.0)).normalized()
@@ -378,6 +412,30 @@ func apply_network_pose(pose: PackedFloat32Array) -> void:
 	_net_grounded = pose[10] > 0.0
 	_update_capsule()
 	_update_view_pose()
+
+
+func _interpolate_network_pose(delta: float) -> void:
+	if _latest_pose.is_empty() or _dead or (delta > 0.0 and _pose_elapsed >= REMOTE_BLEND_TIME):
+		return
+	_pose_elapsed = minf(REMOTE_BLEND_TIME, _pose_elapsed + delta)
+	var blend := _pose_elapsed / REMOTE_BLEND_TIME
+	position = _pose_origin.lerp(Vector3(_latest_pose[0], _latest_pose[1], _latest_pose[2]), blend)
+	rotation.y = lerp_angle(_pose_yaw, _latest_pose[3], blend)
+	_camera.rotation.x = lerpf(_pose_pitch, _latest_pose[4], blend)
+
+
+func current_shot_transform(rendered: Transform3D) -> Transform3D:
+	if _latest_pose.is_empty() or _is_local() or is_in_group("bot"):
+		return rendered
+	var yaw_adjustment := Basis(Vector3.UP, angle_difference(rotation.y, _latest_pose[3]))
+	var pitch_adjustment := Basis(Vector3.RIGHT, _latest_pose[4] - _camera.rotation.x)
+	var camera_at := _camera.global_position
+	var offset := camera_at - global_position
+	var target := Vector3(_latest_pose[0], _latest_pose[1], _latest_pose[2])
+	var camera_basis := _camera.global_basis.orthonormalized()
+	var aim_rotation := yaw_adjustment * camera_basis * pitch_adjustment * camera_basis.inverse()
+	return Transform3D(aim_rotation * rendered.basis,
+		target + yaw_adjustment * offset + aim_rotation * (rendered.origin - camera_at))
 
 
 func in_cover() -> bool:
@@ -401,8 +459,16 @@ func set_support_grip(reload_blend: float) -> void:
 	_pose.support_grip = reload_blend
 
 
-func weapon_reach_correction() -> Vector3:
-	return _pose.weapon_reach_correction()
+func weapon_reach_correction(two_handed: bool) -> Vector3:
+	return _pose.weapon_reach_correction(two_handed)
+
+
+func weapon_reach_along(axis: Vector3) -> float:
+	return _pose.weapon_reach_along(axis)
+
+
+func clamp_support_hand(point: Vector3) -> Vector3:
+	return _pose.clamp_support_hand(point)
 
 
 func reload_pouch_position() -> Vector3:
@@ -444,9 +510,16 @@ func net_equip(id: String, loadout: String = "") -> void:
 
 
 @rpc("any_peer", "reliable")
-func net_respawn(id: String) -> void:
+func net_respawn(id: String, at: Vector3, revision: int) -> void:
 	if multiplayer.get_remote_sender_id() == 1:
-		_apply_respawn(id)
+		_apply_respawn(id, at, revision)
+
+
+@rpc("any_peer", "reliable")
+func net_spawn_revision(revision: int) -> void:
+	if multiplayer.get_remote_sender_id() == 1 and revision != _spawn_revision:
+		_spawn_revision = revision
+		_latest_pose = PackedFloat32Array()
 
 
 @rpc("any_peer", "reliable")
@@ -458,13 +531,13 @@ func net_active_weapon(id: String, magazine: int, reserve: int, switching: bool,
 
 @rpc("any_peer", "reliable")
 func net_switch_weapon(id: String) -> void:
-	if _is_owner_request(multiplayer.get_remote_sender_id()):
+	if not get_parent().round_finished() and _is_owner_request(multiplayer.get_remote_sender_id()):
 		_switch_weapon(id)
 
 
 @rpc("any_peer", "reliable")
 func net_use_medkit() -> void:
-	if _is_owner_request(multiplayer.get_remote_sender_id()):
+	if not get_parent().round_finished() and _is_owner_request(multiplayer.get_remote_sender_id()):
 		_consume_medkit()
 
 
@@ -485,7 +558,7 @@ func net_loot_ammo(id: String, amount: int) -> void:
 
 
 func _apply_equip(id: String, magazine: int = -1, reserve: int = -1, switching: bool = false) -> void:
-	if not get_parent().allows_weapon(id):
+	if id != "knife" and not get_parent().allows_weapon(id):
 		return
 	weapon_id = id
 	control_enabled = true
@@ -502,7 +575,7 @@ func _commit(killer_id: int) -> void:
 	if health > 0 or _dead:
 		return
 	_dead = true
-	_footsteps.reset()
+	_movement_audio.reset()
 	_leave_cover()
 	aiming = false
 	control_enabled = false
@@ -518,7 +591,7 @@ func _commit(killer_id: int) -> void:
 	if _server_rules():
 		get_parent().get_node("Loot").drop_combatant(self)
 		get_parent().announce(killer_id, score_id())
-		_respawn_timer = get_tree().create_timer(_respawn_delay(), false)
+		_respawn_timer = get_tree().create_timer(_respawn_delay(), false, true)
 		_respawn_timer.timeout.connect(_request_respawn)
 	_clear_inventory()
 	inventory_changed.emit()
@@ -547,9 +620,11 @@ func _request_respawn() -> void:
 	if get_parent().round_finished():
 		return
 	var id := _next_respawn_weapon()
+	var at: Vector3 = get_parent().choose_respawn(self, _last_spawn_position)
+	var revision := _spawn_revision + 1
 	for peer in get_parent().match_peers():
-		net_respawn.rpc_id(peer, id)
-	_apply_respawn(id)
+		net_respawn.rpc_id(peer, id, at, revision)
+	_apply_respawn(id, at, revision)
 
 
 func _next_respawn_weapon() -> String:
@@ -564,20 +639,23 @@ func restart_round() -> void:
 	if _respawn_timer and _respawn_timer.timeout.is_connected(_request_respawn):
 		_respawn_timer.timeout.disconnect(_request_respawn)
 	_respawn_timer = null
-	_apply_respawn(_spawn_loadout)
+	_apply_respawn(_spawn_loadout, spawn_position, _spawn_revision + 1)
 	_recoil_pitch = 0.0
 	_jump_held = Input.is_action_pressed(&"jump")
 
 
-func _apply_respawn(id: String) -> void:
+func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
 	_clear_inventory()
 	_reset_support()
-	_footsteps.reset()
 	_leave_cover()
-	global_position = spawn_position
+	_spawn_revision = revision
+	_latest_pose = PackedFloat32Array()
+	_last_spawn_position = at
+	global_position = at
+	_movement_audio.reset()
 	velocity = Vector3.ZERO
-	rotation.y = _spawn_yaw
-	_camera.rotation = Vector3.ZERO
+	rotation.y = atan2(at.x, at.z)
+	_camera.rotation.x = 0.0
 	health = MAX_HEALTH
 	_dead = false
 	collision_layer = 1
@@ -593,6 +671,8 @@ func _apply_respawn(id: String) -> void:
 	_prev_pos = global_position
 	_visual_velocity = Vector3.ZERO
 	_visual_vertical = 0.0
+	_operator_elapsed = 0.0
+	_pose.reset_locomotion()
 	if _is_local():
 		respawned.emit()
 	if _avatar:
@@ -620,7 +700,19 @@ func _process(delta: float) -> void:
 		flash_left = maxf(flash_left - delta, 0.0)
 	if _is_local():
 		_recover_recoil(delta)
-	_update_operator(delta)
+	else:
+		_interpolate_network_pose(delta)
+	_operator_elapsed += delta
+	if _operator_elapsed >= visual_update_interval():
+		_update_operator(_operator_elapsed)
+		_operator_elapsed = 0.0
+
+
+func visual_update_interval() -> float:
+	if _is_local():
+		return 0.0
+	var camera := get_viewport().get_camera_3d()
+	return 1.0 / 60.0 if camera and camera.global_position.distance_squared_to(global_position) < 24.0 * 24.0 else 1.0 / 30.0
 
 
 func _recover_recoil(delta: float) -> void:
@@ -638,6 +730,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	var selection := GameSettings.weapon_selection(event)
 	if selection != "":
 		select_weapon(selection)
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"throw_frag") or event.is_action_pressed(&"throw_flash"):
+		var kind := "frag" if event.is_action_pressed(&"throw_frag") else "flash"
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and grenade_stock(kind) > 0:
+			get_parent().get_node("Grenades").request_throw(self, kind)
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"use_medkit"):
@@ -690,6 +788,7 @@ func _physics_process(delta: float) -> void:
 	if not _is_local():
 		_update_capsule()
 		PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, global_transform)
+		_track_movement_audio(delta, false)
 		return
 	var accepts_input := accepts_gameplay_input()
 	var jump_held := Input.is_action_pressed(&"jump")
@@ -701,6 +800,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			var side := Input.get_axis(&"cover_left", &"cover_right") if accepts_input else 0.0
 			_move_in_cover(signf(side), delta)
+			_track_movement_audio(delta, true)
 			aiming = accepts_input and can_fire_from_cover() and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and GameSettings.aim_pressed()
 			return
 
@@ -715,6 +815,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			velocity.y = 0.0
 		move_and_slide()
+		_track_movement_audio(delta, true)
 		return
 
 	var vertical := velocity.y
@@ -742,6 +843,7 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0.0, speed * 8.0 * delta)
 	velocity.y = vertical
 	move_and_slide()
+	_track_movement_audio(delta, true)
 	if sprinting and wish.y < -0.7 and is_on_floor():
 		_try_attach_cover(direction)
 
@@ -806,6 +908,13 @@ func _leave_cover() -> void:
 	_cover_peek = 0.0
 
 
+func _track_movement_audio(delta: float, simulated: bool) -> void:
+	if control_enabled:
+		_movement_audio.track(delta, simulated, crouched)
+	else:
+		_movement_audio.reset()
+
+
 func _update_crouch(wants_crouch: bool) -> void:
 	if wants_crouch == crouched:
 		return
@@ -858,10 +967,17 @@ func _build_operator() -> void:
 	_vest = _avatar.find_child(OperatorPose.VEST_MESH, true, false) as Node3D
 	_avatar.find_child("Object_111", true, false).hide()
 	if _is_local():
+		for mesh: MeshInstance3D in _avatar.find_children("*", "MeshInstance3D", true, false):
+			mesh.set_layer_mask_value(1, false)
+			mesh.set_layer_mask_value(FIRST_PERSON_BODY_LAYER, true)
 		for mesh_name in ["Object_97", "Object_99", "Object_109"]:
 			var mesh := _avatar.find_child(mesh_name, true, false) as MeshInstance3D
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		eyes.hide()
+
+
+func set_first_person_body_visible(visible_body: bool) -> void:
+	_camera.set_cull_mask_value(FIRST_PERSON_BODY_LAYER, visible_body)
 
 
 func _update_operator(delta: float) -> void:
@@ -878,9 +994,11 @@ func _update_operator(delta: float) -> void:
 	var instant := step / maxf(delta, 0.001)
 	_visual_velocity = _visual_velocity.lerp(instant, minf(1.0, delta * 12.0))
 	_pose.planar_velocity = _visual_velocity
-	_pose.grounded = is_on_floor() if _is_local() or (_server_rules() and is_in_group("bot")) else _net_grounded
-	if control_enabled:
-		_footsteps.advance(step.length(), _visual_velocity.length(), _pose.grounded, crouched or in_cover())
+	var simulates_motion := _is_local() or (is_in_group("bot") and _server_rules())
+	_pose.grounded = is_on_floor() if simulates_motion else _movement_audio.grounded or not control_enabled
+	var animation_vertical := velocity.y if simulates_motion and not _pose.grounded else _visual_vertical
+	_pose.update_locomotion(delta, crouched, animation_vertical)
+	_pose.aim_pitch = clampf(_camera.rotation.x, -0.78, 0.78)
 	_crouch_blend = move_toward(_crouch_blend, float(crouched), delta * 7.5)
 	_update_view_pose()
 
