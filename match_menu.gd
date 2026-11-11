@@ -1,9 +1,13 @@
 extends Control
 
-const INK := Color(0.91, 0.93, 0.89)
-const MUTED := Color(0.65, 0.70, 0.66)
-const ACCENT := Color(0.69, 0.77, 0.51)
-const PANEL := Color(0.071, 0.086, 0.083, 0.98)
+const UI := preload("res://menu_ui.gd")
+const INK := UI.INK
+const MUTED := UI.MUTED
+const ACCENT := UI.ACCENT
+const CONTROL_GROUPS := {
+	"Движение": [&"move_forward", &"move_back", &"move_left", &"move_right", &"sprint", &"crouch", &"jump"],
+	"Бой и действия": [&"fire", &"aim_sights", &"aim_sights_alt", &"reload_weapon", &"interact", &"use_medkit", &"open_armory", &"throw_frag", &"throw_flash", &"throw_grenade", &"cycle_grenade", &"cover_left", &"cover_right"],
+}
 
 @onready var _match := get_parent().get_parent()
 @onready var _hud := get_parent()
@@ -12,10 +16,12 @@ var _panel: VBoxContainer
 var _score_overlay: Control
 var _score_rows: VBoxContainer
 var _settings := false
-var _showing_result := false
+var _settings_from_lobby := false
 var _binding: StringName
 var _binding_buttons: Dictionary
 var _resume_capture := false
+var _restore_lobby := false
+var _lobby_focus: Control
 var _last_rows: Array = []
 
 
@@ -23,12 +29,13 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	z_index = 10
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	theme = _menu_theme()
+	theme = UI.theme()
 	hide()
 	_score_overlay = Control.new()
 	_score_overlay.z_index = 9
 	_score_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_score_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_score_overlay.theme = theme
 	add_sibling.call_deferred(_score_overlay)
 	_score_overlay.hide()
 	_score_rows = _layout(_score_overlay, Vector2(540, 0), false)
@@ -38,13 +45,20 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.physical_keycode == KEY_ESCAPE:
 		get_viewport().set_input_as_handled()
-		if not event.pressed or event.echo or _showing_result:
+		if not event.pressed or event.echo or _match.round_finished() or _match.is_loading():
 			return
+		if _hud.get_node("WeaponSelect").close_armory():
+			MenuFeedback.back()
+			return
+		if visible:
+			MenuFeedback.back()
+		else:
+			MenuFeedback.confirm()
 		if _binding != &"":
 			_binding = &""
 			_refresh_bindings()
 		elif _settings:
-			_show_pause()
+			_back_from_settings()
 		elif visible:
 			close()
 		else:
@@ -61,6 +75,7 @@ func _input(event: InputEvent) -> void:
 		if code != 0:
 			get_viewport().set_input_as_handled()
 			if GameSettings.rebind(_binding, code):
+				MenuFeedback.confirm()
 				_binding = &""
 				_refresh_bindings()
 		return
@@ -68,7 +83,7 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.physical_keycode == KEY_TAB:
 		if not event.pressed:
 			_score_overlay.hide()
-		elif not visible and _match.has_started() and not event.echo:
+		elif _match.has_started() and not _match.input_blocked() and not event.echo:
 			_refresh_score()
 			_score_overlay.show()
 			get_viewport().set_input_as_handled()
@@ -84,6 +99,10 @@ func _process(_delta: float) -> void:
 		_refresh_score()
 
 
+func hide_score() -> void:
+	_score_overlay.hide()
+
+
 func _refresh_score() -> void:
 	var rows: Array = _hud.score_rows()
 	if rows != _last_rows:
@@ -91,42 +110,63 @@ func _refresh_score() -> void:
 
 
 func show_settings() -> void:
+	_settings_from_lobby = not visible and _hud.get_node("Lobby").visible
 	if not visible:
 		_open()
 	_show_settings(0)
 
 
-func show_round_result(winner: String, score: int) -> void:
-	if not visible:
-		_open()
-	_showing_result = true
-	_settings = false
+func show_results(reason: String, rows: Array) -> void:
 	_binding = &""
+	_settings = false
+	_resume_capture = false
+	_score_overlay.hide()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	show()
 	_clear_menu()
-	_panel = _layout(self, Vector2(420, 0), true)
-	_label(_panel, "Раунд завершён", 34)
-	_label(_panel, "Ничья" if winner.is_empty() else "Победитель — %s" % winner, 23, ACCENT)
-	_label(_panel, "Лучший счёт — %d" % score, 16, MUTED)
+	_panel = _layout(self, Vector2(540, 0), true)
+	UI.label(_panel, "Матч завершён", 34, INK, true)
+	_label(_panel, reason, 16, MUTED)
+	var leaders := PackedStringArray()
+	for row in rows:
+		if row[1] != rows[0][1]:
+			break
+		leaders.append(row[0])
+	var outcome := "Победитель — %s" % leaders[0] if leaders.size() == 1 else "Ничья"
+	_label(_panel, outcome, 20, ACCENT)
+
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size.y = minf((rows.size() + 1) * 26.0, 260.0)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_panel.add_child(scroll)
+	var scores := VBoxContainer.new()
+	scores.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(scores)
+	_score_line(scores, "Игрок", "Убийства", "Смерти", MUTED)
+	for row in rows:
+		_score_line(scores, row[0], str(row[1]), str(row[2]), ACCENT if row[0] in leaders else INK)
 	if _match.can_restart():
-		_button(_panel, "Начать новый раунд", _match.restart_round).grab_focus()
+		UI.button(_panel, "Реванш", _match.restart_round, &"PrimaryButton").grab_focus()
 	else:
-		_label(_panel, "Ожидание нового раунда", 15, MUTED)
-	_button(_panel, "Выйти в главное меню", _leave)
-
-
-func clear_round_result() -> void:
-	if _showing_result:
-		_showing_result = false
-		close()
+		_label(_panel, "Ожидание реванша от хоста", 16, MUTED)
+	var leave := UI.button(_panel, "Выйти в главное меню", _leave, &"", true)
+	if not _match.can_restart():
+		leave.grab_focus()
 
 
 func close() -> void:
 	var should_capture := visible and _resume_capture
 	_binding = &""
 	_settings = false
-	_showing_result = false
+	_settings_from_lobby = false
 	_score_overlay.hide()
 	hide()
+	if _restore_lobby and not _match.has_started():
+		var lobby := _hud.get_node("Lobby")
+		lobby.set_modal_open(false)
+		lobby.restore_focus(_lobby_focus)
+	_restore_lobby = false
+	_lobby_focus = null
 	if Net.solo:
 		get_tree().paused = false
 	if should_capture and not _hud.get_node("WeaponSelect").visible:
@@ -134,6 +174,11 @@ func close() -> void:
 
 
 func _open() -> void:
+	var lobby := _hud.get_node("Lobby")
+	_restore_lobby = lobby.visible
+	if _restore_lobby:
+		_lobby_focus = get_viewport().gui_get_focus_owner()
+		lobby.set_modal_open(true)
 	_resume_capture = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_score_overlay.hide()
@@ -151,18 +196,19 @@ func _clear_menu() -> void:
 
 func _show_pause() -> void:
 	_settings = false
+	_settings_from_lobby = false
 	_clear_menu()
 	_panel = _layout(self, Vector2(420, 0), true)
-	_label(_panel, "Меню матча" if _match.has_started() else "Главное меню", 34)
-	_button(_panel, "Продолжить" if _match.has_started() else "Назад", close).grab_focus()
+	UI.label(_panel, "Пауза" if _match.has_started() else "Главное меню", 34, INK, true)
+	UI.button(_panel, "Продолжить" if _match.has_started() else "Назад", close, &"PrimaryButton", true).grab_focus()
+	UI.button(_panel, "Настройки", _show_settings.bind(0))
 	if _match.has_started():
-		var restart := _button(_panel, "Начать раунд заново", _restart)
+		var round_actions := UI.card(_panel, "Раунд")
+		var restart := UI.button(round_actions, "Начать раунд заново", _restart)
 		restart.disabled = not _match.can_restart()
 		if restart.disabled:
-			_label(_panel, "Раунд перезапускает хост", 14, MUTED)
-	_button(_panel, "Настройки", _show_settings.bind(0))
-	if _match.has_started():
-		_button(_panel, "Выйти в главное меню", _leave)
+			_label(round_actions, "Раунд перезапускает хост", 14, MUTED)
+		UI.button(round_actions, "Выйти в главное меню", _leave, &"", true)
 
 
 func _restart() -> void:
@@ -178,32 +224,99 @@ func _leave() -> void:
 func _show_settings(tab: int) -> void:
 	_settings = true
 	_clear_menu()
-	_panel = _layout(self, Vector2(530, 0), true)
-	_label(_panel, "Настройки", 32)
+	_panel = _layout(self, Vector2(806, 0), true)
+	UI.label(_panel, "Настройки", 34, INK, true)
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override(&"separation", 18)
+	_panel.add_child(body)
+	var sidebar := VBoxContainer.new()
+	sidebar.custom_minimum_size.x = 176
+	sidebar.add_theme_constant_override(&"separation", 6)
+	body.add_child(sidebar)
 	var tabs := TabContainer.new()
-	_panel.add_child(tabs)
-	var controls_scroll := ScrollContainer.new()
-	controls_scroll.name = "Управление"
-	controls_scroll.custom_minimum_size.y = 470.0
-	controls_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	tabs.add_child(controls_scroll)
-	var controls := VBoxContainer.new()
-	controls.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	controls.add_theme_constant_override("separation", 5)
-	controls_scroll.add_child(controls)
-	_build_controls(controls)
-	var graphics := VBoxContainer.new()
-	graphics.name = "Графика"
-	graphics.add_theme_constant_override("separation", 10)
-	tabs.add_child(graphics)
-	_build_graphics(graphics)
+	tabs.tabs_visible = false
+	tabs.custom_minimum_size.y = 423
+	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_child(tabs)
+	var group := ButtonGroup.new()
+	var buttons: Array[Button] = []
+	var pages: Array[String] = ["Управление", "Экран", "Графика", "Звук"]
+	var builders: Array[Callable] = [_build_controls, _build_display, _build_graphics, _build_audio]
+	for index in pages.size():
+		var scroll := ScrollContainer.new()
+		scroll.name = pages[index]
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.follow_focus = true
+		tabs.add_child(scroll)
+		var content := VBoxContainer.new()
+		content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		content.add_theme_constant_override(&"separation", 10)
+		scroll.add_child(content)
+		builders[index].call(content)
+		var navigation := UI.button(sidebar, pages[index], func() -> void: tabs.current_tab = index, &"MenuNav")
+		navigation.toggle_mode = true
+		navigation.button_group = group
+		buttons.append(navigation)
 	tabs.current_tab = tab
-	tabs.tab_changed.connect(_cancel_binding)
-	_button(_panel, "Назад", _show_pause)
+	buttons[tab].button_pressed = true
+	buttons[tab].grab_focus()
+	tabs.tab_changed.connect(func(index: int) -> void:
+		_cancel_binding(index)
+		buttons[index].button_pressed = true
+		UI.reveal(tabs.get_tab_control(index), 0.0, 0.38, false)
+	)
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override(&"separation", 12)
+	_panel.add_child(footer)
+	var hint := UI.label(footer, "Изменения сохраняются автоматически", 13, MUTED)
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	UI.button(footer, "Назад", _back_from_settings, &"", true)
+
+
+func _back_from_settings() -> void:
+	if _settings_from_lobby:
+		close()
+	else:
+		_show_pause()
+
+
+func _build_audio(column: VBoxContainer) -> void:
+	var menu := UI.card(column, "Меню")
+	_audio_volume_row(menu, "Музыка", &"menu_music_volume")
+	_audio_volume_row(menu, "Звуки интерфейса", &"menu_effects_volume")
+	var match_audio := UI.card(column, "В матче")
+	_audio_volume_row(match_audio, "Шаги", &"footstep_volume")
+	_audio_volume_row(match_audio, "Выстрелы", &"gunfire_volume")
+	_audio_volume_row(match_audio, "Гранаты и взрывы", &"explosion_volume")
+
+
+func _audio_volume_row(column: VBoxContainer, title: String, setting: StringName) -> void:
+	var volume := HSlider.new()
+	volume.accessibility_name = title
+	volume.max_value = 100.0
+	volume.step = 1.0
+	volume.value = float(GameSettings.get(setting)) * 100.0
+	volume.custom_minimum_size.x = 175
+	var value := Label.new()
+	value.custom_minimum_size.x = 48
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value.text = "%d%%" % volume.value
+	var group := HBoxContainer.new()
+	group.add_child(volume)
+	group.add_child(value)
+	UI.row(column, title, group)
+	MenuFeedback.wire(volume)
+	volume.value_changed.connect(func(amount: float) -> void:
+		value.text = "%d%%" % amount
+		GameSettings.set_audio_volume(setting, amount / 100.0)
+		MenuFeedback.change(amount)
+	)
 
 
 func _build_controls(column: VBoxContainer) -> void:
+	var mouse := UI.card(column, "Мышь")
 	var sensitivity := HSlider.new()
+	sensitivity.accessibility_name = "Чувствительность мыши"
 	sensitivity.min_value = 0.25
 	sensitivity.max_value = 2.5
 	sensitivity.step = 0.05
@@ -214,11 +327,13 @@ func _build_controls(column: VBoxContainer) -> void:
 	var group := HBoxContainer.new()
 	group.add_child(sensitivity)
 	group.add_child(value)
-	_row(column, "Чувствительность мыши", group)
+	UI.row(mouse, "Чувствительность", group)
+	MenuFeedback.wire(sensitivity)
 	sensitivity.value_changed.connect(func(amount: float) -> void:
 		GameSettings.sensitivity = amount
 		value.text = "%.2f" % amount
 		GameSettings.save()
+		MenuFeedback.change(amount)
 	)
 	var invert := CheckButton.new()
 	invert.button_pressed = GameSettings.invert_y
@@ -226,26 +341,74 @@ func _build_controls(column: VBoxContainer) -> void:
 		GameSettings.invert_y = enabled
 		GameSettings.save()
 	)
-	_row(column, "Инвертировать ось Y", invert)
+	UI.row(mouse, "Инвертировать ось Y", invert)
 
-	for action in GameSettings.ACTIONS:
-		var binding := Button.new()
-		binding.custom_minimum_size = Vector2(155, 28)
-		binding.pressed.connect(_capture_binding.bind(action))
-		_binding_buttons[action] = binding
-		_row(column, GameSettings.ACTIONS[action][0], binding)
+	for title: String in CONTROL_GROUPS:
+		var card := UI.card(column, title)
+		for action: StringName in CONTROL_GROUPS[title]:
+			_binding_row(card, action)
+	var weapons := UI.card(column, "Выбор оружия")
+	for action: StringName in GameSettings.WEAPON_KEYS.values():
+		_binding_row(weapons, action)
 	_refresh_bindings()
 	_label(column, "Tab — счёт     Esc — меню", 14, MUTED)
-	_button(column, "Сбросить управление", _reset_controls)
+	UI.button(column, "Сбросить управление", _reset_controls)
+
+
+func _binding_row(parent: Control, action: StringName) -> void:
+	var binding := Button.new()
+	binding.custom_minimum_size = Vector2(172, 34)
+	MenuFeedback.wire(binding)
+	binding.pressed.connect(MenuFeedback.confirm)
+	binding.pressed.connect(_capture_binding.bind(action))
+	_binding_buttons[action] = binding
+	UI.row(parent, GameSettings.ACTIONS[action][0], binding)
+
+
+func _build_display(column: VBoxContainer) -> void:
+	var window := UI.card(column, "Окно")
+	var mode := OptionButton.new()
+	mode.add_item("В окне")
+	mode.add_item("На весь экран")
+	mode.select(int(GameSettings.fullscreen))
+	UI.row(window, "Режим экрана", mode)
+
+	var resolution := OptionButton.new()
+	for size in GameSettings.WINDOW_SIZES:
+		resolution.add_item("%d × %d" % [size.x, size.y])
+	resolution.select(GameSettings.WINDOW_SIZES.find(GameSettings.window_size))
+	resolution.disabled = GameSettings.fullscreen
+	UI.row(window, "Размер окна", resolution)
+	var info := _label(window, "На весь экран используется разрешение рабочего стола.", 14, MUTED)
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	mode.item_selected.connect(func(index: int) -> void:
+		GameSettings.fullscreen = index == 1
+		resolution.disabled = GameSettings.fullscreen
+		GameSettings.apply_display()
+		GameSettings.save()
+	)
+	resolution.item_selected.connect(func(index: int) -> void:
+		GameSettings.window_size = GameSettings.WINDOW_SIZES[index]
+		GameSettings.apply_display()
+		GameSettings.save()
+	)
+	var frames := UI.card(column, "Частота кадров")
+	_graphics_toggle(frames, "Вертикальная синхронизация", &"vsync")
+	var fps := OptionButton.new()
+	for limit in GameSettings.FPS_LIMITS:
+		fps.add_item("%d FPS" % limit if limit > 0 else "Без лимита")
+	fps.select(GameSettings.FPS_LIMITS.find(GameSettings.fps_limit))
+	fps.item_selected.connect(func(index: int) -> void:
+		_update_graphics(&"fps_limit", GameSettings.FPS_LIMITS[index])
+	)
+	UI.row(frames, "Лимит кадров", fps)
 
 
 func _build_graphics(column: VBoxContainer) -> void:
-	_graphics_toggle(column, "Полноэкранный режим", &"fullscreen")
-	_graphics_toggle(column, "Вертикальная синхронизация", &"vsync")
-	_graphics_toggle(column, "Тени", &"shadows")
-	_graphics_toggle(column, "Фоновое затенение (SSAO)", &"ambient_occlusion")
+	var quality := UI.card(column, "Качество изображения")
 	var scale := OptionButton.new()
-	var scales := [0.5, 0.67, 0.8, 1.0]
+	var scales := [0.5, 0.67, 0.75, 0.8, 1.0]
 	for index in scales.size():
 		scale.add_item("%d%%" % roundi(scales[index] * 100.0))
 		if is_equal_approx(GameSettings.render_scale, scales[index]):
@@ -253,7 +416,7 @@ func _build_graphics(column: VBoxContainer) -> void:
 	scale.item_selected.connect(func(index: int) -> void:
 		_update_graphics(&"render_scale", scales[index])
 	)
-	_row(column, "Масштаб рендера", scale)
+	UI.row(quality, "Масштаб рендера", scale)
 	var msaa := OptionButton.new()
 	for name in ["Выкл.", "2× MSAA", "4× MSAA"]:
 		msaa.add_item(name)
@@ -261,7 +424,10 @@ func _build_graphics(column: VBoxContainer) -> void:
 	msaa.item_selected.connect(func(index: int) -> void:
 		_update_graphics(&"antialiasing", index)
 	)
-	_row(column, "Сглаживание", msaa)
+	UI.row(quality, "Сглаживание", msaa)
+	var lighting := UI.card(column, "Освещение")
+	_graphics_toggle(lighting, "Тени", &"shadows")
+	_graphics_toggle(lighting, "Фоновое затенение (SSAO)", &"ambient_occlusion")
 
 
 func _graphics_toggle(parent: VBoxContainer, title: String, option: StringName) -> void:
@@ -270,7 +436,7 @@ func _graphics_toggle(parent: VBoxContainer, title: String, option: StringName) 
 	toggle.toggled.connect(func(enabled: bool) -> void:
 		_update_graphics(option, enabled)
 	)
-	_row(parent, title, toggle)
+	UI.row(parent, title, toggle)
 
 
 func _update_graphics(option: StringName, value: Variant) -> void:
@@ -304,14 +470,14 @@ func _rebuild_score(rows: Array) -> void:
 	for child in _score_rows.get_children().slice(1):
 		_score_rows.remove_child(child)
 		child.queue_free()
-	_score_line("Игрок", "Убийства", "Смерти", MUTED)
+	_score_line(_score_rows, "Игрок", "Убийства", "Смерти", MUTED)
 	for row in rows:
-		_score_line(row[0], str(row[1]), str(row[2]), ACCENT if row[3] else INK)
+		_score_line(_score_rows, row[0], str(row[1]), str(row[2]), ACCENT if row[3] else INK)
 
 
-func _score_line(title: String, kills: String, deaths: String, color: Color) -> void:
+func _score_line(parent: VBoxContainer, title: String, kills: String, deaths: String, color: Color) -> void:
 	var line := HBoxContainer.new()
-	_score_rows.add_child(line)
+	parent.add_child(line)
 	var player := _label(line, title, 17, color)
 	player.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for value in [kills, deaths]:
@@ -332,7 +498,7 @@ func _layout(parent: Control, minimum: Vector2, modal: bool) -> VBoxContainer:
 	parent.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = minimum
-	panel.add_theme_stylebox_override("panel", _style(PANEL, Color(0.28, 0.36, 0.30), 22))
+	panel.add_theme_stylebox_override("panel", UI.panel_style())
 	center.add_child(panel)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 12)
@@ -340,51 +506,10 @@ func _layout(parent: Control, minimum: Vector2, modal: bool) -> VBoxContainer:
 	if not modal:
 		panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	else:
+		UI.reveal(panel)
 	return column
 
 
 func _label(parent: Control, title: String, size: int, color: Color = INK) -> Label:
-	var label := Label.new()
-	label.text = title
-	label.add_theme_font_size_override("font_size", size)
-	label.add_theme_color_override("font_color", color)
-	parent.add_child(label)
-	return label
-
-
-func _row(parent: Control, title: String, input: Control) -> void:
-	var row := HBoxContainer.new()
-	parent.add_child(row)
-	var label := _label(row, title, 16)
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(input)
-
-
-func _button(parent: Control, title: String, action: Callable) -> Button:
-	var button := Button.new()
-	button.text = title
-	button.custom_minimum_size.y = 40
-	button.pressed.connect(action)
-	parent.add_child(button)
-	return button
-
-
-func _menu_theme() -> Theme:
-	var result := Theme.new()
-	result.default_font_size = 16
-	result.set_color("font_color", "Button", INK)
-	result.set_stylebox("normal", "Button", _style(Color(0.115, 0.141, 0.132), Color(0.25, 0.32, 0.27), 5))
-	result.set_stylebox("hover", "Button", _style(Color(0.17, 0.21, 0.17), ACCENT, 5))
-	result.set_stylebox("pressed", "Button", _style(Color(0.20, 0.25, 0.18), ACCENT, 5))
-	return result
-
-
-func _style(color: Color, border: Color, padding: float) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = color
-	box.border_color = border
-	box.set_border_width_all(1)
-	box.set_corner_radius_all(6)
-	for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
-		box.set_content_margin(side, padding)
-	return box
+	return UI.label(parent, title, size, color)

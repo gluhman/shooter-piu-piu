@@ -1,20 +1,26 @@
 extends CanvasLayer
 
-const SCOPE_SHADER := preload("res://scope_overlay.gdshader")
 const INVENTORY_HUD := preload("res://inventory_hud.gd")
+const UI := preload("res://menu_ui.gd")
+const HEALTH_GOOD := Color("#b7d884")
+const HEALTH_WOUNDED := Color("#efc173")
+const HEALTH_CRITICAL := Color("#f1877e")
 
-var _health_back: ColorRect
-var _fill: ColorRect
-var _label: Label
+var _health_panel: PanelContainer
+var _health_bar: ProgressBar
+var _health_fill: StyleBoxFlat
+var _health_value: Label
+var _health_notice: HBoxContainer
+var _medkit_hint: Label
 var _flash: ColorRect
-var _scope: ColorRect
 var _blind: ColorRect
-var _scope_shader: ShaderMaterial
-var _hit_time := 0.0
 var _blind_time := 0.0
+var _blind_duration := 0.0
+var _blind_peak := 0.0
 var _armor_text: Label
 var _death: Label
 var _score: Label
+var _round_clock: Label
 var _net_label: Label
 var _loot_prompt: Label
 var _loot_notice: Label
@@ -39,12 +45,11 @@ func attach_local(player: Node) -> void:
 		return
 	_player = player
 	_last_health = player.health
-	_health_back.show()
-	_fill.show()
-	_label.show()
+	_health_panel.show()
 	_score.show()
 	_player.health_changed.connect(_on_health)
 	_player.respawned.connect(_on_respawn)
+	_player.inventory_changed.connect(_refresh_medkit_hint)
 	_inventory_hud.attach_player(player)
 	_on_health(_player.health, _player.MAX_HEALTH)
 
@@ -73,13 +78,9 @@ func show_loot_notice(text: String) -> void:
 
 
 func _process(delta: float) -> void:
-	if _hit_time > 0.0:
-		_hit_time -= delta
-		if _hit_time <= 0.0:
-			_scope_shader.set_shader_parameter("reticle", Color("#0a0a09"))
 	if _blind_time > 0.0:
 		_blind_time = maxf(0.0, _blind_time - delta)
-		_blind.color.a = minf(1.0, pow(_blind_time / 1.6, 1.65))
+		_blind.color.a = _blind_peak * smoothstep(0.0, _blind_duration * 0.72, _blind_time)
 	_cover_hint.visible = is_instance_valid(_player) and _player.in_cover() and _player.accepts_gameplay_input()
 	if _loot_notice_left > 0.0:
 		_loot_notice_left -= delta
@@ -92,10 +93,17 @@ func _process(delta: float) -> void:
 
 
 func _on_health(current: int, maximum: int) -> void:
-	var ratio := clampf(float(current) / float(maximum), 0.0, 1.0)
-	_fill.offset_right = 8.0 + 220.0 * ratio
-	_fill.color = Color(lerpf(0.85, 0.25, ratio), lerpf(0.18, 0.72, ratio), 0.2)
-	_label.text = "%d HP" % current
+	var capacity := maxi(1, maximum)
+	var remaining := clampi(current, 0, capacity)
+	var ratio := float(remaining) / capacity
+	var tone := HEALTH_CRITICAL if ratio <= 0.25 else HEALTH_WOUNDED if ratio <= 0.5 else HEALTH_GOOD
+	_health_bar.max_value = capacity
+	_health_bar.value = remaining
+	_health_fill.bg_color = tone
+	_health_value.text = "%d / %d" % [remaining, capacity]
+	_health_value.add_theme_color_override(&"font_color", tone if ratio <= 0.5 else UI.INK)
+	_health_notice.visible = remaining > 0 and ratio <= 0.25
+	_refresh_medkit_hint()
 	if is_instance_valid(_player):
 		_armor_text.text = "Броня  %d / %d" % [_player.armor, _player.MAX_ARMOR]
 		_armor_text.visible = current > 0 and _player.armor > 0
@@ -104,24 +112,22 @@ func _on_health(current: int, maximum: int) -> void:
 	_last_health = current
 
 
+func _refresh_medkit_hint() -> void:
+	_medkit_hint.visible = is_instance_valid(_player) and _player.medkits > 0
+	_medkit_hint.text = "%s — аптечка" % GameSettings.binding_label(&"use_medkit")
+
+
 func confirm_projectile_hit(headshot: bool) -> void:
 	if is_instance_valid(_player):
 		_player.get_node("Camera3D/Weapon").confirm_projectile_hit(headshot)
-		_scope_shader.set_shader_parameter("reticle", Color("#ff5e48") if headshot else Color("#ffad76"))
-		_hit_time = 0.15
-
-
-func set_scope(active: bool) -> void:
-	_scope.visible = active
-
-
-func scope_active() -> bool:
-	return _scope.visible
-
-
-func show_flashbang(strength: float) -> void:
-	_blind_time = maxf(_blind_time, strength * 2.75)
-	_blind.color.a = minf(1.0, pow(_blind_time / 1.6, 1.65))
+func show_flashbang(strength: float, duration: float) -> void:
+	var peak := minf(0.97, pow(clampf(strength, 0.0, 1.0), 0.72))
+	if peak < _blind.color.a and duration < _blind_time:
+		return
+	_blind_time = maxf(_blind_time, duration)
+	_blind_duration = _blind_time
+	_blind_peak = maxf(peak, _blind.color.a)
+	_blind.color.a = _blind_peak
 
 
 func on_frag(killer_id: int, victim_id: int) -> void:
@@ -157,16 +163,16 @@ func remove_score(peer: int) -> void:
 	_round_scores.erase(peer)
 
 
-func score_rows() -> Array:
+func score_rows(highlight_local: bool = true) -> Array:
 	var local := Net.local_id()
+	var rows: Array = []
 	var game := get_parent()
-	var local_slot: int = game.player_slots.find(local)
-	var local_name := "%s (вы)" % game.player_label(local_slot) if Net.active and local_slot >= 0 else "Вы"
-	var rows: Array = [_score_row(local, local_name, true)]
 	for slot in game.player_slots.size():
 		var peer: int = game.player_slots[slot]
-		if peer != 0 and peer != local:
-			rows.append(_score_row(peer, game.player_label(slot), false))
+		if peer != 0:
+			var is_local := (highlight_local or Net.solo) and peer == local
+			var title: String = "Вы" if is_local else game.player_label(slot)
+			rows.append(_score_row(peer, title, is_local))
 	var bots := get_tree().get_nodes_in_group("bot")
 	for bot in bots:
 		var title := "Бот" if bots.size() == 1 else "Бот %d" % (1 - bot.combatant_id)
@@ -181,6 +187,11 @@ func _score_row(id: int, title: String, local: bool) -> Array:
 
 func _score_for(id: int) -> Vector2i:
 	return _round_scores.get(id, Vector2i.ZERO)
+
+
+func show_round_clock(seconds: int, enabled: bool) -> void:
+	_round_clock.visible = enabled
+	_round_clock.text = "%02d:%02d" % [floori(seconds / 60.0), seconds % 60]
 
 
 func refresh_score() -> void:
@@ -207,14 +218,11 @@ func _refresh_score() -> void:
 
 
 func _update_hint() -> void:
-	_cover_hint.text = "%s / %s — вдоль стены и выглянуть    %s / %s — выйти из укрытия" % [
-		GameSettings.binding_label(&"cover_left"), GameSettings.binding_label(&"cover_right"),
-		GameSettings.binding_label(&"move_back"), GameSettings.binding_label(&"jump"),
-	]
-	$Hint.text = "%s — выстрел    %s — прицел    %s — присесть    %s — перезарядка    %s — подбор    Tab — счёт    Esc — меню" % [
+	$Hint.text = "%s — атака    %s — прицел    %s — присесть    %s — перезарядка    %s — подбор    Tab — счёт    Esc — меню" % [
 		GameSettings.binding_label(&"fire"), GameSettings.binding_label(&"aim_sights"),
 		GameSettings.binding_label(&"crouch"), GameSettings.binding_label(&"reload_weapon"), GameSettings.binding_label(&"interact"),
 	]
+	_refresh_medkit_hint()
 
 
 func _on_respawn() -> void:
@@ -224,22 +232,12 @@ func _on_respawn() -> void:
 
 
 func _build() -> void:
-	_scope = ColorRect.new()
-	_scope.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_scope.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_scope_shader = ShaderMaterial.new()
-	_scope_shader.shader = SCOPE_SHADER
-	_scope.material = _scope_shader
-	_scope.hide()
-	add_child(_scope)
-	move_child(_scope, 0)
-
 	_blind = ColorRect.new()
 	_blind.color = Color(1.0, 0.985, 0.945, 0.0)
 	_blind.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_blind.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_blind)
-	move_child(_blind, 1)
+	_blind.z_index = 8
 
 	_flash = ColorRect.new()
 	_flash.color = Color(0.7, 0.05, 0.04, 0.0)
@@ -247,36 +245,7 @@ func _build() -> void:
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_flash)
 
-	_health_back = ColorRect.new()
-	_health_back.color = Color(0.05, 0.05, 0.05, 0.85)
-	_health_back.offset_left = 24.0
-	_health_back.offset_top = 24.0
-	_health_back.offset_right = 260.0
-	_health_back.offset_bottom = 48.0
-	_health_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_health_back.hide()
-	add_child(_health_back)
-
-	_fill = ColorRect.new()
-	_fill.color = Color(0.25, 0.72, 0.2)
-	_fill.offset_left = 28.0
-	_fill.offset_top = 28.0
-	_fill.offset_right = 228.0
-	_fill.offset_bottom = 44.0
-	_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_fill.hide()
-	add_child(_fill)
-
-	_label = Label.new()
-	_label.offset_left = 28.0
-	_label.offset_top = 50.0
-	_label.offset_right = 260.0
-	_label.offset_bottom = 74.0
-	_label.add_theme_font_size_override("font_size", 16)
-	_label.add_theme_color_override("font_color", Color(0.95, 0.94, 0.9))
-	_label.text = "100 HP"
-	_label.hide()
-	add_child(_label)
+	_build_health_panel()
 
 	_armor_text = Label.new()
 	_armor_text.position = Vector2(28, 74)
@@ -301,6 +270,19 @@ func _build() -> void:
 	_score.text = "Убийства   0        Смерти   0"
 	_score.hide()
 	add_child(_score)
+
+	_round_clock = Label.new()
+	_round_clock.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_round_clock.offset_left = -80.0
+	_round_clock.offset_right = 80.0
+	_round_clock.offset_top = 50.0
+	_round_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_round_clock.add_theme_font_size_override("font_size", 18)
+	_round_clock.add_theme_color_override("font_outline_color", Color.BLACK)
+	_round_clock.add_theme_constant_override("outline_size", 5)
+	_round_clock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_round_clock.hide()
+	add_child(_round_clock)
 
 	_net_label = Label.new()
 	_net_label.visible = false
@@ -338,6 +320,50 @@ func _build() -> void:
 	_cover_hint.offset_bottom = -120.0
 	_inventory_hud = INVENTORY_HUD.new()
 	add_child(_inventory_hud)
+
+
+func _build_health_panel() -> void:
+	_health_panel = PanelContainer.new()
+	_health_panel.position = Vector2(24, 24)
+	_health_panel.custom_minimum_size.x = 232
+	_health_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_health_panel.add_theme_stylebox_override(&"panel", UI.style(Color(0.05, 0.07, 0.06, 0.94), UI.LINE, 12, 10))
+	_health_panel.hide()
+	add_child(_health_panel)
+
+	var content := VBoxContainer.new()
+	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_theme_constant_override(&"separation", 7)
+	_health_panel.add_child(content)
+	var header := HBoxContainer.new()
+	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(header)
+	var title := UI.label(header, "Здоровье", 15, UI.MUTED)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_health_value = UI.label(header, "", 21, UI.INK, true)
+	_health_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+	_health_bar = ProgressBar.new()
+	_health_bar.accessibility_name = "Здоровье"
+	_health_bar.custom_minimum_size.y = 10
+	_health_bar.show_percentage = false
+	_health_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var track := UI.style(Color("#34403a"), Color.TRANSPARENT, 0, 0, 3)
+	track.set_border_width_all(0)
+	_health_bar.add_theme_stylebox_override(&"background", track)
+	_health_fill = track.duplicate()
+	_health_fill.bg_color = HEALTH_GOOD
+	_health_bar.add_theme_stylebox_override(&"fill", _health_fill)
+	content.add_child(_health_bar)
+
+	_health_notice = HBoxContainer.new()
+	_health_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.add_child(_health_notice)
+	var warning := UI.label(_health_notice, "Мало здоровья", 13, HEALTH_CRITICAL, true)
+	warning.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_medkit_hint = UI.label(_health_notice, "", 13, UI.INK)
+	_health_notice.hide()
+	_health_panel.minimum_size_changed.connect(_health_panel.reset_size)
 
 
 func _build_loot_label(offset: float, color: Color) -> Label:

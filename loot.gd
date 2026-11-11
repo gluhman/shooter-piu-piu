@@ -9,6 +9,7 @@ const OPERATOR := preload("res://operator_pose.gd")
 const WEAPON := preload("res://weapon.gd")
 const LIFETIME := 60.0
 const REACH := 2.3
+const AUTO_REACH := 1.35
 const CRATE_SCALE := 1.65
 
 var _crates: Array[StaticBody3D] = []
@@ -20,6 +21,7 @@ var _requests: Dictionary[int, Vector2i] = {}
 var _next_id := 1
 var _clock := 0.0
 var _prompt_wait := 0.0
+var _auto_pickup_wait := 0.0
 var _hover := Vector2i(-1, -1)
 
 @onready var _match := get_parent()
@@ -29,6 +31,7 @@ var _hover := Vector2i(-1, -1)
 func build_crates(placements: Array[Transform3D]) -> void:
 	for placement in placements:
 		var crate := StaticBody3D.new()
+		crate.set_collision_layer_value(2, true)
 		crate.name = "SupplyCrate%d" % _crates.size()
 		crate.transform = placement
 		crate.set_meta(&"impact_surface", "wood")
@@ -48,6 +51,17 @@ func build_crates(placements: Array[Transform3D]) -> void:
 		_crates.append(crate)
 		_lids.append(lid)
 		_open.append(false)
+
+
+func warm_rendering() -> Node3D:
+	var props := Node3D.new()
+	props.hide()
+	add_child(props)
+	_build_ammo(props)
+	_build_medkit(props)
+	for kind in ARSENAL.GRENADE_IDS + ["armor"]:
+		props.add_child(ARSENAL.make_model(kind))
+	return props
 
 
 func reset_round() -> void:
@@ -137,14 +151,14 @@ func seek_bot_loot(actor: Node) -> Vector3:
 	if closest < 0:
 		return Vector3.INF
 	var target: Vector3 = _drops[closest].position
-	if best_distance <= REACH * REACH:
-		_claim(actor, Vector2i(_drops[closest].kind, closest))
+	if _drops[closest].kind == Kind.WEAPON and best_distance <= REACH * REACH:
+		_claim(actor, Vector2i(Kind.WEAPON, closest))
 		return Vector3.INF
 	return target
 
 
 func _physics_process(delta: float) -> void:
-	if not _match.has_started():
+	if not _match.has_started() or _match.round_finished():
 		return
 	if not Net.active or multiplayer.is_server():
 		_clock += delta
@@ -156,10 +170,34 @@ func _physics_process(delta: float) -> void:
 			if actor and actor.control_enabled:
 				_claim(actor, _requests[peer])
 		_requests.clear()
+		_auto_pickup_wait -= delta
+		if _auto_pickup_wait <= 0.0:
+			_auto_pickup_wait = 0.08
+			_pick_up_nearby()
 	_prompt_wait -= delta
 	if _prompt_wait <= 0.0:
 		_prompt_wait = 0.08
 		_update_prompt()
+
+
+func _pick_up_nearby() -> void:
+	var actors := get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot")
+	for id in _drops.keys():
+		var drop := _drops[id]
+		if drop.kind not in [Kind.AMMO, Kind.MEDKIT, Kind.GRENADE, Kind.ARMOR]:
+			continue
+		var at: Vector3 = drop.position + Vector3.UP * 0.18
+		var closest: Node
+		var best := AUTO_REACH * AUTO_REACH
+		for actor in actors:
+			if not actor.control_enabled or actor.health <= 0:
+				continue
+			var distance: float = actor.global_position.distance_squared_to(at)
+			if distance < best and _can_take(actor, drop) and _line_clear(actor, at):
+				best = distance
+				closest = actor
+		if closest:
+			_collect_drop(closest, id, drop)
 
 
 func _update_prompt() -> void:
@@ -179,7 +217,7 @@ func _update_prompt() -> void:
 				prompt = "открыть ящик"
 		for id in _drops:
 			var drop := _drops[id]
-			if not _can_take(actor, drop):
+			if drop.kind != Kind.WEAPON or not _can_take(actor, drop):
 				continue
 			var score := _target_score(actor, drop.position + Vector3.UP * 0.18)
 			if score < best:
@@ -227,9 +265,31 @@ func _claim(actor: Node, target: Vector2i) -> void:
 	if drop.is_empty() or drop.kind != target.x or not _can_take(actor, drop):
 		return
 	if _reachable(actor, drop.position + Vector3.UP * 0.18):
-		_give(actor, drop)
-		_hud_pickup(actor, drop)
-		_remove_drop(target.y)
+		_collect_drop(actor, target.y, drop)
+
+
+func _collect_drop(actor: Node, id: int, drop: Dictionary) -> void:
+	var amount: int = drop.amount
+	if drop.kind == Kind.AMMO:
+		amount = mini(amount, actor.ammo_space(drop.weapon))
+	elif drop.kind == Kind.MEDKIT and actor.is_in_group("bot"):
+		amount = 1
+	var reward := {"kind": drop.kind, "weapon": drop.weapon, "amount": amount}
+	_give(actor, reward)
+	_hud_pickup(actor, reward)
+	if amount < int(drop.amount):
+		var remaining := int(drop.amount) - amount
+		net_drop_amount(id, remaining)
+		for peer in _match.match_peers():
+			net_drop_amount.rpc_id(peer, id, remaining)
+	else:
+		_remove_drop(id)
+
+
+@rpc("authority", "reliable")
+func net_drop_amount(id: int, amount: int) -> void:
+	if _drops.has(id):
+		_drops[id].amount = amount
 
 
 func _open_crate(actor: Node, index: int, at: Vector3) -> void:
@@ -237,7 +297,7 @@ func _open_crate(actor: Node, index: int, at: Vector3) -> void:
 	for peer in _match.match_peers():
 		net_open_crate.rpc_id(peer, index, true)
 	var kind: int = [Kind.WEAPON, Kind.AMMO, Kind.MEDKIT, Kind.ARMOR, Kind.GRENADE].pick_random()
-	var weapon: String = actor.weapon_id
+	var weapon: String = actor.ammo_reward_weapon()
 	if kind == Kind.WEAPON:
 		var unowned: Array[String] = []
 		for id in GameSettings.WEAPON_KEYS:
@@ -253,8 +313,12 @@ func _open_crate(actor: Node, index: int, at: Vector3) -> void:
 		amount = int(WEAPON.WEAPONS[weapon].mag) * 2
 	var reward := {"kind": kind, "weapon": weapon, "amount": amount}
 	if _can_take(actor, reward):
+		if kind == Kind.AMMO:
+			reward.amount = mini(amount, actor.ammo_space(weapon))
 		_give(actor, reward)
 		_hud_pickup(actor, reward)
+		if int(reward.amount) < amount:
+			_add_drop(kind, weapon, amount - int(reward.amount), at, _crates[index].rotation.y, true)
 	else:
 		_add_drop(kind, weapon, amount, at, _crates[index].rotation.y, true)
 

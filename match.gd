@@ -1,35 +1,47 @@
 extends Node3D
 
-const PLAYER_SCENE := preload("res://player.tscn")
-const BOT_SCRIPT := preload("res://bot.gd")
 const MAX_BOTS := 10
-const MAP_NAMES := preload("res://map_builder.gd").MAP_NAMES
-const WEAPON_SET_NAMES := ["Любое", "Только дробовики", "Пистолеты, винтовки и пулемёты"]
+const PLAYER_SCENE := preload("res://player.tscn")
+const CLASSIC_WEAPONS := preload("res://classic_weapons.gd")
+const WEAPON_SCRIPT := preload("res://weapon.gd")
+const BOT_SCRIPT := preload("res://bot.gd")
+const MAP := preload("res://map_builder.gd")
+const MAP_NAMES := MAP.MAP_NAMES
+const WEAPON_SET_NAMES := ["Любое", "Только дробовики", "Всё, кроме дробовика"]
+const TIME_LIMITS := [0, 60, 180, 300, 600, 900, 1200, 1800, 3600]
+const KILL_LIMITS := [0, 1, 5, 10, 15, 20, 30, 50, 100]
 const POSE_INTERVAL := 1.0 / 30.0
+const ARENA_HOURS := [13.0, 9.5, 16.0, 15.5]
+const MIN_RESPAWN_DISTANCE := 12.0
 const DIFFICULTY_NAMES := ["Легко", "Обычно", "Сложно"]
 const WEAPON_SETS := [
-	["deagle", "shotgun", "ak47", "launcher", "m249", "m14", "m1"],
+	["deagle", "shotgun", "ak47", "m1911", "mac10", "mp5", "m700", "tec9", "lever", "m14", "launcher", "m249", "m1"],
 	["shotgun"],
-	["deagle", "ak47", "m249", "m14", "m1"],
+	["deagle", "ak47", "m1911", "mac10", "mp5", "m700", "tec9", "lever", "m14", "launcher", "m249", "m1"],
 ]
 
 var map_id := 0
 var weapon_set := 0
-var round_limits := Vector2i.ZERO
-var lan_bot_count := 1
+var bot_difficulty := 1
+var time_option := 4
+var kill_option := 5
+var _round_left := 0.0
+var _display_seconds := -1
+var _finish_reason := ""
+var _final_rows: Array = []
 var _layout_seed := 0
 var player_slots := PackedInt32Array()
 var _display_names: Dictionary[int, String] = {}
+var lan_bot_count := 1
 
 var _reloading := false
 var _started := false
+var _loading := false
+var _waiting_for_host := false
+var _navigation_pending := false
 var _ready_peers: Array[int] = []
 var _pose_time := 0.0
-var _round_time := 0.0
-var _clock_seconds := -1
-var _round_finished := false
-var _winner := ""
-var _winning_score := 0
+var _cloud_time := 0.0
 
 
 func _ready() -> void:
@@ -45,7 +57,8 @@ func _ready() -> void:
 
 
 func _apply_graphics() -> void:
-	$Sun.shadow_enabled = GameSettings.shadows
+	$WorldEnvironment/SunLight.shadow_enabled = GameSettings.shadows
+	$WorldEnvironment/MoonLight.shadow_enabled = false
 	$WorldEnvironment.environment.ssao_enabled = GameSettings.ambient_occlusion
 
 
@@ -101,16 +114,20 @@ func net_display_names(names: Dictionary[int, String]) -> void:
 		player.set_name_label(player_label(player.slot))
 
 
+func is_loading() -> bool:
+	return _loading or _waiting_for_host
+
+
 func has_started() -> bool:
 	return _started
 
 
-func round_finished() -> bool:
-	return _round_finished
-
-
 func input_blocked() -> bool:
-	return _round_finished or $HUD/MatchMenu.visible
+	return is_loading() or round_finished() or $HUD/MatchMenu.visible or $HUD/WeaponSelect.armory_open()
+
+
+func round_finished() -> bool:
+	return not _finish_reason.is_empty()
 
 
 func allows_weapon(id: String) -> bool:
@@ -126,6 +143,51 @@ func random_weapon(exclude: String = "") -> String:
 
 func combatant(id: int) -> Node:
 	return get_node_or_null("Bot%d" % -id if id <= 0 else str(id))
+
+
+func arena_width() -> float:
+	return MAP.playable_width(map_id)
+
+
+func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
+	var enemies: Array[Node3D] = []
+	for group in [&"player", &"bot"]:
+		for fighter in get_tree().get_nodes_in_group(group):
+			if fighter != actor and fighter.health > 0:
+				enemies.append(fighter)
+	var space := get_world_3d().direct_space_state
+	var ray := PhysicsRayQueryParameters3D.new()
+	ray.collision_mask = 2
+	var best := previous
+	var best_score := -INF
+	var visibility_radius := maxf(64.0, arena_width() * 0.65)
+	var distance_limit := visibility_radius + 8.0
+	for point: Vector3 in $Map.respawn_points:
+		var nearest := distance_limit
+		for enemy in enemies:
+			nearest = minf(nearest, enemy.global_position.distance_to(point))
+		var score := nearest
+		if nearest < MIN_RESPAWN_DISTANCE:
+			score -= 1000.0
+		if point.distance_squared_to(previous) < 0.1:
+			score -= 6.0
+		if score <= best_score:
+			continue
+		if nearest >= MIN_RESPAWN_DISTANCE:
+			ray.to = point + Vector3.UP * 1.4
+			for enemy in enemies:
+				var distance := enemy.global_position.distance_to(point)
+				if distance > visibility_radius:
+					continue
+				ray.from = enemy.aim_center()
+				if space.intersect_ray(ray).is_empty():
+					score -= 25.0 * (1.0 - distance / distance_limit)
+				if score <= best_score:
+					break
+		if score > best_score:
+			best_score = score
+			best = point
+	return best
 
 
 func can_restart() -> bool:
@@ -156,8 +218,12 @@ func _reload_main_menu() -> void:
 
 @rpc("authority", "reliable")
 func net_restart() -> void:
-	$HUD/MatchMenu.clear_round_result()
-	_reset_round_clock()
+	$HUD/WeaponSelect.close_armory()
+	var finished := round_finished()
+	_finish_reason = ""
+	_final_rows.clear()
+	if finished:
+		$HUD/MatchMenu.close()
 	$Ballistics.reset_round()
 	$Grenades.reset_round()
 	$Map.clear_bullet_holes()
@@ -167,6 +233,10 @@ func net_restart() -> void:
 		player.restart_round()
 	for bot in get_tree().get_nodes_in_group("bot"):
 		bot.restart_round()
+	_reset_clock()
+	var local := combatant(Net.local_id())
+	if finished and local and local.control_enabled:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 @rpc("authority", "reliable")
@@ -174,38 +244,46 @@ func net_score_snapshot(scores: Dictionary) -> void:
 	$HUD.apply_score_snapshot(scores)
 
 
-func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limits: Vector2i = Vector2i.ZERO) -> void:
-	if _started or Net.active:
+func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limits: Vector2i) -> void:
+	if _started or _loading or Net.active:
 		return
+	_show_loading()
 	Net.play_solo()
+	_set_limits(limits)
 	weapon_set = weapons
 	map_id = arena
-	round_limits = limits
-	_reset_round_clock()
-	$Loot.build_crates($Map.build(map_id, randi()))
-	_spawn_bots(clampi(bot_count, 1, MAX_BOTS), difficulty)
+	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
+	await _load_arena(randi(), clampi(bot_count, 1, MAX_BOTS), bot_difficulty)
 	_started = true
 	_spawn_player(1, 0)
+	await _finish_loading()
 
 
-func update_host_rules(weapons: int, arena: int, limits: Vector2i, bot_count: int) -> void:
-	if _started or not Net.active or not multiplayer.is_server():
+func update_host_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int = 1) -> void:
+	if _started or _loading or not Net.active or not multiplayer.is_server():
 		return
 	weapon_set = weapons
 	map_id = arena
-	round_limits = limits
+	_set_limits(limits)
+	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	lan_bot_count = clampi(bot_count, 0, MAX_BOTS)
 	_send_room_state()
 
 
 func start_host_match() -> void:
-	if _started or not Net.active or not multiplayer.is_server():
+	if _started or _loading or not Net.active or not multiplayer.is_server():
 		return
-	_layout_seed = randi()
-	_begin_network_match(weapon_set, map_id, player_slots, _layout_seed, round_limits, lan_bot_count)
+	_show_loading()
 	for peer in player_slots:
 		if peer > 1:
-			_send_match_start(peer)
+			net_wait_for_arena.rpc_id(peer)
+	_layout_seed = randi()
+	await _begin_network_match(weapon_set, map_id, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count)
+	if _reloading or not Net.active:
+		return
+	for peer in player_slots:
+		if peer > 1:
+			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count)
 	if player_slots.count(0) == Net.MAX_PLAYERS - 1:
 		$HUD.show_host_ip(Net.lan_addresses())
 
@@ -214,49 +292,192 @@ func _send_room_state() -> void:
 	$HUD/Lobby.refresh_room()
 	for peer in player_slots:
 		if peer > 1:
-			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, round_limits, lan_bot_count, _display_names)
+			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _display_names)
 
 
 @rpc("authority", "reliable")
-func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: Vector2i, bot_count: int,
-		names: Dictionary[int, String]) -> void:
-	if _started:
+func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: Vector2i,
+		difficulty: int, bot_count: int, names: Dictionary[int, String]) -> void:
+	if _started or _loading:
 		return
 	weapon_set = weapons
 	map_id = arena
-	round_limits = limits
-	lan_bot_count = bot_count
 	player_slots = roster
+	_set_limits(limits)
+	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
+	lan_bot_count = bot_count
 	_display_names = names
 	$HUD/Lobby.refresh_room()
 
 
-func _send_match_start(peer: int) -> void:
-	net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, round_limits, lan_bot_count)
+@rpc("authority", "reliable")
+func net_wait_for_arena() -> void:
+	if _started or _loading:
+		return
+	_waiting_for_host = true
+	$HUD/MatchMenu.close()
+	$HUD/Lobby.show_loading()
+	$HUD/Lobby.set_loading_stage("Хост готовит арену…")
 
 
 @rpc("authority", "reliable")
-func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int,
-		limits: Vector2i, bot_count: int) -> void:
-	if not _started:
-		_begin_network_match(weapons, arena, roster, layout_seed, limits, bot_count)
+func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int, limits: Vector2i, difficulty: int, bot_count: int) -> void:
+	if _started or _loading:
+		return
+	player_slots = roster
+	_show_loading()
+	await _begin_network_match(weapons, arena, layout_seed, limits, difficulty, bot_count)
+	if not _reloading and Net.active:
 		net_ready.rpc_id(1)
 
 
-func _begin_network_match(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int,
-		limits: Vector2i, bot_count: int) -> void:
+func _begin_network_match(weapons: int, arena: int, layout_seed: int, limits: Vector2i, difficulty: int, bot_count: int) -> void:
 	weapon_set = weapons
 	map_id = arena
-	player_slots = roster
-	round_limits = limits
+	_set_limits(limits)
+	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	lan_bot_count = bot_count
-	_reset_round_clock()
-	$Loot.build_crates($Map.build(map_id, layout_seed))
-	_spawn_bots(lan_bot_count, 1)
+	await _load_arena(layout_seed, bot_count, bot_difficulty)
+	if _reloading or not Net.active:
+		return
 	_started = true
 	for slot in player_slots.size():
 		if player_slots[slot] != 0:
 			_spawn_player(player_slots[slot], slot)
+	await _finish_loading()
+
+
+func _show_loading() -> void:
+	_waiting_for_host = false
+	_loading = true
+	$HUD/MatchMenu.close()
+	$HUD/Lobby.show()
+	$HUD/Lobby.show_loading()
+
+
+func _loading_stage(message: String) -> void:
+	$HUD/Lobby.set_loading_stage(message)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+
+func _load_arena(layout_seed: int, bot_count: int, difficulty: int) -> void:
+	await _loading_stage("Подгружаем текстуры…")
+	await $Map.preload_textures()
+	await _loading_stage("Собираем карту…")
+	_build_arena(layout_seed)
+	await _loading_stage("Подгружаем оружие и звуки…")
+	$Ballistics.prepare_acoustics()
+	await CLASSIC_WEAPONS.prepare(get_tree(), WEAPON_SETS[weapon_set])
+	await _loading_stage("Готовим бойцов…")
+	await _spawn_bots(bot_count, difficulty)
+	while _navigation_pending and not _reloading:
+		await get_tree().process_frame
+
+
+func _finish_loading() -> void:
+	var warmup := WEAPON_SCRIPT.render_warmup(WEAPON_SETS[weapon_set])
+	add_child(warmup)
+	var props: Node3D = $Loot.warm_rendering()
+	await _loading_stage("Готовим первый кадр…")
+	if DisplayServer.get_name() != "headless":
+		await $Ballistics.warm_effects()
+	warmup.queue_free()
+	props.queue_free()
+	if _reloading:
+		return
+	_loading = false
+	_reset_clock()
+	$HUD/Lobby.hide_lobby()
+	$HUD/WeaponSelect.show_select()
+
+
+func _build_arena(layout_seed: int) -> void:
+	$WorldEnvironment.current_time = ARENA_HOURS[map_id]
+	_apply_graphics()
+	$Loot.build_crates($Map.build(map_id, layout_seed))
+	if not Net.active or multiplayer.is_server():
+		var mesh := NavigationMesh.new()
+		mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+		var village := map_id == MAP.VILLAGE_ID
+		mesh.cell_size = 0.25 if village else 0.20
+		mesh.cell_height = 0.1
+		mesh.agent_radius = 0.50 if village else 0.40
+		mesh.agent_height = 1.8
+		mesh.agent_max_climb = 0.1
+		mesh.filter_walkable_low_height_spans = true
+		var width := arena_width()
+		mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -0.5, -width * 0.5), Vector3(width, 2.8, width))
+		var geometry := NavigationMeshSourceGeometryData3D.new()
+		NavigationServer3D.parse_source_geometry_data(mesh, geometry, self)
+		_navigation_pending = true
+		NavigationServer3D.bake_from_source_geometry_data_async(mesh, geometry, _on_navigation_baked.bind(mesh))
+
+
+func _on_navigation_baked(mesh: NavigationMesh) -> void:
+	_install_navigation.call_deferred(mesh)
+
+
+func _install_navigation(mesh: NavigationMesh) -> void:
+	if not is_inside_tree() or _reloading:
+		return
+	var region := NavigationRegion3D.new()
+	region.navigation_mesh = mesh
+	add_child(region)
+	_navigation_pending = false
+
+
+func _set_limits(limits: Vector2i) -> void:
+	time_option = clampi(limits.x, 0, TIME_LIMITS.size() - 1)
+	kill_option = clampi(limits.y, 0, KILL_LIMITS.size() - 1)
+
+
+func _reset_clock() -> void:
+	_round_left = TIME_LIMITS[time_option]
+	net_clock(ceili(_round_left))
+
+
+func _tick_round(delta: float) -> void:
+	if TIME_LIMITS[time_option] == 0:
+		return
+	_round_left = maxf(0.0, _round_left - delta)
+	var seconds := ceili(_round_left)
+	if seconds != _display_seconds:
+		net_clock(seconds)
+		for peer in _ready_peers:
+			net_clock.rpc_id(peer, seconds)
+	if _round_left == 0.0:
+		_finish_round("Время вышло")
+
+
+@rpc("authority", "reliable")
+func net_clock(seconds: int) -> void:
+	_display_seconds = seconds
+	var limit: int = TIME_LIMITS[time_option]
+	$HUD.show_round_clock(seconds, limit > 0)
+	$HUD.show_round_limits(-1, KILL_LIMITS[kill_option])
+	if limit > 0:
+		var elapsed := clampi(limit - seconds, 0, limit)
+		var sky_hour := float(ARENA_HOURS[map_id]) + float(elapsed - elapsed % 15) / 1500.0
+		if not is_equal_approx($WorldEnvironment.current_time, sky_hour):
+			$WorldEnvironment.current_time = sky_hour
+			_apply_graphics()
+
+
+func _finish_round(reason: String) -> void:
+	var rows: Array = $HUD.score_rows(false)
+	rows.sort_custom(func(a: Array, b: Array) -> bool: return a[1] > b[1])
+	net_finish(reason, rows)
+	for peer in _ready_peers:
+		net_finish.rpc_id(peer, reason, rows)
+
+
+@rpc("authority", "reliable")
+func net_finish(reason: String, rows: Array) -> void:
+	_finish_reason = reason
+	_final_rows = rows
+	$HUD/WeaponSelect.close_armory()
+	$HUD/MatchMenu.show_results(reason, rows)
 
 
 func _spawn_bots(count: int, difficulty: int) -> void:
@@ -265,7 +486,7 @@ func _spawn_bots(count: int, difficulty: int) -> void:
 		bot.set_script(BOT_SCRIPT)
 		bot.name = "Bot%d" % index
 		bot.combatant_id = -index
-		bot.position = $Map.BOT_SPAWNS[index]
+		bot.position = $Map.initial_spawn(Net.MAX_PLAYERS + index)
 		bot.spawn_position = bot.position
 		bot.patrol_route = $Map.PATROL_ROUTES[map_id]
 		bot.difficulty = difficulty
@@ -273,18 +494,17 @@ func _spawn_bots(count: int, difficulty: int) -> void:
 		add_child(bot)
 		if not Net.active or multiplayer.is_server():
 			bot.equip(random_weapon())
+		if index % 2 == 1 and index + 1 < count:
+			await get_tree().process_frame
 
 
 func announce(killer_id: int, victim_id: int) -> void:
-	if _round_finished:
-		return
 	for peer in _ready_peers:
 		net_frag.rpc_id(peer, killer_id, victim_id)
 	net_frag(killer_id, victim_id)
-	if round_limits.y > 0 and killer_id != victim_id and $HUD.kills_for(killer_id) >= round_limits.y:
-		var winner := combatant(killer_id)
-		if winner:
-			_finish_round(_combatant_label(winner), $HUD.kills_for(killer_id))
+	var limit: int = KILL_LIMITS[kill_option]
+	if killer_id != victim_id and limit > 0 and $HUD.kills_for(killer_id) >= limit:
+		_finish_round("Достигнут лимит убийств")
 
 
 @rpc("authority", "reliable")
@@ -292,101 +512,35 @@ func net_frag(killer_id: int, victim_id: int) -> void:
 	$HUD.on_frag(killer_id, victim_id)
 
 
-func _reset_round_clock() -> void:
-	_round_finished = false
-	_winner = ""
-	_winning_score = 0
-	_round_time = float(round_limits.x * 60)
-	net_round_clock(ceili(_round_time) if round_limits.x > 0 else -1)
-
-
-func _tick_round_clock(delta: float) -> void:
-	if round_limits.x == 0:
-		return
-	_round_time = maxf(0.0, _round_time - delta)
-	var seconds := ceili(_round_time)
-	if seconds != _clock_seconds:
-		for peer in _ready_peers:
-			net_round_clock.rpc_id(peer, seconds)
-		net_round_clock(seconds)
-	if _round_time == 0.0:
-		_finish_timed_round()
-
-
-@rpc("authority", "reliable")
-func net_round_clock(seconds: int) -> void:
-	_clock_seconds = seconds
-	$HUD.show_round_limits(seconds, round_limits.y)
-
-
-func _combatants() -> Array[Node]:
-	var actors := get_tree().get_nodes_in_group("player")
-	actors.append_array(get_tree().get_nodes_in_group("bot"))
-	return actors
-
-
-func _combatant_label(actor: Node) -> String:
-	if actor.is_in_group("bot"):
-		return "Бот" if get_tree().get_node_count_in_group("bot") == 1 else "Бот %d" % (1 - actor.combatant_id)
-	return "Вы" if Net.solo else player_label(actor.slot)
-
-
-func _finish_timed_round() -> void:
-	var best := -1
-	var winner := ""
-	for actor in _combatants():
-		var kills: int = $HUD.kills_for(actor.score_id())
-		if kills > best:
-			best = kills
-			winner = _combatant_label(actor)
-		elif kills == best:
-			winner = ""
-	_finish_round(winner, maxi(0, best))
-
-
-func _finish_round(winner: String, score: int) -> void:
-	for peer in _ready_peers:
-		net_round_finished.rpc_id(peer, winner, score)
-	net_round_finished(winner, score)
-
-
-@rpc("authority", "reliable")
-func net_round_finished(winner: String, score: int) -> void:
-	_round_finished = true
-	_winner = winner
-	_winning_score = score
-	for actor in _combatants():
-		actor.control_enabled = false
-		actor.aiming = false
-		actor.velocity = Vector3.ZERO
-	$HUD.show_loot_prompt("")
-	$HUD/MatchMenu.show_round_result(winner, score)
-
-
 func _spawn_player(peer_id: int, slot: int) -> void:
 	var player := PLAYER_SCENE.instantiate()
 	player.name = str(peer_id)
-	player.set_multiplayer_authority(peer_id, true)
 	player.slot = slot
-	player.spawn_position = $Map.PLAYER_SPAWNS[slot]
+	player.set_multiplayer_authority(peer_id, true)
+	player.spawn_position = $Map.initial_spawn(slot)
 	player.position = player.spawn_position
 	add_child(player)
 	if not Net.active or player.is_multiplayer_authority():
 		$HUD/MatchMenu.close()
 		$HUD.attach_local(player)
-		$HUD/Lobby.hide_lobby()
-		$HUD/WeaponSelect.show_select()
+		if not _loading:
+			$HUD/Lobby.hide_lobby()
+			$HUD/WeaponSelect.show_select()
 	else:
 		player.set_name_label(player_label(slot))
 	$HUD.refresh_score()
 
 
 func _physics_process(delta: float) -> void:
-	if not _started or _round_finished:
+	if not _started or _loading or round_finished():
 		return
+	_cloud_time += delta
+	if _cloud_time >= 0.2:
+		$WorldEnvironment/SkyDome.process_tick(_cloud_time)
+		_cloud_time = 0.0
 	if not Net.active or multiplayer.is_server():
-		_tick_round_clock(delta)
-	if not Net.active or _round_finished:
+		_tick_round(delta)
+	if not Net.active or round_finished():
 		return
 	_pose_time += delta
 	if _pose_time < POSE_INTERVAL:
@@ -409,18 +563,19 @@ func _physics_process(delta: float) -> void:
 			net_client_pose.rpc_id(1, player.network_pose())
 
 
-@rpc("any_peer", "unreliable_ordered")
+@rpc("any_peer", "call_remote", "unreliable_ordered", 1)
 func net_client_pose(pose: PackedFloat32Array) -> void:
 	var id := multiplayer.get_remote_sender_id()
-	if not _ready_peers.has(id):
+	if round_finished() or not _ready_peers.has(id):
 		return
 	var player := get_node_or_null(str(id))
-	if player:
-		apply_client_pose(player, pose)
+	apply_client_pose(player, pose)
 
 
 func apply_client_pose(player: Node, pose: PackedFloat32Array) -> bool:
-	if not player or not player.control_enabled or pose.size() != player.NETWORK_POSE_SIZE:
+	if round_finished() or not player or not player.control_enabled or pose.size() != player.NETWORK_POSE_SIZE:
+		return false
+	if pose[11] != float(player._spawn_revision):
 		return false
 	for value in pose:
 		if not is_finite(value):
@@ -429,9 +584,9 @@ func apply_client_pose(player: Node, pose: PackedFloat32Array) -> bool:
 	return true
 
 
-@rpc("authority", "unreliable_ordered")
+@rpc("authority", "call_remote", "unreliable_ordered", 1)
 func net_poses(poses: Dictionary[int, PackedFloat32Array]) -> void:
-	if _round_finished:
+	if round_finished():
 		return
 	for peer in poses:
 		if peer == Net.local_id():
@@ -464,7 +619,7 @@ func _welcome(id: int) -> void:
 	_set_slot(slot, id)
 	if _started:
 		_send_slot(slot, id, id)
-		_send_match_start(id)
+		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count)
 	else:
 		_send_room_state()
 
@@ -479,26 +634,26 @@ func net_ready() -> void:
 	net_display_names.rpc_id(id, _display_names)
 	for bot in get_tree().get_nodes_in_group("bot"):
 		bot.send_status_to(id)
+	$Map.send_bullet_holes(id)
 	$Loot.send_state(id)
 	$Grenades.send_state(id)
-	$Map.send_bullet_holes(id)
 	for player in get_tree().get_nodes_in_group("player"):
 		player.send_status_to(id)
 	net_score_snapshot.rpc_id(id, $HUD.score_snapshot())
-	net_round_clock.rpc_id(id, _clock_seconds)
-	if _round_finished:
-		net_round_finished.rpc_id(id, _winner, _winning_score)
+	net_clock.rpc_id(id, _display_seconds)
+	if round_finished():
+		net_finish.rpc_id(id, _finish_reason, _final_rows)
 	$HUD.hide_host_ip()
 
 
 func _on_peer_disconnected(id: int) -> void:
 	if not Net.active or not multiplayer.is_server():
 		return
-	_display_names.erase(id)
 	var slot := player_slots.find(id)
 	if slot <= 0:
 		return
 	_ready_peers.erase(id)
+	_display_names.erase(id)
 	_set_slot(slot, 0)
 	if _started:
 		_send_slot(slot, 0)
@@ -525,7 +680,6 @@ func _set_slot(slot: int, id: int) -> void:
 	if not _started:
 		return
 	if previous != 0:
-		_display_names.erase(previous)
 		var player := get_node(str(previous))
 		remove_child(player)
 		player.queue_free()

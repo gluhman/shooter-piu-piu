@@ -3,30 +3,37 @@
 [ext_resource type="Script" path="res://match.gd" id="1_match"]
 [ext_resource type="Script" path="res://map_builder.gd" id="2_map"]
 [ext_resource type="Script" path="res://weapon_select.gd" id="4_select"]
+[ext_resource type="Script" path="res://reticle.gd" id="16_reticle"]
 [ext_resource type="Script" path="res://health_hud.gd" id="6_hud"]
 [ext_resource type="Script" path="res://lobby.gd" id="7_lobby"]
 
 [ext_resource type="Script" path="res://match_menu.gd" id="8_menu"]
 
 [ext_resource type="Script" path="res://projectile_simulation.gd" id="9_ballistics"]
+[ext_resource type="Script" path="res://grenades.gd" id="15_grenades"]
 [ext_resource type="Script" path="res://loot.gd" id="10_loot"]
+[ext_resource type="Script" path="res://addons/sky_3d/src/Sky3D.gd" id="11_sky"]
+[ext_resource type="Script" path="res://addons/sky_3d/src/SkyDome.gd" id="12_dome"]
+[ext_resource type="Script" path="res://addons/sky_3d/src/TimeOfDay.gd" id="13_time"]
+[ext_resource type="Shader" path="res://addons/sky_3d/shaders/SkyMaterial.gdshader" id="14_sky_shader"]
 
-[ext_resource type="Script" path="res://grenades.gd" id="11_grenades"]
-
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
-sky_top_color = Color(0.38, 0.5, 0.68, 1)
-sky_horizon_color = Color(0.72, 0.66, 0.54, 1)
-ground_bottom_color = Color(0.22, 0.21, 0.19, 1)
-ground_horizon_color = Color(0.48, 0.45, 0.38, 1)
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
+resource_local_to_scene = true
+shader = ExtResource("14_sky_shader")
 
 [sub_resource type="Sky" id="Sky_main"]
-sky_material = SubResource("ProceduralSkyMaterial_sky")
+resource_local_to_scene = true
+radiance_size = 2
+process_mode = 2
+sky_material = SubResource("ShaderMaterial_sky")
 
 [sub_resource type="Environment" id="Environment_main"]
+resource_local_to_scene = true
 background_mode = 2
 sky = SubResource("Sky_main")
 ambient_light_source = 3
-ambient_light_energy = 0.9
+ambient_light_sky_contribution = 0.8
+ambient_light_energy = 0.8
 tonemap_mode = 2
 tonemap_exposure = 1.05
 ssao_enabled = true
@@ -38,19 +45,31 @@ script = ExtResource("1_match")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")
+script = ExtResource("11_sky")
 
-[node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-52, 36, 0)
-light_color = Color(1, 0.96, 0.88, 1)
-light_energy = 1.2
+[node name="SunLight" type="DirectionalLight3D" parent="WorldEnvironment"]
 shadow_enabled = true
 directional_shadow_mode = 1
-directional_shadow_max_distance = 80.0
+directional_shadow_max_distance = 52.0
 
-[node name="Fill" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-16, -148, 0)
-light_color = Color(0.68, 0.78, 1, 1)
-light_energy = 0.28
+[node name="MoonLight" type="DirectionalLight3D" parent="WorldEnvironment"]
+light_energy = 0.0
+
+[node name="SkyDome" type="Node3D" parent="WorldEnvironment"]
+script = ExtResource("12_dome")
+sun_light_energy = 1.16
+fog_visible = false
+process_method = 2
+cumulus_visible = false
+cirrus_coverage = 0.42
+star_scintillation = false
+
+[node name="TimeOfDay" type="Node" parent="WorldEnvironment"]
+script = ExtResource("13_time")
+editor_time_enabled = false
+game_time_enabled = false
+current_time = 13.0
+dome_path = NodePath("../SkyDome")
 
 [node name="Map" type="Node3D" parent="."]
 script = ExtResource("2_map")
@@ -60,8 +79,7 @@ process_physics_priority = 10
 script = ExtResource("9_ballistics")
 
 [node name="Grenades" type="Node3D" parent="."]
-process_physics_priority = 11
-script = ExtResource("11_grenades")
+script = ExtResource("15_grenades")
 
 [node name="Loot" type="Node3D" parent="."]
 script = ExtResource("10_loot")
@@ -69,33 +87,16 @@ script = ExtResource("10_loot")
 [node name="HUD" type="CanvasLayer" parent="."]
 script = ExtResource("6_hud")
 
-[node name="Crosshair" type="ColorRect" parent="HUD"]
+[node name="Crosshair" type="Control" parent="HUD"]
 visible = false
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -7.0
-offset_top = -1.0
-offset_right = 7.0
-offset_bottom = 1.0
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 mouse_filter = 2
-color = Color(1, 1, 1, 0.92)
-
-[node name="CrosshairV" type="ColorRect" parent="HUD"]
-visible = false
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -1.0
-offset_top = -7.0
-offset_right = 1.0
-offset_bottom = 7.0
-mouse_filter = 2
-color = Color(1, 1, 1, 0.92)
+script = ExtResource("16_reticle")
 
 [node name="Hint" type="Label" parent="HUD"]
 visible = false

@@ -1,14 +1,23 @@
 extends Control
 
 const WEAPON := preload("res://weapon.gd")
+const UI := preload("res://menu_ui.gd")
 
-var _picked := false
+var _panel: PanelContainer
+var _grid: GridContainer
+var _title: Label
+var _note: Label
+var _close_button: Button
 var _cards: Dictionary[String, Button] = {}
-var _card_text: Dictionary[String, String] = {}
+var _armory_player: Node
+var _active_style: StyleBoxFlat
+var _card_style: StyleBoxFlat
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	z_index = 5
+	theme = UI.theme()
 	_build()
 	_update_shortcuts()
 	GameSettings.controls_changed.connect(_update_shortcuts)
@@ -17,24 +26,81 @@ func _ready() -> void:
 
 
 func show_select() -> void:
-	_picked = false
-	for id in _cards:
-		_cards[id].visible = _match().allows_weapon(id)
-	visible = true
-	mouse_filter = Control.MOUSE_FILTER_STOP
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	var hud := get_parent()
-	hud.get_node("Crosshair").visible = false
-	hud.get_node("CrosshairV").visible = false
-	hud.get_node("Hint").visible = false
-	hud.get_node("Ammo").visible = false
+	_title.text = "Выбор оружия"
+	_note.hide()
+	_close_button.hide()
+	_refresh_cards()
+	_set_open(true)
 	var player := _local_player()
 	if player:
 		player.control_enabled = false
+	get_parent().get_node("Hint").hide()
+	get_parent().get_node("Ammo").hide()
+	_focus_card()
+
+
+func armory_open() -> bool:
+	return is_instance_valid(_armory_player)
+
+
+func _open_armory(player: Node) -> void:
+	_armory_player = player
+	player.inventory_changed.connect(_on_inventory_changed)
+	_title.text = "Арсенал"
+	_note.show()
+	_close_button.show()
+	_refresh_cards()
+	get_parent().get_node("MatchMenu").hide_score()
+	_set_open(true)
+	_focus_card(player.weapon_id)
+
+
+func close_armory() -> bool:
+	if not armory_open():
+		return false
+	var player := _armory_player
+	player.inventory_changed.disconnect(_on_inventory_changed)
+	_armory_player = null
+	_set_open(false)
+	if player.control_enabled and player.health > 0 and not _match().input_blocked():
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	return true
+
+
+func _set_open(open: bool) -> void:
+	visible = open
+	mouse_filter = Control.MOUSE_FILTER_STOP if open else Control.MOUSE_FILTER_IGNORE
+	get_parent().get_node("Crosshair").visible = not open
+	if open:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		UI.reveal(_panel)
+
+
+func _focus_card(preferred: String = "") -> void:
+	if _cards.has(preferred) and _cards[preferred].visible:
+		_cards[preferred].grab_focus()
+		return
+	for card: Button in _grid.get_children():
+		if card.visible and not card.disabled:
+			card.grab_focus()
+			return
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not visible or _picked or _match().input_blocked():
+	if event.is_action_pressed(&"open_armory"):
+		if armory_open():
+			close_armory()
+			MenuFeedback.back()
+		elif not visible and not _match().input_blocked():
+			var player := _local_player()
+			if player and player.control_enabled and player.health > 0:
+				_open_armory(player)
+				MenuFeedback.confirm()
+		else:
+			return
+		get_viewport().set_input_as_handled()
+		return
+	if not visible or (not armory_open() and _match().input_blocked()):
 		return
 	var id := GameSettings.weapon_selection(event)
 	if id != "":
@@ -42,102 +108,112 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+func _on_inventory_changed() -> void:
+	if _armory_player.health <= 0 or not _armory_player.control_enabled:
+		close_armory()
+		return
+	_refresh_cards()
+
+
 func _update_shortcuts() -> void:
+	var order := GameSettings.ordered_weapon_ids()
+	for index in order.size():
+		_grid.move_child(_cards[order[index]], index)
+	_refresh_cards()
+
+
+func _refresh_cards() -> void:
+	var in_match := armory_open()
+	var width: float = _match().arena_width()
 	for id in _cards:
-		_cards[id].text = "%s   %s" % [GameSettings.binding_label(GameSettings.WEAPON_KEYS[id]), _card_text[id]]
+		var card := _cards[id]
+		card.visible = (id == "knife" and in_match) or _match().allows_weapon(id)
+		if not card.visible:
+			continue
+		var active: bool = in_match and _armory_player.weapon_id == id
+		card.disabled = in_match and not _armory_player.owns_weapon(id)
+		card.add_theme_stylebox_override(&"normal", _active_style if active else _card_style)
+		var stats: Dictionary = WEAPON.WEAPONS[id]
+		var title := "%s   %s" % [GameSettings.binding_label(GameSettings.WEAPON_KEYS[id]), stats.name]
+		if in_match:
+			var status := "В руках" if active else "В инвентаре"
+			var stock: Vector2i = _armory_player.stock_for(id)
+			var ammo := "Ближний бой" if id == "knife" else "%d / %d патронов" % [stock.x, stock.y]
+			card.text = title + ("\n\nНужно подобрать" if card.disabled else "\n\n%s\n%s" % [status, ammo])
+		else:
+			var damage := "%d×%d" % [stats.damage, stats.pellets] if int(stats.pellets) > 1 else str(stats.damage)
+			var distance := ("%.1f" % stats.range).trim_suffix(".0").replace(".", ",")
+			var recoil := ("%.2f" % stats.recoil).rstrip("0").trim_suffix(".").replace(".", ",")
+			card.text = "%s\n\n%s\n%s урона · магазин %d\n%d%% (%s м) · %s°" % [
+				title, stats.mode.capitalize(), damage, stats.mag, roundi(100.0 * stats.range / width), distance, recoil,
+			]
 
 
 func _build() -> void:
 	var dim := ColorRect.new()
-	dim.color = Color(0.02, 0.02, 0.025, 0.62)
+	dim.color = Color(0.02, 0.025, 0.02, 0.66)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
 
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(center)
+	_panel = PanelContainer.new()
+	_panel.add_theme_stylebox_override(&"panel", UI.panel_style())
+	center.add_child(_panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override(&"separation", 14)
+	_panel.add_child(content)
 
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 18)
-	center.add_child(column)
+	var header := HBoxContainer.new()
+	content.add_child(header)
+	_title = UI.label(header, "Выбор оружия", 34, UI.INK, true)
+	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_close_button = UI.button(header, "Назад · Esc", close_armory, &"", true)
+	_note = UI.label(content, "Выбери оружие из инвентаря. Остальное можно подобрать на карте.", 16, UI.MUTED)
 
-	var title := Label.new()
-	title.text = "Выбор оружия"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 34)
-	title.add_theme_color_override("font_color", Color(0.96, 0.94, 0.9))
-	column.add_child(title)
-
-	var row := GridContainer.new()
-	row.columns = 4
-	row.add_theme_constant_override("h_separation", 12)
-	row.add_theme_constant_override("v_separation", 12)
-	column.add_child(row)
-	var borders := [Color("#cc9951"), Color("#7a9fc7"), Color("#8cb46e"), Color("#ad6d48")]
-	var i := 0
+	_grid = GridContainer.new()
+	_grid.columns = 4
+	_grid.add_theme_constant_override(&"h_separation", 10)
+	_grid.add_theme_constant_override(&"v_separation", 10)
+	content.add_child(_grid)
+	_active_style = UI.style(Color("#354431"), Color("#a1b86e"), 14, 10)
+	_card_style = UI.style(UI.CARD, UI.LINE, 14, 10)
 	for id in GameSettings.WEAPON_KEYS:
-		var stats: Dictionary = WEAPON.WEAPONS[id]
-		var ammo := "%d в магазине" % stats.mag
-		if id == "launcher":
-			ammo = "Взрыв при попадании"
-		row.add_child(_card(id, stats.name, "%s\n%s" % [stats.mode.capitalize(), ammo], borders[i % borders.size()]))
-		i += 1
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(224, 109)
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.add_theme_font_size_override(&"font_size", 16)
+		MenuFeedback.wire(button)
+		button.pressed.connect(_choose.bind(id))
+		_grid.add_child(button)
+		_cards[id] = button
 
 
-func _card(weapon_id: String, title: String, body: String, border: Color) -> Button:
-	var button := Button.new()
-	_card_text[weapon_id] = title + "\n\n" + body
-	button.custom_minimum_size = Vector2(196, 128)
-	button.focus_mode = Control.FOCUS_NONE
-	button.add_theme_font_size_override("font_size", 18)
-	button.add_theme_color_override("font_color", Color(0.95, 0.94, 0.9))
-	button.add_theme_color_override("font_hover_color", Color(1, 0.97, 0.9))
-	var normal := _panel(Color(0.1, 0.11, 0.13, 0.96), border)
-	var hover := _panel(Color(0.16, 0.17, 0.2, 0.98), border.lightened(0.2))
-	button.add_theme_stylebox_override("normal", normal)
-	button.add_theme_stylebox_override("hover", hover)
-	button.add_theme_stylebox_override("pressed", hover)
-	button.add_theme_stylebox_override("focus", normal)
-	button.pressed.connect(_choose.bind(weapon_id))
-	_cards[weapon_id] = button
-	return button
-
-
-func _panel(bg: Color, border: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = bg
-	style.border_color = border
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(8)
-	style.content_margin_left = 10.0
-	style.content_margin_right = 10.0
-	style.content_margin_top = 20.0
-	style.content_margin_bottom = 20.0
-	return style
-
-
-func _choose(weapon_id: String) -> void:
-	if _picked or not _match().allows_weapon(weapon_id):
+func _choose(id: String) -> void:
+	if not visible or _match().round_finished() or not _cards[id].visible or _cards[id].disabled:
 		return
-	_picked = true
-	visible = false
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var hud := get_parent()
-	hud.get_node("Crosshair").visible = true
-	hud.get_node("CrosshairV").visible = true
-	var hint := hud.get_node("Hint") as Label
-	hint.visible = true
+	if armory_open():
+		if _armory_player.weapon_switch_pending():
+			return
+		_armory_player.select_weapon(id)
+		close_armory()
+		MenuFeedback.confirm()
+		return
+	if _match().input_blocked():
+		return
 	var player := _local_player()
 	if player:
-		player.equip(weapon_id)
+		_set_open(false)
+		get_parent().get_node("Hint").show()
+		player.equip(id)
+		MenuFeedback.confirm()
 
 
 func _local_player() -> Node:
-	for node in get_tree().get_nodes_in_group("player"):
-		if not Net.active or node.is_multiplayer_authority():
-			return node
-	return null
+	return _match().combatant(Net.local_id())
 
 
 func _match() -> Node:

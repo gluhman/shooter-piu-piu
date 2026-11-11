@@ -11,6 +11,7 @@ class PerforatedCover:
 
 const GRASS := preload("res://assets/arena_props/grass.glb")
 const SHRUBS := preload("res://assets/arena_props/shrubs.glb")
+const VILLAGE := preload("res://village_layout.gd")
 
 const CONTAINER_HEIGHT := 2.59
 const CONTAINER_WIDTH := 2.44
@@ -19,7 +20,12 @@ const LENGTH_40 := 12.19
 
 const PANEL_THICKNESS := 0.12
 const CRATE_SIGHT_RADIUS := 15.0
-const MAX_SUPPLY_CRATES := 6
+const MAX_SUPPLY_CRATES := 12
+const ARENA_HALF_EXTENT := 35.0
+const ARENA_WIDTH := 2.0 * ARENA_HALF_EXTENT
+const VILLAGE_ID := 3
+const VILLAGE_WIDTH := 160.0
+const SPAWN_RING := 32.75
 
 class Cover:
 	var center: Vector2
@@ -32,39 +38,27 @@ const COLOR_GREEN := Color(0.28, 0.52, 0.34)
 const COLOR_ORANGE := Color(0.95, 0.48, 0.14)
 const COLOR_GREY := Color(0.72, 0.74, 0.72)
 
-const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток"]
-
-# Clear perimeter positions shared by all three arena layouts.
-const PLAYER_SPAWNS := [
-	Vector3(-14.6, 0.2, 14.2), Vector3(14.2, 0.2, -14.2),
-	Vector3(-14.5, 0.2, -14.5), Vector3(14.5, 0.2, 14.5),
-	Vector3(-5, 0.2, 15), Vector3(5, 0.2, -15),
-	Vector3(-15, 0.2, -5), Vector3(15, 0.2, 5),
-	Vector3(5, 0.2, 15), Vector3(-5, 0.2, -15),
-]
-
-const BOT_SPAWNS := [
-	Vector3(12, 0.2, -12), Vector3(0, 0.2, -14), Vector3(-7, 0.2, -14),
-	Vector3(-14, 0.2, -12), Vector3(-15, 0.2, -3), Vector3(-15, 0.2, 5),
-	Vector3(-8, 0.2, 14), Vector3(0, 0.2, 14), Vector3(8, 0.2, 14),
-	Vector3(15, 0.2, 8),
-]
-const RESERVED_SPAWNS := PLAYER_SPAWNS + BOT_SPAWNS
+const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок"]
 
 const PATROL_ROUTES := [
 	[
-		Vector3(15, 0.2, -15), Vector3(-15, 0.2, -15),
-		Vector3(-15, 0.2, 15), Vector3(15, 0.2, 15),
+		Vector3(30, 0.2, 0), Vector3(0, 0.2, 0), Vector3(0, 0.2, 30),
+		Vector3(-32, 0.2, 32), Vector3(-32, 0.2, -32), Vector3(32, 0.2, -32),
 	],
 	[
-		Vector3(15, 0.2, -15), Vector3(-15, 0.2, -15), Vector3(-15, 0.2, 0),
-		Vector3(15, 0.2, 0), Vector3(15, 0.2, 15), Vector3(-15, 0.2, 15),
-		Vector3(-15, 0.2, -15),
+		Vector3(32, 0.2, -32), Vector3(-32, 0.2, -32), Vector3(-32, 0.2, 0),
+		Vector3(32, 0.2, 0), Vector3(32, 0.2, 32), Vector3(-32, 0.2, 32),
+		Vector3(-32, 0.2, 0), Vector3(0, 0.2, 0), Vector3(0, 0.2, -32),
 	],
 	[
-		Vector3(15, 0.2, 15), Vector3(15, 0.2, -15), Vector3(0, 0.2, -15),
-		Vector3(0, 0.2, 15), Vector3(-15, 0.2, 15), Vector3(-15, 0.2, -15),
-		Vector3(15, 0.2, -15),
+		Vector3(32, 0.2, 32), Vector3(32, 0.2, -32), Vector3(0, 0.2, -32),
+		Vector3(0, 0.2, 32), Vector3(-32, 0.2, 32), Vector3(-32, 0.2, -32),
+		Vector3(0, 0.2, -32), Vector3(0, 0.2, 0),
+	],
+	[
+		Vector3(-48, 0.2, 0), Vector3(-19, 0.2, -17), Vector3(0, 0.2, -48),
+		Vector3(18, 0.2, -18), Vector3(48, 0.2, 0), Vector3(18, 0.2, 18),
+		Vector3(0, 0.2, 48), Vector3(-19, 0.2, 18), Vector3(0, 0.2, 0),
 	],
 ]
 
@@ -72,45 +66,104 @@ var _perforated: Array[PerforatedCover] = []
 var _occupied: Array[Rect2] = []
 var _cover: Array[Cover] = []
 var _passages: Array[Transform3D] = []
+var _wood_floors: Array[Rect2] = []
+var _initial_spawns := PackedVector3Array()
+var respawn_points := PackedVector3Array()
+var _district_origin := Vector3.ZERO
+var _district_yaw := 0.0
 var _floor_mat: StandardMaterial3D
 var _wall_mat: StandardMaterial3D
 var _wood_mat: StandardMaterial3D
-var _corr_color: Texture2D
-var _corr_normal: Texture2D
-var _corr_rough: Texture2D
-var _corr_metal: Texture2D
-var _corr_ao: Texture2D
+const ARENA_TEXTURES := {
+	"concrete": ["color", "normal", "roughness"],
+	"bricks": ["color", "normal", "roughness", "ao"],
+	"planks": ["color", "normal", "roughness", "ao"],
+	"corrugated": ["color", "normal", "roughness", "ao", "metalness"],
+}
+
+var _textures: Dictionary[String, Texture2D] = {}
+
+
+static func playable_width(map_id: int) -> float:
+	return VILLAGE_WIDTH if map_id == VILLAGE_ID else ARENA_WIDTH
+
+
+func preload_textures() -> void:
+	var pending: Array[String] = []
+	for material in ARENA_TEXTURES:
+		for kind in ARENA_TEXTURES[material]:
+			var path := _texture_path(material, kind)
+			if ResourceLoader.load_threaded_request(path, "Texture2D") == OK:
+				pending.append(path)
+	while not pending.is_empty():
+		for index in range(pending.size() - 1, -1, -1):
+			var path := pending[index]
+			var status := ResourceLoader.load_threaded_get_status(path)
+			if status == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+				continue
+			if status == ResourceLoader.THREAD_LOAD_LOADED:
+				_textures[path] = ResourceLoader.load_threaded_get(path) as Texture2D
+			pending.remove_at(index)
+		if not pending.is_empty():
+			await get_tree().process_frame
 
 
 func _load_textures() -> void:
 	_floor_mat = _world_mat("concrete", Color(0.58, 0.56, 0.53), 0.0, 0.85, 1.15, false)
 	_wall_mat = _world_mat("bricks", Color(0.92, 0.9, 0.88), 0.0, 0.42, 1.0, true)
 	_wood_mat = _world_mat("planks", Color(0.9, 0.84, 0.74), 0.0, 0.7, 1.0, true)
-	_corr_color = load("res://textures/corrugated_color.jpg")
-	_corr_normal = load("res://textures/corrugated_normal.jpg")
-	_corr_rough = load("res://textures/corrugated_roughness.jpg")
-	_corr_metal = load("res://textures/corrugated_metalness.jpg")
-	_corr_ao = load("res://textures/corrugated_ao.jpg")
 
 
 func build(map_id: int, layout_seed: int = 0) -> Array[Transform3D]:
-	_load_textures()
-	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(36.0, 0.5, 36.0), _floor_mat)
-	_add_box(Vector3(0.0, 2.75, -17.25), Vector3(35.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
-	_add_box(Vector3(0.0, 2.75, 17.25), Vector3(35.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
-	_add_box(Vector3(17.25, 2.75, 0.0), Vector3(0.5, 5.5, 35.0), _wall_mat, 0.0, "brick")
-	_add_box(Vector3(-17.25, 2.75, 0.0), Vector3(0.5, 5.5, 35.0), _wall_mat, 0.0, "brick")
-
-	match map_id:
-		1: _build_storage()
-		2: _build_crossroads()
-		_: _build_container_yard()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = layout_seed
+	if map_id == VILLAGE_ID:
+		_build_spawn_ring(53.0)
+		var supplies := VILLAGE.new(self).build(VILLAGE_WIDTH, rng)
+		_build_respawn_grid(9, 8.0, VILLAGE_WIDTH * 0.5)
+		return supplies
+
+	_load_textures()
+	var width := ARENA_WIDTH
+	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(width + 2.0, 0.5, width + 2.0), _floor_mat)
+	for side in [-1.0, 1.0]:
+		var edge: float = side * (ARENA_HALF_EXTENT + 0.25)
+		_add_box(Vector3(0.0, 2.75, edge), Vector3(width + 1.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
+		_add_box(Vector3(edge, 2.75, 0.0), Vector3(0.5, 5.5, width), _wall_mat, 0.0, "brick")
+
+	for district in 4:
+		_district_origin = Vector3(17.25, 0, 17.25).rotated(Vector3.UP, district * PI * 0.5)
+		_district_yaw = float(district * 90)
+		match map_id:
+			1: _build_storage()
+			2: _build_crossroads()
+			_: _build_container_yard()
+	_build_spawn_ring(SPAWN_RING)
 	_scatter_passages(rng)
 	var crates := _scatter_crates(rng)
+	_build_respawn_grid(5, 5.6, ARENA_HALF_EXTENT)
 	_scatter_foliage(rng)
 	return crates
+
+
+func _build_spawn_ring(radius: float) -> void:
+	for index in 20:
+		var side := floori(index / 5.0)
+		var along := lerpf(-radius, radius, float(index % 5) / 5.0)
+		_initial_spawns.append(Vector3(along, 0.2, radius).rotated(Vector3.UP, side * PI * 0.5))
+
+
+func _build_respawn_grid(steps: int, spacing: float, limit: float) -> void:
+	respawn_points = _initial_spawns.duplicate()
+	for x in range(-steps, steps + 1):
+		for z in range(-steps, steps + 1):
+			var center := Vector2(x, z) * spacing
+			if _is_clear(_footprint(center, Vector2.ONE * 1.8), limit, 0.0):
+				respawn_points.append(Vector3(center.x, 0.2, center.y))
+
+
+func initial_spawn(index: int) -> Vector3:
+	return _initial_spawns[(index * 7) % _initial_spawns.size()]
 
 
 func _build_container_yard() -> void:
@@ -155,6 +208,8 @@ func _build_crossroads() -> void:
 
 
 func _add_container(center: Vector3, size_x: float, size_z: float, color: Color, yaw_deg: float = 0.0) -> void:
+	center = _district_origin + center.rotated(Vector3.UP, deg_to_rad(_district_yaw))
+	yaw_deg += _district_yaw
 	var size := Vector3(size_x, CONTAINER_HEIGHT, size_z)
 	var yaw := deg_to_rad(yaw_deg)
 	var width := absf(cos(yaw)) * size_x + absf(sin(yaw)) * size_z
@@ -178,6 +233,7 @@ func _add_container(center: Vector3, size_x: float, size_z: float, color: Color,
 			door_panel = end_panel
 		_add_steel_panel(center + Vector3.UP * side * (half.y - t * 0.5),
 			Vector3(size.x - t * 2, t, size.z - t * 2), material, yaw_deg)
+
 	var door := MeshInstance3D.new()
 	var door_mesh := BoxMesh.new()
 	if along_x:
@@ -193,6 +249,7 @@ func _add_container(center: Vector3, size_x: float, size_z: float, color: Color,
 
 
 func _add_crate(center: Vector3) -> void:
+	center = _district_origin + center.rotated(Vector3.UP, deg_to_rad(_district_yaw))
 	_occupied.append(_footprint(Vector2(center.x, center.z), Vector2(1.15, 1.15)))
 	var size := Vector3(1.15, 1.1, 1.15)
 	var box := _add_box(center, size, _wood_mat, 0.0, "wood")
@@ -211,28 +268,29 @@ func _is_clear(area: Rect2, limit: float, spawn_clearance: float) -> bool:
 		if obstacle.intersects(area):
 			return false
 	var spawn_area := area.grow(spawn_clearance)
-	for spawn in RESERVED_SPAWNS:
-		if spawn_area.has_point(Vector2(spawn.x, spawn.z)):
-			return false
+	if spawn_clearance > 0.0:
+		for spawn in _initial_spawns:
+			if spawn_area.has_point(Vector2(spawn.x, spawn.z)):
+				return false
 	return true
 
 
 func _scatter_passages(rng: RandomNumberGenerator) -> void:
 	var count := 0
-	for attempt in 550:
-		var center := Vector2(rng.randf_range(-13.0, 13.0), rng.randf_range(-13.0, 13.0))
+	for attempt in 900:
+		var center := Vector2(rng.randf_range(-30.0, 30.0), rng.randf_range(-30.0, 30.0))
 		var across := rng.randi_range(0, 1) == 1
 		var size := Vector2(CONTAINER_WIDTH + 0.35, LENGTH_20 + 1.5)
 		if across:
 			size = Vector2(size.y, size.x)
 		var area := _footprint(center, size)
-		if not _is_clear(area, 14.85, 0.75):
+		if not _is_clear(area, 32.0, 0.9):
 			continue
 		_occupied.append(area)
 		_add_passage(count, Vector3(center.x, 0, center.y), 90.0 if across else 0.0,
 			COLOR_GREEN.lerp(COLOR_ORANGE, rng.randf_range(0.0, 0.65)))
 		count += 1
-		if count == 2:
+		if count == 6:
 			break
 
 
@@ -261,6 +319,17 @@ func _add_passage(index: int, center: Vector3, yaw_deg: float, color: Color) -> 
 	add_child(deck)
 
 
+func has_wood_deck_at(point: Vector3) -> bool:
+	for floor_area in _wood_floors:
+		if floor_area.has_point(Vector2(point.x, point.z)):
+			return true
+	for passage in _passages:
+		var offset := passage.basis.transposed() * (point - passage.origin)
+		if absf(offset.y) < 0.15 and absf(offset.x) < (CONTAINER_WIDTH - 0.14) * 0.5 and absf(offset.z) < LENGTH_20 * 0.5:
+			return true
+	return false
+
+
 func _scatter_crates(rng: RandomNumberGenerator) -> Array[Transform3D]:
 	var crates: Array[Transform3D] = []
 	# Place along a passage wall so the center lane and both exits stay open.
@@ -273,12 +342,12 @@ func _scatter_crates(rng: RandomNumberGenerator) -> Array[Transform3D]:
 			crates.append(placement)
 
 	var candidates: Array[Dictionary] = []
-	for _sample in 700:
-		var center := Vector2(rng.randf_range(-15.9, 15.9), rng.randf_range(-15.9, 15.9))
+	for _sample in 950:
+		var center := Vector2(rng.randf_range(-33.5, 33.5), rng.randf_range(-33.5, 33.5))
 		var quarter_turn := rng.randi_range(0, 3)
 		var size := Vector2(2.28, 2.88) if quarter_turn % 2 == 0 else Vector2(2.88, 2.28)
 		var area := _footprint(center, size)
-		if not _is_clear(area, 16.85, 0.65):
+		if not _is_clear(area, 34.85, 0.85):
 			continue
 		var cover := 0
 		for sample in 12:
@@ -349,9 +418,9 @@ func _scatter_foliage(rng: RandomNumberGenerator) -> void:
 	var shrubs: Array[Transform3D] = []
 	var shrub_clusters := 0
 	var obstacle_count := _occupied.size()
-	for attempt in 180:
+	for attempt in 240:
 		var side := rng.randi_range(0, 3)
-		var center := Vector2(rng.randf_range(-15.7, 15.7), rng.randf_range(15.0, 16.05)).rotated(side * PI * 0.5)
+		var center := Vector2(rng.randf_range(-34.0, 34.0), rng.randf_range(33.0, 34.3)).rotated(side * PI * 0.5)
 		if attempt % 3 == 0:
 			var obstacle := _occupied[rng.randi_range(0, obstacle_count - 1)]
 			var along := rng.randf_range(0.15, 0.85)
@@ -361,10 +430,10 @@ func _scatter_foliage(rng: RandomNumberGenerator) -> void:
 				2: center = Vector2(lerpf(obstacle.position.x, obstacle.end.x, along), obstacle.position.y - 0.59)
 				3: center = Vector2(lerpf(obstacle.position.x, obstacle.end.x, along), obstacle.end.y + 0.59)
 		var area := _footprint(center, Vector2.ONE * 0.9)
-		if not _is_clear(area, 16.85, 0.65):
+		if not _is_clear(area, 34.85, 0.65):
 			continue
 		_occupied.append(area)
-		if shrub_clusters < 8 and (grass.is_empty() or rng.randf() < 0.35):
+		if shrub_clusters < 12 and (grass.is_empty() or rng.randf() < 0.35):
 			for branch in 3:
 				var offset := Vector2.from_angle(rng.randf_range(0, TAU)) * rng.randf_range(0.0, 0.20)
 				shrubs.append(_plant_transform(center + offset, rng, 0.64, 0.95))
@@ -373,7 +442,7 @@ func _scatter_foliage(rng: RandomNumberGenerator) -> void:
 			for tuft in rng.randi_range(10, 17):
 				var offset := Vector2.from_angle(rng.randf_range(0, TAU)) * rng.randf_range(0.0, 0.39)
 				grass.append(_plant_transform(center + offset, rng, 1.05, 1.95))
-		if shrub_clusters >= 8 and grass.size() >= 160:
+		if shrub_clusters >= 12 and grass.size() >= 280:
 			break
 	_add_plants(GRASS, grass, rng)
 	_add_plants(SHRUBS, shrubs, rng)
@@ -490,7 +559,8 @@ func _apply_bullet_holes(cover: PerforatedCover) -> void:
 		material.set_shader_parameter("hole_axes", axes)
 
 
-func _add_box(center: Vector3, size: Vector3, material: Material, yaw_deg: float = 0.0, surface: String = "concrete") -> StaticBody3D:
+func _add_box(center: Vector3, size: Vector3, material: Material, yaw_deg: float = 0.0,
+		surface: String = "concrete", mesh_batch: SurfaceTool = null) -> StaticBody3D:
 	if center.y - size.y * 0.5 < 0.72 and center.y + size.y * 0.5 > 1.4:
 		var cover := Cover.new()
 		cover.center = Vector2(center.x, center.z)
@@ -498,19 +568,23 @@ func _add_box(center: Vector3, size: Vector3, material: Material, yaw_deg: float
 		cover.yaw = deg_to_rad(yaw_deg)
 		_cover.append(cover)
 	var body := StaticBody3D.new()
+	body.set_collision_layer_value(2, true)
 	body.set_meta(&"impact_surface", surface)
 	body.position = center
 	body.rotation.y = deg_to_rad(yaw_deg)
-	var mesh_instance := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = size
-	mesh.material = material
-	mesh_instance.mesh = mesh
+	if mesh_batch:
+		mesh_batch.append_from(mesh, 0, body.transform)
+	else:
+		var mesh_instance := MeshInstance3D.new()
+		mesh.material = material
+		mesh_instance.mesh = mesh
+		body.add_child(mesh_instance)
 	var collision := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = size
 	collision.shape = shape
-	body.add_child(mesh_instance)
 	body.add_child(collision)
 	add_child(body)
 	return body
@@ -518,7 +592,7 @@ func _add_box(center: Vector3, size: Vector3, material: Material, yaw_deg: float
 
 func _container_mat(tint: Color) -> StandardMaterial3D:
 	var mat := _textured("corrugated", tint, 0.85, 0.48, 1.0, true)
-	mat.metallic_texture = _corr_metal
+	mat.metallic_texture = _tex("corrugated", "metalness")
 	mat.metallic_texture_channel = StandardMaterial3D.TEXTURE_CHANNEL_GRAYSCALE
 	return mat
 
@@ -550,15 +624,12 @@ func _textured(name: String, tint: Color, metallic: float, scale: float, normal_
 	return mat
 
 
-func _tex(name: String, kind: String) -> Texture2D:
-	if name == "corrugated":
-		match kind:
-			"color":
-				return _corr_color
-			"normal":
-				return _corr_normal
-			"roughness":
-				return _corr_rough
-			"ao":
-				return _corr_ao
-	return load("res://textures/%s_%s.jpg" % [name, kind])
+func _texture_path(material: String, kind: String) -> String:
+	return "res://textures/%s_%s.jpg" % [material, kind]
+
+
+func _tex(material: String, kind: String) -> Texture2D:
+	var path := _texture_path(material, kind)
+	if not _textures.has(path):
+		_textures[path] = load(path) as Texture2D
+	return _textures[path]
