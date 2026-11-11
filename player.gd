@@ -10,6 +10,16 @@ const CROUCH_DROP := STANDING_HEIGHT - CROUCH_HEIGHT
 const JUMP_VELOCITY := 4.6
 const MOUSE_SENS := 0.0022
 const MAX_HEALTH := 100
+const MAX_ARMOR := 65
+const ARSENAL := preload("res://arsenal_assets.gd")
+const Footsteps := preload("res://footsteps.gd")
+const NETWORK_POSE_SIZE := 11
+const COVER_SPEED := 1.85
+const COVER_PEEK_SPEED := 4.6
+const COVER_PEEK_DISTANCE := 0.55
+const COVER_EDGE_PROBE := 0.34
+const COVER_WALL_REACH := 0.60
+const COVER_LOOK_LIMIT := 1.45
 const OperatorPose := preload("res://operator_pose.gd")
 const Weapon := preload("res://weapon.gd")
 const MEDKIT_HEAL := 45
@@ -20,6 +30,15 @@ signal inventory_changed
 
 var control_enabled := false
 var health := MAX_HEALTH
+var armor := 0
+var flash_left := 0.0
+var grenade_type := "frag"
+var _grenades: Dictionary[String, int] = {}
+var _throw_wait := 0.0
+var _net_grounded := true
+var _footsteps: Footsteps
+var _vest: Node3D
+var _scoped := false
 var weapon_id := ""
 var slot := 0
 var spawn_position: Vector3
@@ -31,6 +50,11 @@ var _switch_pending := false
 
 var crouched := false
 var aiming := false
+
+var _cover_normal := Vector3.ZERO
+var _peek_anchor := Vector3.ZERO
+var _peek_direction := 0.0
+var _cover_peek := 0.0
 
 var _crouch_blend := 0.0
 var _capsule_height := STANDING_HEIGHT
@@ -77,6 +101,9 @@ func _ready() -> void:
 		_camera.current = false
 		_build_bar()
 	_build_operator()
+	_footsteps = Footsteps.new()
+	add_child(_footsteps)
+	_reset_support()
 
 
 func _is_local() -> bool:
@@ -89,12 +116,74 @@ func _server_rules() -> bool:
 	return not Net.active or multiplayer.is_server()
 
 
-func take_damage(amount: int, killer_id: int = 0) -> void:
+func take_damage(amount: int, killer_id: int = 0, zone: String = "torso") -> void:
 	if not _server_rules():
 		return
 	if _dead or amount <= 0 or _hurt_lock > 0.0 or get_parent().round_finished():
 		return
+	if zone == "head":
+		amount = roundi(amount * 2.35)
+	elif zone == "torso" and armor > 0:
+		var absorbed := mini(armor, roundi(amount * 0.75))
+		armor -= absorbed
+		amount -= absorbed
 	_set_health(maxi(health - amount, 0), killer_id)
+
+
+func projectile_zone(at: Vector3) -> String:
+	var height := at.y - global_position.y
+	if height >= _capsule_height - 0.225:
+		return "head"
+	return "torso" if height >= _capsule_height * 0.46 else "limb"
+
+
+func grant_armor() -> void:
+	if _server_rules() and control_enabled and armor < MAX_ARMOR:
+		armor = MAX_ARMOR
+		_set_health(health, 0)
+
+
+func grenade_stock(kind: String) -> int:
+	return _grenades.get(kind, 0)
+
+
+func grant_grenades(kind: String, amount: int) -> void:
+	if _server_rules() and control_enabled and ARSENAL.GRENADE_IDS.has(kind):
+		_grenades[kind] = mini(grenade_stock(kind) + amount, ARSENAL.MAX_GRENADES)
+		_send_inventory()
+
+
+func consume_grenade(kind: String) -> bool:
+	if not _server_rules() or _throw_wait > 0.0 or grenade_stock(kind) <= 0:
+		return false
+	_grenades[kind] -= 1
+	_throw_wait = 0.72
+	_send_inventory()
+	return true
+
+
+func apply_flash(strength: float) -> void:
+	if not _server_rules() or strength < 0.04:
+		return
+	flash_left = maxf(flash_left, strength * 2.75)
+	if _is_local():
+		net_flash(strength)
+	elif score_id() > 1:
+		net_flash.rpc_id(score_id(), strength)
+
+
+@rpc("any_peer", "reliable")
+func net_flash(strength: float) -> void:
+	if multiplayer.get_remote_sender_id() not in [0, 1] or not _is_local():
+		return
+	get_parent().get_node("HUD").show_flashbang(strength)
+
+
+func set_scoped_view(scoped: bool) -> void:
+	if _scoped != scoped and _is_local():
+		_scoped = scoped
+		for child in _avatar.find_children("*", "MeshInstance3D", true, false):
+			child.set_layer_mask_value(1, not scoped)
 
 
 func restore_health(amount: int) -> void:
@@ -105,7 +194,7 @@ func restore_health(amount: int) -> void:
 func _set_health(value: int, killer_id: int) -> void:
 	health = value
 	for peer in get_parent().match_peers():
-		net_set_health.rpc_id(peer, health, killer_id)
+		net_set_health.rpc_id(peer, health, armor, killer_id)
 	_commit(killer_id)
 
 
@@ -241,7 +330,7 @@ func _send_inventory() -> void:
 	else:
 		var peer := get_multiplayer_authority()
 		if score_id() > 0 and get_parent().match_peers().has(peer):
-			net_inventory.rpc_id(peer, _stored, medkits)
+			net_inventory.rpc_id(peer, _stored, medkits, _grenades)
 
 
 func _is_owner_request(sender: int) -> bool:
@@ -266,12 +355,14 @@ func send_status_to(peer: int) -> void:
 	if peer != get_multiplayer_authority():
 		if weapon_id != "":
 			net_equip.rpc_id(peer, weapon_id, _spawn_loadout)
-		net_set_health.rpc_id(peer, health, 0)
+		net_set_health.rpc_id(peer, health, armor, 0)
 
 
 func network_pose() -> PackedFloat32Array:
+	var grounded := is_on_floor() if _is_local() or (_server_rules() and is_in_group("bot")) else _net_grounded
 	return PackedFloat32Array([
 		position.x, position.y, position.z, rotation.y, _camera.rotation.x, float(crouched), float(aiming),
+		_cover_normal.x, _cover_normal.z, _cover_peek, float(grounded),
 	])
 
 
@@ -281,6 +372,23 @@ func apply_network_pose(pose: PackedFloat32Array) -> void:
 	_camera.rotation.x = pose[4]
 	crouched = pose[5] > 0.0
 	aiming = pose[6] > 0.0
+	_cover_normal = Vector3(clampf(pose[7], -1.0, 1.0), 0.0, clampf(pose[8], -1.0, 1.0)).normalized()
+	_cover_peek = clampf(pose[9], -1.0, 1.0) if in_cover() else 0.0
+	_net_grounded = pose[10] > 0.0
+	_update_capsule()
+	_update_view_pose()
+
+
+func in_cover() -> bool:
+	return _cover_normal != Vector3.ZERO
+
+
+func can_fire_from_cover() -> bool:
+	return not in_cover() or absf(_cover_peek) >= 0.78
+
+
+func cover_tuck() -> float:
+	return 1.0 - smoothstep(0.08, 0.82, absf(_cover_peek)) if in_cover() else 0.0
 
 
 func set_weapon_grips(right: Marker3D, left: Marker3D) -> void:
@@ -311,10 +419,11 @@ func visual_speed() -> float:
 
 
 @rpc("any_peer", "reliable")
-func net_set_health(value: int, killer_id: int) -> void:
+func net_set_health(value: int, vest: int, killer_id: int) -> void:
 	if multiplayer.get_remote_sender_id() != 1:
 		return
 	health = value
+	armor = vest
 	_commit(killer_id)
 
 
@@ -359,10 +468,11 @@ func net_use_medkit() -> void:
 
 
 @rpc("any_peer", "reliable")
-func net_inventory(stock: Dictionary[String, Vector2i], kits: int) -> void:
+func net_inventory(stock: Dictionary[String, Vector2i], kits: int, grenades: Dictionary[String, int]) -> void:
 	if multiplayer.get_remote_sender_id() == 1 and _is_local():
 		_stored = stock
 		medkits = kits
+		_grenades = grenades
 		_switch_pending = false
 		inventory_changed.emit()
 
@@ -385,11 +495,14 @@ func _apply_equip(id: String, magazine: int = -1, reserve: int = -1, switching: 
 
 
 func _commit(killer_id: int) -> void:
+	_vest.visible = armor > 0
 	health_changed.emit(health, MAX_HEALTH)
 	_refresh_bar()
 	if health > 0 or _dead:
 		return
 	_dead = true
+	_footsteps.reset()
+	_leave_cover()
 	aiming = false
 	control_enabled = false
 	gun.cancel_reload()
@@ -413,7 +526,19 @@ func _commit(killer_id: int) -> void:
 func _clear_inventory() -> void:
 	_stored.clear()
 	medkits = 0
+	_grenades.clear()
 	_switch_pending = false
+
+
+func _reset_support() -> void:
+	armor = 0
+	_vest.hide()
+	flash_left = 0.0
+	_throw_wait = 0.0
+	grenade_type = "frag"
+	if not is_in_group("bot"):
+		for kind in ARSENAL.GRENADE_IDS:
+			_grenades[kind] = 1
 
 
 func _request_respawn() -> void:
@@ -445,10 +570,13 @@ func restart_round() -> void:
 
 func _apply_respawn(id: String) -> void:
 	_clear_inventory()
+	_reset_support()
+	_footsteps.reset()
+	_leave_cover()
 	global_position = spawn_position
 	velocity = Vector3.ZERO
 	rotation.y = _spawn_yaw
-	_camera.rotation.x = 0.0
+	_camera.rotation = Vector3.ZERO
 	health = MAX_HEALTH
 	_dead = false
 	collision_layer = 1
@@ -479,7 +607,7 @@ func add_recoil(pitch_deg: float, yaw_deg: float) -> void:
 	if not _is_local():
 		return
 	var pitch := deg_to_rad(pitch_deg)
-	rotate_y(deg_to_rad(yaw_deg))
+	_turn_yaw(deg_to_rad(yaw_deg))
 	_camera.rotation.x = clampf(_camera.rotation.x + pitch, deg_to_rad(-80.0), deg_to_rad(80.0))
 	_recoil_pitch += pitch
 
@@ -487,6 +615,8 @@ func add_recoil(pitch_deg: float, yaw_deg: float) -> void:
 func _process(delta: float) -> void:
 	if _server_rules():
 		_hurt_lock = maxf(_hurt_lock - delta, 0.0)
+		_throw_wait = maxf(_throw_wait - delta, 0.0)
+		flash_left = maxf(flash_left - delta, 0.0)
 	if _is_local():
 		_recover_recoil(delta)
 	_update_operator(delta)
@@ -513,6 +643,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		use_medkit()
 		get_viewport().set_input_as_handled()
 		return
+	if event.is_action_pressed(&"cycle_grenade"):
+		var index := (ARSENAL.GRENADE_IDS.find(grenade_type) + 1) % ARSENAL.GRENADE_IDS.size()
+		grenade_type = ARSENAL.GRENADE_IDS[index]
+		inventory_changed.emit()
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"throw_grenade"):
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and grenade_stock(grenade_type) > 0:
+			get_parent().get_node("Grenades").request_throw(self, grenade_type)
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed(&"interact"):
 		get_parent().get_node("Loot").interact(self)
 		get_viewport().set_input_as_handled()
@@ -522,15 +663,24 @@ func _unhandled_input(event: InputEvent) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			get_viewport().set_input_as_handled()
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var sensitivity := MOUSE_SENS * GameSettings.sensitivity * lerpf(1.0, 0.55, $Camera3D/Weapon.aim_blend())
+		var sensitivity := MOUSE_SENS * GameSettings.sensitivity * (0.2 if _scoped else lerpf(1.0, 0.55, gun.aim_blend()))
 		var pitch_sign := 1.0 if GameSettings.invert_y else -1.0
-		rotate_y(-event.relative.x * sensitivity)
-		_camera.rotate_x(event.relative.y * sensitivity * pitch_sign)
-		_camera.rotation.x = clampf(_camera.rotation.x, deg_to_rad(-80.0), deg_to_rad(80.0))
+		_turn_yaw(-event.relative.x * sensitivity)
+		var pitch: float = _camera.rotation.x + event.relative.y * sensitivity * pitch_sign
+		_camera.rotation.x = clampf(pitch, deg_to_rad(-80.0), deg_to_rad(80.0))
 
 
 func accepts_gameplay_input() -> bool:
 	return control_enabled and not get_parent().input_blocked()
+
+
+func _turn_yaw(amount: float) -> void:
+	if not in_cover():
+		rotate_y(amount)
+		return
+	var wall_yaw := atan2(_cover_normal.x, _cover_normal.z)
+	var angle := angle_difference(wall_yaw, rotation.y)
+	rotation.y = wall_yaw + clampf(angle + amount, -COVER_LOOK_LIMIT, COVER_LOOK_LIMIT)
 
 
 func _physics_process(delta: float) -> void:
@@ -541,6 +691,18 @@ func _physics_process(delta: float) -> void:
 		PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, global_transform)
 		return
 	var accepts_input := accepts_gameplay_input()
+	var jump_held := Input.is_action_pressed(&"jump")
+	var jump_pressed := jump_held and not _jump_held
+	_jump_held = jump_held
+	if in_cover():
+		if not is_on_floor() or (accepts_input and (jump_pressed or Input.is_action_pressed(&"move_back"))):
+			_leave_cover()
+		else:
+			var side := Input.get_axis(&"cover_left", &"cover_right") if accepts_input else 0.0
+			_move_in_cover(signf(side), delta)
+			aiming = accepts_input and can_fire_from_cover() and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and GameSettings.aim_pressed()
+			return
+
 	aiming = accepts_input and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and GameSettings.aim_pressed()
 	if accepts_input:
 		_update_crouch(Input.is_action_pressed(&"crouch"))
@@ -557,18 +719,17 @@ func _physics_process(delta: float) -> void:
 	var vertical := velocity.y
 	if not is_on_floor():
 		vertical += get_gravity().y * delta
-	var jump_held := Input.is_action_pressed(&"jump")
-	if jump_held and not _jump_held and is_on_floor() and not crouched:
+	if jump_pressed and is_on_floor() and not crouched:
 		vertical = JUMP_VELOCITY
-	_jump_held = jump_held
 
 	var wish := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
+	var sprinting := not crouched and not aiming and Input.is_action_pressed(&"sprint")
 	var speed := WALK_SPEED
 	if crouched:
 		speed = CROUCH_SPEED
 	elif aiming:
 		speed = AIM_SPEED
-	elif Input.is_action_pressed(&"sprint"):
+	elif sprinting:
 		speed = SPRINT_SPEED
 	var direction := (global_transform.basis * Vector3(wish.x, 0.0, wish.y))
 	if direction.length_squared() > 0.001:
@@ -580,6 +741,68 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0.0, speed * 8.0 * delta)
 	velocity.y = vertical
 	move_and_slide()
+	if sprinting and wish.y < -0.7 and is_on_floor():
+		_try_attach_cover(direction)
+
+
+func _try_attach_cover(direction: Vector3) -> void:
+	for index in get_slide_collision_count():
+		var contact := get_slide_collision(index)
+		var normal := contact.get_normal()
+		if not contact.get_collider() is StaticBody3D or absf(normal.y) > 0.12:
+			continue
+		var wall_normal := Vector3(normal.x, 0.0, normal.z).normalized()
+		if direction.dot(wall_normal) > -0.91 or not _has_cover_wall(global_position, wall_normal):
+			continue
+		_cover_normal = wall_normal
+		velocity = Vector3.ZERO
+		_update_crouch(true)
+		_turn_yaw(0.0)
+		return
+
+
+func _has_cover_wall(at: Vector3, normal: Vector3) -> bool:
+	var origin := at + Vector3.UP * 1.26
+	var ray := PhysicsRayQueryParameters3D.create(origin, origin - normal * COVER_WALL_REACH, collision_mask, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
+	return not hit.is_empty() and hit.collider is StaticBody3D and normal.dot(hit.normal) > 0.88
+
+
+func _move_in_cover(side: float, delta: float) -> void:
+	var tangent := Vector3.UP.cross(_cover_normal)
+	if _peek_direction == 0.0 and side != 0.0:
+		var travel := tangent * side
+		if not _has_cover_wall(global_position + travel * COVER_EDGE_PROBE, _cover_normal):
+			if not test_move(global_transform, travel * COVER_PEEK_DISTANCE):
+				_peek_anchor = global_position
+				_peek_direction = side
+			else:
+				side = 0.0
+
+	if _peek_direction == 0.0:
+		velocity = tangent * side * COVER_SPEED - _cover_normal * 0.65
+		move_and_slide()
+		if not _has_cover_wall(global_position, _cover_normal):
+			_leave_cover()
+		return
+
+	# Keep the crouched body partially exposed at the edge and retrace the same path on release.
+	var peek_axis := tangent * _peek_direction
+	var target_distance := COVER_PEEK_DISTANCE if side == _peek_direction else 0.0
+	var distance := (global_position - _peek_anchor).dot(peek_axis)
+	velocity = peek_axis * clampf((target_distance - distance) / delta, -COVER_PEEK_SPEED, COVER_PEEK_SPEED)
+	move_and_slide()
+	distance = (global_position - _peek_anchor).dot(peek_axis)
+	_cover_peek = _peek_direction * clampf(distance / COVER_PEEK_DISTANCE, 0.0, 1.0)
+	if target_distance == 0.0 and absf(distance) < 0.015:
+		_peek_direction = 0.0
+		_cover_peek = 0.0
+
+
+func _leave_cover() -> void:
+	_cover_normal = Vector3.ZERO
+	_peek_direction = 0.0
+	_cover_peek = 0.0
 
 
 func _update_crouch(wants_crouch: bool) -> void:
@@ -631,6 +854,7 @@ func _build_operator() -> void:
 	_pouch.position = _pouch_rest
 	add_child(_pouch)
 
+	_vest = _avatar.find_child(OperatorPose.VEST_MESH, true, false) as Node3D
 	_avatar.find_child("Object_111", true, false).hide()
 	if _is_local():
 		for mesh_name in ["Object_97", "Object_99", "Object_109"]:
@@ -653,13 +877,23 @@ func _update_operator(delta: float) -> void:
 	var instant := step / maxf(delta, 0.001)
 	_visual_velocity = _visual_velocity.lerp(instant, minf(1.0, delta * 12.0))
 	_pose.planar_velocity = _visual_velocity
-	_pose.grounded = is_on_floor() if _is_local() else absf(vertical_speed) < 0.8
-	_pose.aim_pitch = clampf(_camera.rotation.x, -0.78, 0.78)
+	_pose.grounded = is_on_floor() if _is_local() or (_server_rules() and is_in_group("bot")) else _net_grounded
+	if control_enabled:
+		_footsteps.advance(step.length(), _visual_velocity.length(), _pose.grounded, crouched or in_cover())
 	_crouch_blend = move_toward(_crouch_blend, float(crouched), delta * 7.5)
+	_update_view_pose()
+
+
+func _update_view_pose() -> void:
+	_pose.aim_pitch = clampf(_camera.rotation.x, -0.78, 0.78)
 	var stance := Vector3(0.0, -CROUCH_DROP, 0.05) * smoothstep(0.0, 1.0, _crouch_blend)
-	_pose.stance_offset = stance
-	_camera.position = _head_pivot + (_eye_rest - _head_pivot).rotated(Vector3.RIGHT, _pose.aim_pitch) + stance
-	_pouch.position = _pouch_rest + stance
+	var lean := Vector3.UP.cross(_cover_normal) * (_cover_peek * 0.12) - _cover_normal * 0.055
+	var lean_local := global_basis.inverse() * lean
+	_pose.stance_offset = stance + lean_local * 0.65
+	_camera.position = _head_pivot + (_eye_rest - _head_pivot).rotated(Vector3.RIGHT, _pose.aim_pitch) + stance + lean_local
+	_camera.rotation.y = -_cover_peek * 0.30
+	_camera.rotation.z = -_cover_peek * 0.11
+	_pouch.position = _pouch_rest + _pose.stance_offset
 	if _bar_root:
 		_bar_root.position.y = 1.98 + stance.y
 

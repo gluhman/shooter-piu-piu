@@ -1,5 +1,7 @@
 extends Control
 
+const WEAPON := preload("res://weapon.gd")
+
 var _picked := false
 var _cards: Dictionary[String, Button] = {}
 var _card_text: Dictionary[String, String] = {}
@@ -67,33 +69,26 @@ func _build() -> void:
 	title.add_theme_color_override("font_color", Color(0.96, 0.94, 0.9))
 	column.add_child(title)
 
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 18)
+	var row := GridContainer.new()
+	row.columns = 4
+	row.add_theme_constant_override("h_separation", 12)
+	row.add_theme_constant_override("v_separation", 12)
 	column.add_child(row)
-	row.add_child(_card(
-		"deagle",
-		"DESERT EAGLE",
-		"Пистолет\nРежим стрельбы: одиночный\n52 урона · 7 патронов",
-		Color(0.8, 0.64, 0.32)
-	))
-	row.add_child(_card(
-		"shotgun",
-		"ДРОБОВИК",
-		"Помповый\nРежим стрельбы: картечь\n14×8 урона · 6 патронов",
-		Color(0.48, 0.62, 0.78)
-	))
-	row.add_child(_card(
-		"ak47",
-		"AK-47",
-		"Автомат\nУдерживай ЛКМ для стрельбы\n24 урона · 30 патронов",
-		Color(0.55, 0.70, 0.42)
-	))
+	var borders := [Color("#cc9951"), Color("#7a9fc7"), Color("#8cb46e"), Color("#ad6d48")]
+	var i := 0
+	for id in GameSettings.WEAPON_KEYS:
+		var stats: Dictionary = WEAPON.WEAPONS[id]
+		var ammo := "%d в магазине" % stats.mag
+		if id == "launcher":
+			ammo = "Взрыв при попадании"
+		row.add_child(_card(id, stats.name, "%s\n%s" % [stats.mode.capitalize(), ammo], borders[i % borders.size()]))
+		i += 1
 
 
 func _card(weapon_id: String, title: String, body: String, border: Color) -> Button:
 	var button := Button.new()
 	_card_text[weapon_id] = title + "\n\n" + body
-	button.custom_minimum_size = Vector2(300, 220)
+	button.custom_minimum_size = Vector2(196, 128)
 	button.focus_mode = Control.FOCUS_NONE
 	button.add_theme_font_size_override("font_size", 18)
 	button.add_theme_color_override("font_color", Color(0.95, 0.94, 0.9))
@@ -115,8 +110,8 @@ func _panel(bg: Color, border: Color) -> StyleBoxFlat:
 	style.border_color = border
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(8)
-	style.content_margin_left = 18.0
-	style.content_margin_right = 18.0
+	style.content_margin_left = 10.0
+	style.content_margin_right = 10.0
 	style.content_margin_top = 20.0
 	style.content_margin_bottom = 20.0
 	return style

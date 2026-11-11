@@ -4,7 +4,10 @@ signal graphics_changed
 signal controls_changed
 
 const PATH := "user://settings.cfg"
-const WEAPON_KEYS := {"deagle": &"select_pistol", "shotgun": &"select_shotgun", "ak47": &"select_rifle"}
+const WEAPON_KEYS := {
+	"deagle": &"select_pistol", "shotgun": &"select_shotgun", "ak47": &"select_rifle",
+	"launcher": &"select_launcher", "m249": &"select_machine_gun", "m14": &"select_m14", "m1": &"select_m1",
+}
 const ACTIONS := {
 	&"move_forward": ["Вперёд", KEY_W],
 	&"move_back": ["Назад", KEY_S],
@@ -21,7 +24,15 @@ const ACTIONS := {
 	&"select_pistol": ["Выбрать пистолет", KEY_1],
 	&"select_shotgun": ["Выбрать дробовик", KEY_2],
 	&"select_rifle": ["Выбрать автомат", KEY_3],
+	&"select_launcher": ["Выбрать гранатомёт", KEY_4],
+	&"select_machine_gun": ["Выбрать пулемёт", KEY_5],
+	&"select_m14": ["Выбрать M14", KEY_6],
+	&"select_m1": ["Выбрать M1", KEY_7],
+	&"throw_grenade": ["Бросить гранату", KEY_G],
+	&"cycle_grenade": ["Сменить тип гранаты", KEY_X],
 	&"use_medkit": ["Использовать аптечку", KEY_H],
+	&"cover_left": ["Влево вдоль укрытия", KEY_Q],
+	&"cover_right": ["Вправо вдоль укрытия", KEY_E],
 }
 
 var sensitivity := 1.0

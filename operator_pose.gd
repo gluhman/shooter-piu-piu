@@ -1,5 +1,6 @@
 extends SkeletonModifier3D
 
+const VEST_MESH := "Object_105"
 const MODEL := preload("res://assets/operator/operator.glb")
 const FABRIC_TEXTURES := {
 	"Mil_Suit_R5": [

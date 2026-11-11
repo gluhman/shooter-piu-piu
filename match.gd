@@ -3,13 +3,13 @@ extends Node3D
 const PLAYER_SCENE := preload("res://player.tscn")
 const BOT_SCRIPT := preload("res://bot.gd")
 const MAP_NAMES := preload("res://map_builder.gd").MAP_NAMES
-const WEAPON_SET_NAMES := ["Любое", "Только дробовики", "Только пистолеты и автоматы"]
+const WEAPON_SET_NAMES := ["Любое", "Только дробовики", "Пистолеты, винтовки и пулемёты"]
 const POSE_INTERVAL := 1.0 / 30.0
 const DIFFICULTY_NAMES := ["Легко", "Обычно", "Сложно"]
 const WEAPON_SETS := [
-	["deagle", "shotgun", "ak47"],
+	["deagle", "shotgun", "ak47", "launcher", "m249", "m14", "m1"],
 	["shotgun"],
-	["deagle", "ak47"],
+	["deagle", "ak47", "m249", "m14", "m1"],
 ]
 
 var map_id := 0
@@ -17,6 +17,7 @@ var weapon_set := 0
 var round_limits := Vector2i.ZERO
 var _layout_seed := 0
 var player_slots := PackedInt32Array()
+var _display_names: Dictionary[int, String] = {}
 
 var _reloading := false
 var _started := false
@@ -51,7 +52,46 @@ func match_peers() -> Array[int]:
 
 
 func player_label(slot: int) -> String:
+	var alias: String = _display_names.get(player_slots[slot], "")
+	if not alias.is_empty():
+		return alias
 	return "Хост" if slot == 0 else "Игрок %d" % (slot + 1)
+
+
+func set_local_display_name(value: String) -> void:
+	Net.remember_display_name(value)
+	if not Net.active:
+		return
+	if multiplayer.is_server():
+		_set_display_name(1, Net.display_name)
+	elif Net.client_session:
+		net_set_display_name.rpc_id(1, Net.display_name)
+
+
+@rpc("any_peer", "reliable")
+func net_set_display_name(value: String) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if Net.active and multiplayer.is_server() and multiplayer.get_peers().has(sender):
+		_set_display_name(sender, Net.clean_display_name(value))
+
+
+func _set_display_name(peer: int, alias: String) -> void:
+	if _display_names.get(peer, "") == alias:
+		return
+	if alias.is_empty():
+		_display_names.erase(peer)
+	else:
+		_display_names[peer] = alias
+	if _started:
+		for guest in _ready_peers:
+			net_display_names.rpc_id(guest, _display_names)
+	else:
+		_send_room_state()
+
+
+@rpc("authority", "reliable")
+func net_display_names(names: Dictionary[int, String]) -> void:
+	_display_names = names
 
 
 func has_started() -> bool:
@@ -112,6 +152,7 @@ func net_restart() -> void:
 	$HUD/MatchMenu.clear_round_result()
 	_reset_round_clock()
 	$Ballistics.reset_round()
+	$Grenades.reset_round()
 	$Map.clear_bullet_holes()
 	$HUD.reset_round()
 	$Loot.reset_round()
@@ -165,17 +206,19 @@ func _send_room_state() -> void:
 	$HUD/Lobby.refresh_room()
 	for peer in player_slots:
 		if peer > 1:
-			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, round_limits)
+			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, round_limits, _display_names)
 
 
 @rpc("authority", "reliable")
-func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: Vector2i) -> void:
+func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: Vector2i,
+		names: Dictionary[int, String]) -> void:
 	if _started:
 		return
 	weapon_set = weapons
 	map_id = arena
 	round_limits = limits
 	player_slots = roster
+	_display_names = names
 	$HUD/Lobby.refresh_room()
 
 
@@ -353,12 +396,18 @@ func net_client_pose(pose: PackedFloat32Array) -> void:
 	if not _ready_peers.has(id):
 		return
 	var player := get_node_or_null(str(id))
-	if not player or not player.control_enabled or pose.size() != 7:
-		return
+	if player:
+		apply_client_pose(player, pose)
+
+
+func apply_client_pose(player: Node, pose: PackedFloat32Array) -> bool:
+	if not player or not player.control_enabled or pose.size() != player.NETWORK_POSE_SIZE:
+		return false
 	for value in pose:
 		if not is_finite(value):
-			return
+			return false
 	player.apply_network_pose(pose)
+	return true
 
 
 @rpc("authority", "unreliable_ordered")
@@ -375,6 +424,7 @@ func net_poses(poses: Dictionary[int, PackedFloat32Array]) -> void:
 
 func _on_joined() -> void:
 	$HUD/Lobby.show_guest_room()
+	set_local_display_name(Net.display_name)
 
 
 func _on_connection_failed() -> void:
@@ -407,8 +457,10 @@ func net_ready() -> void:
 		return
 	# Gameplay RPCs can target this guest once it has built the match scene.
 	_ready_peers.append(id)
+	net_display_names.rpc_id(id, _display_names)
 	$Bot0.send_status_to(id)
 	$Loot.send_state(id)
+	$Grenades.send_state(id)
 	$Map.send_bullet_holes(id)
 	for player in get_tree().get_nodes_in_group("player"):
 		player.send_status_to(id)
@@ -422,6 +474,7 @@ func net_ready() -> void:
 func _on_peer_disconnected(id: int) -> void:
 	if not Net.active or not multiplayer.is_server():
 		return
+	_display_names.erase(id)
 	var slot := player_slots.find(id)
 	if slot <= 0:
 		return
@@ -452,6 +505,7 @@ func _set_slot(slot: int, id: int) -> void:
 	if not _started:
 		return
 	if previous != 0:
+		_display_names.erase(previous)
 		var player := get_node(str(previous))
 		remove_child(player)
 		player.queue_free()

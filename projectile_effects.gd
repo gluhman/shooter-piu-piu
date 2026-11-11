@@ -7,9 +7,13 @@ const SURFACES := {
 	"concrete": [Color(0.71, 0.68, 0.60), Color(0.55, 0.52, 0.46), 7, 0.16],
 	"operator": [Color(0.48, 0.12, 0.09), Color(0.37, 0.10, 0.08), 5, 0.05],
 }
-const FLASH_SIZE := {"deagle": 0.21, "shotgun": 0.32, "ak47": 0.26}
-const MARK_SIZE := {"deagle": 0.065, "shotgun": 0.035, "ak47": 0.055}
+const FLASH_SIZE := {"deagle": 0.21, "shotgun": 0.32, "ak47": 0.26, "m249": 0.27, "m14": 0.29, "m1": 0.32, "launcher": 0.38}
+const MARK_SIZE := {"deagle": 0.065, "shotgun": 0.035, "ak47": 0.055, "m249": 0.047, "m14": 0.056, "m1": 0.059}
 const SHOT_SOUNDS := {
+	"m249": preload("res://assets/arsenal/m249_fire.wav"),
+	"m14": preload("res://assets/arsenal/m14_fire.wav"),
+	"m1": preload("res://assets/arsenal/m1_fire.wav"),
+	"launcher": preload("res://assets/arsenal/launcher_fire.wav"),
 	"deagle": preload("res://assets/weapon_audio/deagle_fire.wav"),
 	"shotgun": preload("res://assets/weapon_audio/shotgun_fire.wav"),
 	"ak47": preload("res://assets/ak47/fire.wav"),
@@ -75,7 +79,7 @@ func _play_spatial_shot(profile: String, at: Vector3) -> void:
 	sound.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
 	sound.unit_size = 4.0
 	sound.max_distance = 56.0
-	sound.volume_db = -5.0 if profile == "ak47" else 0.0
+	sound.volume_db = -5.0 if profile in ["ak47", "m249"] else 0.0
 	sound.max_db = sound.volume_db - 5.0
 	sound.attenuation_filter_db = -12.0
 	sound.panning_strength = 1.5

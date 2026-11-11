@@ -1,5 +1,6 @@
-extends HBoxContainer
+extends GridContainer
 
+const ARSENAL := preload("res://arsenal_assets.gd")
 const WEAPON := preload("res://weapon.gd")
 const INK := Color("#e2e9de")
 const MUTED := Color("#a0ab9d")
@@ -17,16 +18,19 @@ var _inactive_style: StyleBoxFlat
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	offset_left = 24
-	offset_top = -110
+	offset_top = -162
 	offset_bottom = -50
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_theme_constant_override("separation", 7)
+	columns = 5
+	add_theme_constant_override("h_separation", 7)
+	add_theme_constant_override("v_separation", 5)
 	_active_style = _style(Color("#263221ed"), Color("#8aa567"))
 	_available_style = _style(Color("#191f1bea"), Color("#4b594b"))
 	_inactive_style = _style(Color("#121613d9"), Color("#2e3a31"))
 	for id in GameSettings.WEAPON_KEYS:
-		_card(id, 144)
-	_card("medkit", 130)
+		_card(id, 141)
+	_card("medkit", 141)
+	_card("grenade", 174)
 	GameSettings.controls_changed.connect(_refresh)
 	hide()
 
@@ -56,6 +60,10 @@ func _refresh() -> void:
 	_titles["medkit"].text = "%s   АПТЕЧКА" % GameSettings.binding_label(&"use_medkit")
 	_counts["medkit"].text = "× %d" % _player.medkits
 	_apply_state("medkit", _player.medkits > 0, false)
+	var kind: String = _player.grenade_type
+	_titles["grenade"].text = "%s   %s" % [GameSettings.binding_label(&"throw_grenade"), ARSENAL.GRENADE_LABELS[kind].to_upper()]
+	_counts["grenade"].text = "× %d     %s — сменить" % [_player.grenade_stock(kind), GameSettings.binding_label(&"cycle_grenade")]
+	_apply_state("grenade", _player.grenade_stock(kind) > 0, false)
 	show()
 
 
@@ -68,7 +76,7 @@ func _apply_state(id: String, available: bool, active: bool) -> void:
 
 func _card(id: String, width: float) -> void:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(width, 57)
+	panel.custom_minimum_size = Vector2(width, 51)
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(panel)
 	var column := VBoxContainer.new()

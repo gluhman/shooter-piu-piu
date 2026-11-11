@@ -4,6 +4,9 @@ const Effects := preload("res://projectile_effects.gd")
 
 # These profiles are tuned for the container arena's scale and sight lines.
 const AMMO := {
+	"m249": {"speed": 375.0, "drag": 0.24, "trail": 2.9, "width": 0.009, "color": Color(1.0, 0.66, 0.31)},
+	"m14": {"speed": 420.0, "drag": 0.17, "trail": 1.85, "width": 0.010, "color": Color(1.0, 0.70, 0.40)},
+	"m1": {"speed": 440.0, "drag": 0.14, "trail": 1.8, "width": 0.009, "color": Color(1.0, 0.70, 0.40)},
 	"ak47": {"speed": 360.0, "drag": 0.20, "trail": 2.4, "width": 0.012, "color": Color(1.0, 0.63, 0.24)},
 	"deagle": {"speed": 220.0, "drag": 0.58, "trail": 0.65, "width": 0.007, "color": Color(0.96, 0.75, 0.50)},
 	"shotgun": {"speed": 250.0, "drag": 1.32, "trail": 0.0, "width": 0.0, "color": Color.WHITE},
@@ -218,8 +221,9 @@ func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3) -> D
 	var surface: String = collider.get_meta(&"impact_surface", "concrete")
 	var incidence := clampf(-direction.dot(normal), 0.0, 1.0)
 	var speed := projectile.velocity.length()
-	if surface == "metal" and projectile.profile != "ak47" and not projectile.bounced:
-		var grazing_limit := 0.36 if projectile.profile == "deagle" else 0.27
+	var heavy := projectile.profile in ["ak47", "m14", "m1"]
+	if surface == "metal" and not heavy and not projectile.bounced:
+		var grazing_limit := 0.27 if projectile.profile == "shotgun" else 0.36
 		if incidence <= grazing_limit and speed >= float(AMMO[projectile.profile].speed) * 0.38:
 			projectile.bounced = true
 			var reflected := direction.bounce(normal).normalized()
@@ -231,7 +235,7 @@ func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3) -> D
 
 	if not collider.has_meta(&"ballistic_size") or speed < float(AMMO[projectile.profile].speed) * 0.40:
 		return {}
-	var steel := surface == "metal" and projectile.profile == "ak47" and not projectile.crossed_steel and incidence >= 0.55
+	var steel := surface == "metal" and heavy and not projectile.crossed_steel and incidence >= 0.55
 	var wood := surface == "wood" and projectile.profile != "shotgun" and not projectile.crossed_wood and incidence >= 0.33
 	if not steel and not wood:
 		return {}
@@ -304,25 +308,29 @@ func _impact(id: int, hit: Dictionary, direction: Vector3, profile: String, shoo
 	var collider := hit["collider"] as Node
 	var surface: String = collider.get_meta(&"impact_surface", "concrete") if collider else "concrete"
 	var damaged := false
+	var headshot := false
 	if collider and (collider.is_in_group("player") or collider.is_in_group("bot")):
 		surface = "operator"
 		var health: int = collider.health
+		var armor: int = collider.armor
+		var zone: String = collider.projectile_zone(hit.position)
 		if shooter > 0 or collider.is_in_group("player"):
-			collider.take_damage(maxi(1, roundi(_damage_at(distance, stats) * damage_scale)), shooter)
-		damaged = collider.health < health
+			collider.take_damage(maxi(1, roundi(_damage_at(distance, stats) * damage_scale)), shooter, zone)
+		damaged = collider.health < health or collider.armor < armor
+		headshot = damaged and zone == "head"
 	var normal: Vector3 = hit["normal"]
 	if normal.is_zero_approx():
 		normal = -direction
 	var position: Vector3 = hit["position"]
-	_show_impact(position, normal, surface, profile, shooter, damaged)
+	_show_impact(position, normal, surface, profile, shooter, damaged, headshot)
 	for peer in get_parent().match_peers():
-		net_impact.rpc_id(peer, id, position, normal, surface, profile, shooter, damaged)
+		net_impact.rpc_id(peer, id, position, normal, surface, profile, shooter, damaged, headshot)
 
 
-func _show_impact(at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int, damaged: bool) -> void:
+func _show_impact(at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int, damaged: bool, headshot: bool) -> void:
 	_effects.impact(at, normal, surface, profile)
 	if damaged and shooter == Net.local_id():
-		get_parent().get_node("HUD").confirm_projectile_hit()
+		get_parent().get_node("HUD").confirm_projectile_hit(headshot)
 
 
 @rpc("authority", "reliable")
@@ -334,9 +342,9 @@ func net_launch(first_id: int, profile: String, muzzle: Vector3, velocities: Pac
 
 
 @rpc("authority", "reliable")
-func net_impact(id: int, at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int, damaged: bool) -> void:
+func net_impact(id: int, at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int, damaged: bool, headshot: bool) -> void:
 	_end_remote_segment(id, at)
-	_show_impact(at, normal, surface, profile, shooter, damaged)
+	_show_impact(at, normal, surface, profile, shooter, damaged, headshot)
 
 
 @rpc("authority", "reliable")

@@ -1,20 +1,28 @@
 extends CanvasLayer
 
+const SCOPE_SHADER := preload("res://scope_overlay.gdshader")
 const INVENTORY_HUD := preload("res://inventory_hud.gd")
 
 var _health_back: ColorRect
 var _fill: ColorRect
 var _label: Label
 var _flash: ColorRect
+var _scope: ColorRect
+var _blind: ColorRect
+var _scope_shader: ShaderMaterial
+var _hit_time := 0.0
+var _blind_time := 0.0
+var _armor_text: Label
 var _death: Label
 var _score: Label
 var _net_label: Label
 var _loot_prompt: Label
 var _loot_notice: Label
+var _cover_hint: Label
 var _loot_notice_left := 0.0
 var _last_health := 100
 var _player: Node
-var _inventory_hud: HBoxContainer
+var _inventory_hud: GridContainer
 var _round_scores: Dictionary = {}
 var _limits_text := ""
 
@@ -65,6 +73,14 @@ func show_loot_notice(text: String) -> void:
 
 
 func _process(delta: float) -> void:
+	if _hit_time > 0.0:
+		_hit_time -= delta
+		if _hit_time <= 0.0:
+			_scope_shader.set_shader_parameter("reticle", Color("#0a0a09"))
+	if _blind_time > 0.0:
+		_blind_time = maxf(0.0, _blind_time - delta)
+		_blind.color.a = minf(1.0, pow(_blind_time / 1.6, 1.65))
+	_cover_hint.visible = is_instance_valid(_player) and _player.in_cover() and _player.accepts_gameplay_input()
 	if _loot_notice_left > 0.0:
 		_loot_notice_left -= delta
 		if _loot_notice_left <= 0.0:
@@ -80,14 +96,32 @@ func _on_health(current: int, maximum: int) -> void:
 	_fill.offset_right = 8.0 + 220.0 * ratio
 	_fill.color = Color(lerpf(0.85, 0.25, ratio), lerpf(0.18, 0.72, ratio), 0.2)
 	_label.text = "%d HP" % current
+	if is_instance_valid(_player):
+		_armor_text.text = "Броня  %d / %d" % [_player.armor, _player.MAX_ARMOR]
+		_armor_text.visible = current > 0 and _player.armor > 0
 	if current < _last_health and current > 0:
 		_flash.color = Color(0.7, 0.05, 0.04, 0.32)
 	_last_health = current
 
 
-func confirm_projectile_hit() -> void:
+func confirm_projectile_hit(headshot: bool) -> void:
 	if is_instance_valid(_player):
-		_player.get_node("Camera3D/Weapon").confirm_projectile_hit()
+		_player.get_node("Camera3D/Weapon").confirm_projectile_hit(headshot)
+		_scope_shader.set_shader_parameter("reticle", Color("#ff5e48") if headshot else Color("#ffad76"))
+		_hit_time = 0.15
+
+
+func set_scope(active: bool) -> void:
+	_scope.visible = active
+
+
+func scope_active() -> bool:
+	return _scope.visible
+
+
+func show_flashbang(strength: float) -> void:
+	_blind_time = maxf(_blind_time, strength * 2.75)
+	_blind.color.a = minf(1.0, pow(_blind_time / 1.6, 1.65))
 
 
 func on_frag(killer_id: int, victim_id: int) -> void:
@@ -105,6 +139,8 @@ func reset_round() -> void:
 	_death.hide()
 	_loot_notice.hide()
 	_flash.color.a = 0.0
+	_blind_time = 0.0
+	_blind.color.a = 0.0
 	_refresh_score()
 
 
@@ -123,8 +159,10 @@ func remove_score(peer: int) -> void:
 
 func score_rows() -> Array:
 	var local := Net.local_id()
-	var rows: Array = [_score_row(local, "Вы", true)]
 	var game := get_parent()
+	var local_slot: int = game.player_slots.find(local)
+	var local_name := "%s (вы)" % game.player_label(local_slot) if Net.active and local_slot >= 0 else "Вы"
+	var rows: Array = [_score_row(local, local_name, true)]
 	for slot in game.player_slots.size():
 		var peer: int = game.player_slots[slot]
 		if peer != 0 and peer != local:
@@ -169,6 +207,10 @@ func _refresh_score() -> void:
 
 
 func _update_hint() -> void:
+	_cover_hint.text = "%s / %s — вдоль стены и выглянуть    %s / %s — выйти из укрытия" % [
+		GameSettings.binding_label(&"cover_left"), GameSettings.binding_label(&"cover_right"),
+		GameSettings.binding_label(&"move_back"), GameSettings.binding_label(&"jump"),
+	]
 	$Hint.text = "%s — выстрел    %s — прицел    %s — присесть    %s — перезарядка    %s — подбор    Tab — счёт    Esc — меню" % [
 		GameSettings.binding_label(&"fire"), GameSettings.binding_label(&"aim_sights"),
 		GameSettings.binding_label(&"crouch"), GameSettings.binding_label(&"reload_weapon"), GameSettings.binding_label(&"interact"),
@@ -177,9 +219,28 @@ func _update_hint() -> void:
 
 func _on_respawn() -> void:
 	_death.visible = false
+	_blind_time = 0.0
+	_blind.color.a = 0.0
 
 
 func _build() -> void:
+	_scope = ColorRect.new()
+	_scope.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_scope.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scope_shader = ShaderMaterial.new()
+	_scope_shader.shader = SCOPE_SHADER
+	_scope.material = _scope_shader
+	_scope.hide()
+	add_child(_scope)
+	move_child(_scope, 0)
+
+	_blind = ColorRect.new()
+	_blind.color = Color(1.0, 0.985, 0.945, 0.0)
+	_blind.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_blind.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_blind)
+	move_child(_blind, 1)
+
 	_flash = ColorRect.new()
 	_flash.color = Color(0.7, 0.05, 0.04, 0.0)
 	_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -216,6 +277,14 @@ func _build() -> void:
 	_label.text = "100 HP"
 	_label.hide()
 	add_child(_label)
+
+	_armor_text = Label.new()
+	_armor_text.position = Vector2(28, 74)
+	_armor_text.add_theme_color_override("font_color", Color("#a8d3ed"))
+	_armor_text.add_theme_color_override("font_outline_color", Color("#151b20"))
+	_armor_text.add_theme_constant_override("outline_size", 5)
+	_armor_text.hide()
+	add_child(_armor_text)
 
 	_score = Label.new()
 	_score.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
@@ -262,6 +331,11 @@ func _build() -> void:
 
 	_loot_prompt = _build_loot_label(31.0, Color(0.98, 0.96, 0.89))
 	_loot_notice = _build_loot_label(57.0, Color(0.76, 0.87, 0.56))
+	_cover_hint = _build_loot_label(-152.0, Color(0.89, 0.93, 0.78))
+	_cover_hint.anchor_top = 1.0
+	_cover_hint.anchor_bottom = 1.0
+	_cover_hint.offset_top = -152.0
+	_cover_hint.offset_bottom = -120.0
 	_inventory_hud = INVENTORY_HUD.new()
 	add_child(_inventory_hud)
 

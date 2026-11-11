@@ -7,6 +7,10 @@ const DIFFICULTY := [
 	{"speed": 1.15, "shot_delay": 0.72, "spread": 0.50},
 ]
 const FIRE := {
+	"launcher": {"range": 28.0, "preferred": 13.0, "delay": 2.4, "damage": 65, "minimum": 7.0},
+	"m249": {"range": 38.0, "preferred": 13.0, "delay": 0.37, "damage": 8},
+	"m14": {"range": 41.0, "preferred": 15.0, "delay": 0.73, "damage": 16},
+	"m1": {"range": 45.0, "preferred": 17.0, "delay": 1.04, "damage": 24},
 	"deagle": {"range": 28.0, "preferred": 10.0, "delay": 0.95, "damage": 14},
 	"shotgun": {"range": 17.0, "preferred": 6.0, "delay": 1.0, "damage": 5},
 	"ak47": {"range": 34.0, "preferred": 12.0, "delay": 0.47, "damage": 10},
@@ -30,6 +34,7 @@ func _ready() -> void:
 	super._ready()
 	remove_from_group("player")
 	add_to_group("bot")
+	_grenades.clear()
 	for index in patrol_route.size():
 		if spawn_position.distance_squared_to(patrol_route[index]) < spawn_position.distance_squared_to(patrol_route[_spawn_waypoint]):
 			_spawn_waypoint = index
@@ -84,7 +89,7 @@ func _physics_process(delta: float) -> void:
 	var profile: Dictionary = FIRE[weapon_id]
 	var modifiers: Dictionary = DIFFICULTY[difficulty]
 	var ammo: Vector2i = gun.ammo_counts()
-	var target := _visible_target(float(profile.range)) if ammo.x + ammo.y > 0 else null
+	var target := _visible_target(float(profile.range)) if ammo.x + ammo.y > 0 and flash_left < 0.2 else null
 	aiming = target != null
 	_shoot_wait = maxf(0.0, _shoot_wait - delta)
 	var wish := Vector3.ZERO
@@ -97,8 +102,11 @@ func _physics_process(delta: float) -> void:
 			wish = _flat_direction(to_target)
 		elif distance < float(profile.preferred) - 1.6:
 			wish = -_flat_direction(to_target)
-		if _shoot_wait <= 0.0 and (-global_basis.z).dot(_flat_direction(to_target)) > 0.985:
-			if gun.fire_bot(target.aim_center(), float(modifiers.spread), int(profile.damage)):
+		if _shoot_wait <= 0.0 and distance >= float(profile.get("minimum", 0.0)) and (-global_basis.z).dot(_flat_direction(to_target)) > 0.985:
+			var aim_at: Vector3 = target.aim_center()
+			if weapon_id == "launcher":
+				aim_at.y += 4.9 * pow(distance / 29.0, 2.0)
+			if gun.fire_bot(aim_at, float(modifiers.spread), int(profile.damage)):
 				_shoot_wait = float(profile.delay) * float(modifiers.shot_delay) * randf_range(0.88, 1.14)
 	else:
 		_camera.rotation.x = move_toward(_camera.rotation.x, 0.0, delta * 2.5)
@@ -127,7 +135,7 @@ func _visible_target(reach: float) -> Node:
 		if not player.control_enabled or player.health <= 0:
 			continue
 		var distance: float = global_position.distance_squared_to(player.global_position)
-		if distance >= best_distance:
+		if distance >= best_distance or get_parent().get_node("Grenades").obscures(_camera.global_position, player.aim_center()):
 			continue
 		var query := PhysicsRayQueryParameters3D.create(_camera.global_position, player.aim_center())
 		query.exclude = [get_rid()]

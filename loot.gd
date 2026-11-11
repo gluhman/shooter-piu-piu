@@ -1,6 +1,8 @@
 extends Node3D
 
-enum Kind { CRATE, WEAPON, AMMO, MEDKIT, BODY }
+enum Kind { CRATE, WEAPON, AMMO, MEDKIT, BODY, ARMOR, GRENADE }
+
+const ARSENAL := preload("res://arsenal_assets.gd")
 
 const CRATE_MODEL := preload("res://assets/arena_props/supply_crate.glb")
 const OPERATOR := preload("res://operator_pose.gd")
@@ -76,7 +78,7 @@ func drop_combatant(actor: Node) -> void:
 	var ground := get_world_3d().direct_space_state.intersect_ray(query)
 	if not ground.is_empty():
 		at.y = ground.position.y
-	_add_drop(Kind.BODY, "", 0, at, actor.rotation.y, true)
+	_add_drop(Kind.BODY, "", actor.armor, at, actor.rotation.y, true)
 	var items: Array[Dictionary] = []
 	var inventory: Dictionary[String, Vector2i] = actor.inventory_stock()
 	for id in inventory:
@@ -234,7 +236,7 @@ func _open_crate(actor: Node, index: int, at: Vector3) -> void:
 	net_open_crate(index, true)
 	for peer in _match.match_peers():
 		net_open_crate.rpc_id(peer, index, true)
-	var kind := randi_range(Kind.WEAPON, Kind.MEDKIT)
+	var kind: int = [Kind.WEAPON, Kind.AMMO, Kind.MEDKIT, Kind.ARMOR, Kind.GRENADE].pick_random()
 	var weapon: String = actor.weapon_id
 	if kind == Kind.WEAPON:
 		var unowned: Array[String] = []
@@ -242,6 +244,8 @@ func _open_crate(actor: Node, index: int, at: Vector3) -> void:
 			if _match.allows_weapon(id) and not actor.owns_weapon(id):
 				unowned.append(id)
 		weapon = _match.random_weapon() if unowned.is_empty() else unowned.pick_random()
+	if kind == Kind.GRENADE:
+		weapon = ARSENAL.GRENADE_IDS.pick_random()
 	var amount := 1
 	if kind == Kind.WEAPON:
 		amount = -1
@@ -269,6 +273,10 @@ func _can_take(actor: Node, drop: Dictionary) -> bool:
 			) and actor.ammo_space(drop.weapon) > 0
 		Kind.MEDKIT:
 			return actor.score_id() > 0 or actor.health < actor.MAX_HEALTH
+		Kind.ARMOR:
+			return actor.armor < actor.MAX_ARMOR
+		Kind.GRENADE:
+			return actor.score_id() > 0 and actor.grenade_stock(drop.weapon) < ARSENAL.MAX_GRENADES
 		_:
 			return false
 
@@ -281,6 +289,10 @@ func _give(actor: Node, drop: Dictionary) -> void:
 			actor.grant_ammo(drop.weapon, drop.amount)
 		Kind.MEDKIT:
 			actor.grant_medkits(drop.amount)
+		Kind.ARMOR:
+			actor.grant_armor()
+		Kind.GRENADE:
+			actor.grant_grenades(drop.weapon, drop.amount)
 
 
 func _pickup_label(drop: Dictionary) -> String:
@@ -289,6 +301,10 @@ func _pickup_label(drop: Dictionary) -> String:
 			return "поднять %s" % WEAPON.WEAPONS[drop.weapon].name
 		Kind.AMMO:
 			return "поднять патроны (%s)" % WEAPON.WEAPONS[drop.weapon].name
+		Kind.ARMOR:
+			return "поднять бронежилет"
+		Kind.GRENADE:
+			return "поднять гранату (%s)" % ARSENAL.GRENADE_LABELS[drop.weapon]
 		_:
 			return "взять аптечку"
 
@@ -299,6 +315,8 @@ func _hud_pickup(actor: Node, drop: Dictionary) -> void:
 		Kind.WEAPON: message = "Оружие: %s" % WEAPON.WEAPONS[drop.weapon].name
 		Kind.AMMO: message = "Патроны: %s" % WEAPON.WEAPONS[drop.weapon].name
 		Kind.MEDKIT: message = "Аптечка"
+		Kind.ARMOR: message = "Бронежилет"
+		Kind.GRENADE: message = "%s граната" % ARSENAL.GRENADE_LABELS[drop.weapon]
 	if actor._is_local():
 		net_pickup_notice(message)
 	elif actor.score_id() > 1:
@@ -351,7 +369,9 @@ func net_add_drop(id: int, kind: int, weapon: String, amount: int, at: Vector3, 
 		Kind.WEAPON: WEAPON.add_pickup_model(drop, weapon)
 		Kind.AMMO: _build_ammo(drop)
 		Kind.MEDKIT: _build_medkit(drop)
-		Kind.BODY: _build_body(drop)
+		Kind.BODY: _build_body(drop, amount > 0)
+		Kind.ARMOR: drop.add_child(ARSENAL.make_model("armor"))
+		Kind.GRENADE: drop.add_child(ARSENAL.make_model(weapon))
 	if animate and kind != Kind.BODY:
 		drop.position.y += 0.38
 		drop.create_tween().tween_property(drop, "position:y", at.y, 0.32).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
@@ -373,7 +393,7 @@ func net_remove_drop(id: int) -> void:
 	_drops.erase(id)
 
 
-func _build_body(drop: Node3D) -> void:
+func _build_body(drop: Node3D, has_armor: bool) -> void:
 	var pivot := Node3D.new()
 	pivot.position.y = 0.20
 	drop.add_child(pivot)
@@ -383,6 +403,7 @@ func _build_body(drop: Node3D) -> void:
 	avatar.position = Vector3(0.169, 0, -0.041)
 	pivot.add_child(avatar)
 	OPERATOR.apply_textures(avatar)
+	avatar.find_child(OPERATOR.VEST_MESH, true, false).visible = has_armor
 	avatar.find_child("Object_111", true, false).hide()
 	avatar.find_child("Mil_R5_Eye", true, false).hide()
 	var skeleton := avatar.find_child("Skeleton3D", true, false) as Skeleton3D

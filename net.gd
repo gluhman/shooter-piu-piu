@@ -2,6 +2,7 @@ extends Node
 
 const PORT := 7777
 const MAX_PLAYERS := 10
+const MAX_NAME_LENGTH := 24
 
 signal joined
 signal connection_failed
@@ -11,6 +12,7 @@ var active := false
 var solo := false
 var notice := ""
 var last_ip := ""
+var display_name := ""
 var client_session := false
 
 
@@ -18,6 +20,7 @@ func _ready() -> void:
 	var config := ConfigFile.new()
 	if config.load("user://net.cfg") == OK:
 		last_ip = str(config.get_value("net", "ip", ""))
+		display_name = clean_display_name(str(config.get_value("net", "display_name", "")))
 	multiplayer.connected_to_server.connect(_on_connected)
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
@@ -45,8 +48,31 @@ func lan_addresses() -> PackedStringArray:
 
 func remember_ip(ip: String) -> void:
 	last_ip = ip
+	_save_preferences()
+
+
+func remember_display_name(value: String) -> void:
+	var cleaned := clean_display_name(value)
+	if cleaned == display_name:
+		return
+	display_name = cleaned
+	_save_preferences()
+
+
+func clean_display_name(value: String) -> String:
+	var result := ""
+	var candidate := value.strip_edges().substr(0, MAX_NAME_LENGTH)
+	for index in candidate.length():
+		var code := candidate.unicode_at(index)
+		if code >= 32 and (code < 127 or code >= 160) and (code < 0x2028 or code > 0x202E):
+			result += candidate[index]
+	return result.strip_edges()
+
+
+func _save_preferences() -> void:
 	var config := ConfigFile.new()
-	config.set_value("net", "ip", ip)
+	config.set_value("net", "ip", last_ip)
+	config.set_value("net", "display_name", display_name)
 	config.save("user://net.cfg")
 
 

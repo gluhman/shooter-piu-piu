@@ -13,6 +13,7 @@ var _screen := Screen.MAIN
 var _column: VBoxContainer
 var _status: Label
 var _ip: LineEdit
+var _display_name: LineEdit
 var _busy := false
 var _map: OptionButton
 var _weapons: OptionButton
@@ -32,6 +33,8 @@ func _ready() -> void:
 
 
 func hide_lobby() -> void:
+	if _screen == Screen.HOST or _screen == Screen.GUEST:
+		_save_display_name()
 	hide()
 
 
@@ -57,7 +60,12 @@ func refresh_room() -> void:
 	_roster_title.text = "Игроки  %d / %d" % [connected_count, Net.MAX_PLAYERS]
 	for slot in Net.MAX_PLAYERS:
 		var peer: int = game.player_slots[slot]
-		_player_names[slot].text = game.player_label(slot) + (" (вы)" if peer == local else "")
+		var caption: String = game.player_label(slot)
+		if slot == 0 and caption != "Хост":
+			caption += " (хост)"
+		if peer == local:
+			caption += " (вы)"
+		_player_names[slot].text = caption
 		_player_states[slot].text = "Подключён" if peer != 0 else "Не подключён"
 		_player_states[slot].modulate = ACCENT if peer != 0 else MUTED
 
@@ -147,6 +155,15 @@ func _show_room(screen: Screen) -> void:
 		_button("Назад", _show_main)
 		return
 
+	_display_name = LineEdit.new()
+	_display_name.text = Net.display_name
+	_display_name.placeholder_text = "Имя по умолчанию"
+	_display_name.max_length = Net.MAX_NAME_LENGTH
+	_display_name.custom_minimum_size = Vector2(245, 34)
+	_display_name.text_submitted.connect(func(_text: String) -> void: _display_name.release_focus())
+	_display_name.focus_exited.connect(_save_display_name)
+	_row("Ваше имя", _display_name)
+
 	_column.add_child(HSeparator.new())
 	_roster_title = _label(_column, "", 18)
 	var roster := VBoxContainer.new()
@@ -157,6 +174,7 @@ func _show_room(screen: Screen) -> void:
 		roster.add_child(row)
 		var player_name := _label(row, "", 15)
 		player_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		player_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		_player_names.append(player_name)
 		_player_states.append(_label(row, "", 15))
 	refresh_room()
@@ -170,7 +188,10 @@ func _show_room(screen: Screen) -> void:
 		_weapons.item_selected.connect(_on_rules_changed)
 		_duration.item_selected.connect(_on_rules_changed)
 		_kill_limit.item_selected.connect(_on_rules_changed)
-		_button("Начать матч", game.start_host_match)
+		_button("Начать матч", func() -> void:
+			_save_display_name()
+			game.start_host_match()
+		)
 	else:
 		_map.disabled = true
 		_weapons.disabled = true
@@ -240,6 +261,11 @@ func _button(text: String, handler: Callable) -> void:
 	_column.add_child(button)
 
 
+func _save_display_name() -> void:
+	_match().set_local_display_name(_display_name.text)
+	_display_name.text = Net.display_name
+
+
 func _on_rules_changed(_index: int) -> void:
 	_match().update_host_rules(_weapons.selected, _map.selected, _selected_limits())
 
@@ -256,6 +282,7 @@ func _on_host() -> void:
 	if err != OK:
 		_status.text = "Не удалось открыть порт %d. Закрой вторую копию." % Net.PORT
 		return
+	_match().set_local_display_name(Net.display_name)
 	_show_room(Screen.HOST)
 
 

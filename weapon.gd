@@ -1,5 +1,6 @@
 extends Node3D
 
+const ARSENAL := preload("res://arsenal_assets.gd")
 const AK47_MODEL := preload("res://assets/ak47/ak47.tscn")
 const AK47_RELOAD := preload("res://assets/ak47/reload.wav")
 const DEAGLE_SLIDE := preload("res://assets/weapon_audio/deagle_slide.wav")
@@ -72,6 +73,30 @@ const WEAPONS := {
 		"falloff_start": 15.0,
 		"falloff_end": 50.0,
 	},
+	"launcher": {
+		"name": "M79", "mode": "гранатомёт", "mag": 1, "reserve": 8, "reload": 2.25,
+		"cooldown": 1.0, "pellets": 1, "spread": 0.18, "aim_spread": 0.05, "aim_fov": 70.0,
+		"range": 75.0, "recoil": 3.2, "recoil_yaw": 0.34, "kick": 0.085,
+		"damage": 115, "damage_min": 24, "falloff_start": 0.0, "falloff_end": 5.0,
+	},
+	"m249": {
+		"name": "M249 SAW", "mode": "пулемёт", "automatic": true, "mag": 100, "reserve": 200,
+		"reload": 3.65, "cooldown": 0.082, "pellets": 1, "spread": 1.15, "aim_spread": 0.48, "aim_fov": 71.0,
+		"range": 90.0, "recoil": 1.05, "recoil_yaw": 0.40, "kick": 0.04,
+		"damage": 20, "damage_min": 11, "falloff_start": 14.0, "falloff_end": 61.0,
+	},
+	"m14": {
+		"name": "M14", "mode": "одиночный", "mag": 20, "reserve": 60, "reload": 2.05,
+		"cooldown": 0.23, "pellets": 1, "spread": 0.60, "aim_spread": 0.12, "aim_fov": 62.0,
+		"range": 120.0, "recoil": 1.9, "recoil_yaw": 0.29, "kick": 0.06,
+		"damage": 48, "damage_min": 32, "falloff_start": 24.0, "falloff_end": 91.0,
+	},
+	"m1": {
+		"name": "M1 GARAND", "mode": "оптика 5×", "mag": 8, "reserve": 40, "reload": 2.25,
+		"cooldown": 0.48, "pellets": 1, "spread": 0.88, "aim_spread": 0.025, "aim_fov": HIP_FOV,
+		"range": 145.0, "recoil": 2.6, "recoil_yaw": 0.2, "kick": 0.075,
+		"damage": 69, "damage_min": 50, "falloff_start": 34.0, "falloff_end": 118.0,
+	},
 }
 
 var _weapon_id := ""
@@ -112,6 +137,7 @@ var _loading_port: Vector3
 var _view: Node3D
 var _muzzle: Marker3D
 var _barrel_length := 0.0
+var _model: Node3D
 var _shot_player: AudioStreamPlayer
 var _pump_player: AudioStreamPlayer
 var _reload_player: AudioStreamPlayer
@@ -124,6 +150,8 @@ var _dry: AudioStream
 @onready var _camera: Camera3D = get_parent()
 @onready var _player = get_parent().get_parent()
 @onready var _match := get_node("../../..")
+@onready var _grenades := get_node("../../../Grenades")
+@onready var _hud := get_node("../../../HUD")
 @onready var _ballistics := get_node("../../../Ballistics")
 @onready var _ammo: Label = get_node("../../../HUD/Ammo")
 @onready var _cross: ColorRect = get_node("../../../HUD/Crosshair")
@@ -256,7 +284,7 @@ func _process(delta: float) -> void:
 
 
 func _try_fire() -> void:
-	if _reloading or _cooldown > 0.0 or _player.weapon_switch_pending():
+	if _reloading or _cooldown > 0.0 or _player.weapon_switch_pending() or not _player.can_fire_from_cover():
 		return
 	if _mag <= 0:
 		if _reserve > 0:
@@ -276,12 +304,12 @@ func _shoot() -> void:
 		_queue_projectiles(barrel)
 		_send_shot_visual(_weapon_id)
 	else:
-		net_fire.rpc_id(1, _weapon_id, -barrel.basis.z)
+		net_fire.rpc_id(1, _weapon_id, -barrel.basis.z, _player.network_pose())
 	_ballistics.muzzle_effect(_weapon_id, barrel, _player.shot_motion(), false)
 	_kick_pos = Vector3(randf_range(-0.008, 0.008), randf_range(0.0, 0.012), float(_stats["kick"]))
 	_kick_rot = -float(_stats["recoil"]) * 1.4
 	_player.add_recoil(float(_stats["recoil"]), randf_range(-float(_stats["recoil_yaw"]), float(_stats["recoil_yaw"])))
-	var volume := -5.0 if _weapon_id == "ak47" else 0.0
+	var volume := -5.0 if _stats.get("automatic", false) else 0.0
 	_play_on(_shot_player, _ballistics.shot_sound(_weapon_id), volume, true)
 	if _weapon_id == "shotgun":
 		_pump_wait = 0.38
@@ -317,6 +345,11 @@ func fire_bot(target: Vector3, aim_error: float, damage: int) -> bool:
 
 
 func _launch_projectiles(barrel: Transform3D, aim: Basis, spread: float, stats: Dictionary) -> void:
+	if _weapon_id == "launcher":
+		_grenades.launch_round(_player, barrel, -aim.z, _barrel_length, int(stats.damage))
+		if _player._is_local():
+			_ballistics.muzzle_effect(_weapon_id, barrel, _player.shot_motion(), false)
+		return
 	var directions := PackedVector3Array()
 	var cone := tan(deg_to_rad(spread))
 	for _pellet in int(stats.pellets):
@@ -327,12 +360,15 @@ func _launch_projectiles(barrel: Transform3D, aim: Basis, spread: float, stats: 
 
 
 @rpc("authority", "reliable")
-func net_fire(weapon_name: String, bore: Vector3) -> void:
+func net_fire(weapon_name: String, bore: Vector3, pose: PackedFloat32Array) -> void:
 	if not multiplayer.is_server() or not _match.match_peers().has(multiplayer.get_remote_sender_id()):
 		return
 	if weapon_name != _weapon_id or _muzzle == null or not _player.control_enabled or _mag == 0 or _reloading:
 		return
 	if not bore.is_finite() or not is_equal_approx(bore.length_squared(), 1.0):
+		return
+	# Resolve the shot with the stance at trigger time, even if the movement snapshot arrived late.
+	if not _match.apply_client_pose(_player, pose) or not _player.can_fire_from_cover():
 		return
 	var now := Time.get_ticks_msec()
 	var wait := int(float(_stats["cooldown"]) * 750.0)
@@ -340,6 +376,7 @@ func net_fire(weapon_name: String, bore: Vector3) -> void:
 		return
 	_last_net_msec = now
 	_mag -= 1
+	_apply_view(0.0)
 	var barrel := _muzzle.global_transform
 	# Keep the host's muzzle position and use the firing client's orientation within normal aim limits.
 	if bore.dot(-_camera.global_basis.z) >= cos(deg_to_rad(40.0)):
@@ -440,8 +477,10 @@ func _begin_reload(units: int) -> void:
 
 func _reload_stream() -> AudioStream:
 	match _weapon_id:
-		"ak47":
+		"ak47", "m14", "m249":
 			return AK47_RELOAD
+		"m1", "launcher":
+			return DEAGLE_SLIDE
 		_:
 			return null
 
@@ -490,8 +529,21 @@ func cancel_reload() -> void:
 
 
 func _update_crosshair() -> void:
-	var impact: Vector3 = _ballistics.predict_impact(_weapon_id, _muzzle.global_transform, _barrel_length,
-		float(_stats["range"]), _player.shot_motion(), _player.get_rid())
+	if not _player.can_fire_from_cover():
+		_cross.modulate.a = 0.0
+		_cross_v.modulate.a = 0.0
+		return
+	if _weapon_id == "m1" and _hud.scope_active():
+		_cross.modulate.a = 0.0
+		_cross_v.modulate.a = 0.0
+		return
+	var barrel := _muzzle.global_transform
+	var impact: Vector3
+	if _weapon_id == "launcher":
+		impact = _grenades.predict_round(_player, barrel, _barrel_length)
+	else:
+		impact = _ballistics.predict_impact(_weapon_id, barrel, _barrel_length,
+			float(_stats["range"]), _player.shot_motion(), _player.get_rid())
 	var alpha := 0.0
 	if not _camera.is_position_behind(impact):
 		var screen := _camera.unproject_position(impact)
@@ -509,11 +561,17 @@ func aim_blend() -> float:
 func _apply_view(delta: float) -> void:
 	if _view == null:
 		return
-	var wants_aim: bool = _player.aiming and _player.control_enabled and not _reloading
+	var tucked: float = _player.cover_tuck()
+	var wants_aim: bool = _player.aiming and _player.control_enabled and not _reloading and _player.can_fire_from_cover()
 	_aim_amount = move_toward(_aim_amount, float(wants_aim), delta * 6.0)
 	var blend := aim_blend()
 	if _player._is_local():
-		_camera.fov = lerpf(HIP_FOV, float(_stats["aim_fov"]), blend)
+		var scoped: bool = _weapon_id == "m1" and blend > 0.72 and _player.accepts_gameplay_input()
+		var zoom_fov := rad_to_deg(2.0 * atan(tan(deg_to_rad(HIP_FOV * 0.5)) / 5.0))
+		_camera.fov = zoom_fov if scoped else lerpf(HIP_FOV, float(_stats["aim_fov"]), blend)
+		_hud.set_scope(scoped)
+		_model.visible = not scoped
+		_player.set_scoped_view(scoped)
 	var speed: float = _player.visual_speed()
 	_bob_t += delta * speed * 1.7
 	var sway := minf(speed / 5.0, 1.0)
@@ -526,6 +584,8 @@ func _apply_view(delta: float) -> void:
 	var reload_roll := -0.56 if _weapon_id == "shotgun" else -0.40
 	var hip_position := pitch * (_rest_pos + bob + _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose)
 	var hip_basis := pitch * Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose, 0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
+	hip_position += Vector3(0.0, -0.08, 0.17) * tucked
+	hip_basis *= Basis(Vector3.RIGHT, -1.05 * tucked)
 	_view.position = hip_position.lerp(_aim_pose.origin + Vector3.BACK * _kick_pos.z, blend)
 	_view.basis = hip_basis.slerp(_aim_pose.basis, blend)
 	_pose_reload(progress)
@@ -548,6 +608,7 @@ func _build_viewmodel(weapon_id: String) -> void:
 	_view.name = "HeldWeapon"
 	add_child(_view)
 	var model := _make_model(weapon_id)
+	_model = model
 	_view.add_child(model)
 	for animation_player in model.find_children("*", "AnimationPlayer", true, false):
 		animation_player.active = false
@@ -582,6 +643,11 @@ func _build_viewmodel(weapon_id: String) -> void:
 			support = model.basis * Vector3(-0.032, -0.011, -0.19)
 			_rest_pos = Vector3(0.125, -0.219, -0.109)
 			_barrel_length = 0.48
+		_:
+			grip = _model_marker(model, "Grip")
+			support = _model_marker(model, "Support")
+			_rest_pos = Vector3(0.128, -0.224, -0.12)
+			_barrel_length = _model_marker(model, "Muzzle").distance_to(Vector3(0.0, 0.04, 0.055))
 	model.position = -grip
 	_set_aim_pose(model, weapon_id)
 	_support_rest = support - grip
@@ -620,16 +686,22 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 			rear = Vector3(2.201, 3.51, 0.0)
 			front = Vector3(-8.725, 3.389, -0.005)
 			_aim_eye_relief = 0.33
-		_:
+		"deagle":
 			rear = Vector3(0.0, 0.2205, -0.066)
 			front = Vector3(0.0, 0.2185, 0.076)
 			_aim_eye_relief = 0.42
+		_:
+			rear = _model_marker(model, "RearSight")
+			front = _model_marker(model, "FrontSight")
+			_aim_eye_relief = 0.22
 	var rear_sight := _marker(model.transform * rear)
 	rear_sight.name = "RearSight"
 	var front_sight := _marker(model.transform * front)
 	front_sight.name = "FrontSight"
 	var line := (front_sight.position - rear_sight.position).normalized()
 	var basis := Basis.looking_at(line).inverse()
+	if weapon_id == "m1":
+		basis = Basis(Vector3.RIGHT, 0.0038) * basis
 	_aim_pose = Transform3D(basis, Vector3.FORWARD * _aim_eye_relief - basis * rear_sight.position)
 
 
@@ -659,6 +731,12 @@ func _prepare_reload(model: Node3D) -> void:
 			_shell = _make_shell()
 			_view.add_child(_shell)
 			_shell.hide()
+		"m14", "m249":
+			_magazine = model.find_child("Magazine", true, false) as Node3D
+			_magazine_rest = _magazine.transform
+			_magazine_seat = _view.to_local(_magazine.global_position)
+		_:
+			_magazine_seat = _model_marker(model, "RearSight") + model.position + Vector3(0.0, -0.03, -0.07)
 
 
 func _pose_reload(progress: float) -> void:
@@ -780,6 +858,8 @@ func _shell_part(radius: float, height: float, color: Color, metallic: float) ->
 static func _make_model(weapon_id: String) -> Node3D:
 	if weapon_id == "ak47":
 		return AK47_MODEL.instantiate() as Node3D
+	if ARSENAL.MODELS.has(weapon_id):
+		return ARSENAL.make_model(weapon_id)
 	var path := "res://models/pistol.glb" if weapon_id == "deagle" else "res://drob/Shotgun.obj"
 	var resource: Resource = load(path)
 	if resource is PackedScene:
@@ -834,8 +914,15 @@ static func _muzzle_point(model: Node3D, weapon_id: String) -> Vector3:
 		"shotgun":
 			# Center of the ring at the front of the OBJ barrel.
 			return model.transform * Vector3(-8.94, 3.048, -0.001)
-		_:
+		"deagle":
 			return model.transform * Vector3(0.0, 0.1575, 0.112)
+		_:
+			return model.transform * _model_marker(model, "Muzzle")
+
+
+static func _model_marker(model: Node3D, marker_name: String) -> Vector3:
+	var marker := model.find_child(marker_name, true, false) as Node3D
+	return model.to_local(marker.global_position)
 
 
 static func _view_bounds(model: Node3D, root: Node3D) -> AABB:
@@ -856,8 +943,8 @@ func _marker(at: Vector3) -> Marker3D:
 	return marker
 
 
-func confirm_projectile_hit() -> void:
-	var hit_color := Color(1, 0.45, 0.2, 0.95)
+func confirm_projectile_hit(headshot: bool) -> void:
+	var hit_color := Color("#ff5e48") if headshot else Color(1, 0.64, 0.35, 0.95)
 	_cross.color = hit_color
 	_cross_v.color = hit_color
 	get_tree().create_timer(0.09, false).timeout.connect(_reset_crosshair)
