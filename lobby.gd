@@ -66,6 +66,7 @@ func _build() -> void:
 	column.add_child(_ip)
 
 	column.add_child(_button("Подключиться", _on_join))
+	column.add_child(_button("Настройки", _show_settings))
 
 	_status = Label.new()
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -115,6 +116,10 @@ func _on_join() -> void:
 	if err != OK:
 		_busy = false
 		_status.text = "Неверный адрес"
+
+
+func _show_settings() -> void:
+	get_parent().get_node("MatchMenu").show_settings()
 
 
 func _match() -> Node:

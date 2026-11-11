@@ -19,6 +19,7 @@ var health := MAX_HEALTH
 var defeated := false
 
 var _dead := false
+var _respawn_timer: SceneTreeTimer
 var _sim := false
 var _hurt_lock := 0.0
 var _shoot_wait := 0.8
@@ -188,10 +189,24 @@ func _die(killer_id: int) -> void:
 	_avatar.visible = false
 	_bar_root.visible = false
 	get_parent().announce(killer_id, 0)
-	get_tree().create_timer(3.5).timeout.connect(_respawn)
+	_respawn_timer = get_tree().create_timer(3.5, false)
+	_respawn_timer.timeout.connect(_respawn)
+
+
+func restart_round() -> void:
+	if _respawn_timer and _respawn_timer.timeout.is_connected(_respawn):
+		_respawn_timer.timeout.disconnect(_respawn)
+	_respawn()
+	_shoot_wait = 0.8
+	_waypoint = 0
+	_flash_left = 0.0
+	_update_flash()
+	_remote_prev = global_position
+	_remote_slide = 0.0
 
 
 func _respawn() -> void:
+	_respawn_timer = null
 	global_position = SPAWN_POSITION
 	velocity = Vector3.ZERO
 	health = MAX_HEALTH

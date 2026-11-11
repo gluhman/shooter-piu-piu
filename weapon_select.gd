@@ -26,7 +26,7 @@ func show_select() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not visible or _picked or not (event is InputEventKey) or not event.pressed or event.echo:
+	if not visible or _picked or get_parent().get_parent().input_blocked() or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	if event.physical_keycode == KEY_1:
 		_choose("deagle")
@@ -130,7 +130,6 @@ func _choose(weapon_id: String) -> void:
 	hud.get_node("CrosshairV").visible = true
 	var hint := hud.get_node("Hint") as Label
 	hint.visible = true
-	hint.text = "ЛКМ — выстрел, R — перезарядка, WASD — ход, Shift — бег, пробел — прыжок, Esc — курсор"
 	var player := _local_player()
 	if player:
 		player.equip(weapon_id)

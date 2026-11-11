@@ -7,15 +7,14 @@ var _death: Label
 var _score: Label
 var _net_label: Label
 var _player: Node
-var _kills := 0
-var _deaths := 0
-var _their_kills := 0
-var _their_deaths := 0
+var _round_scores: Dictionary = {}
 
 
 func _ready() -> void:
 	_build()
 	_refresh_score()
+	_update_hint()
+	GameSettings.controls_changed.connect(_update_hint)
 
 
 func attach_local(player: Node) -> void:
@@ -56,39 +55,64 @@ func _on_health(current: int, maximum: int) -> void:
 
 
 func on_frag(killer_id: int, victim_id: int) -> void:
-	var me := Net.local_id()
-	if killer_id == me:
-		_kills += 1
-	if victim_id == me:
-		_deaths += 1
+	if killer_id != victim_id:
+		_round_scores[killer_id] = _score_for(killer_id) + Vector2i(1, 0)
+	_round_scores[victim_id] = _score_for(victim_id) + Vector2i(0, 1)
+	if victim_id == Net.local_id():
 		_death.visible = true
 		_flash.color = Color(0.45, 0.0, 0.0, 0.45)
-	var other := _other_id()
-	if other != 0 and killer_id == other:
-		_their_kills += 1
-	if other != 0 and victim_id == other:
-		_their_deaths += 1
 	_refresh_score()
+
+
+func reset_round() -> void:
+	_round_scores.clear()
+	_death.hide()
+	_flash.color.a = 0.0
+	_refresh_score()
+
+
+func score_snapshot() -> Dictionary:
+	return _round_scores.duplicate()
+
+
+func apply_score_snapshot(scores: Dictionary) -> void:
+	_round_scores = scores
+	_refresh_score()
+
+
+func score_rows() -> Array:
+	var local := Net.local_id()
+	var rows: Array = [_score_row(local, "Вы", true)]
+	for node in get_tree().get_nodes_in_group("player"):
+		var peer: int = node.get_multiplayer_authority()
+		if peer != local and not node.is_queued_for_deletion():
+			rows.append(_score_row(peer, "Хост" if peer == 1 else "Соперник", false))
+	rows.append(_score_row(0, "Бот", false))
+	return rows
+
+
+func _score_row(id: int, title: String, local: bool) -> Array:
+	var score := _score_for(id)
+	return [title, score.x, score.y, local]
+
+
+func _score_for(id: int) -> Vector2i:
+	return _round_scores.get(id, Vector2i.ZERO)
 
 
 func refresh_score() -> void:
 	_refresh_score()
 
 
-func _other_id() -> int:
-	var me := Net.local_id()
-	for node in get_tree().get_nodes_in_group("player"):
-		var peer_id: int = node.get_multiplayer_authority()
-		if peer_id != me:
-			return peer_id
-	return 0
-
-
 func _refresh_score() -> void:
-	var line := "Убийства   %d        Смерти   %d" % [_kills, _deaths]
-	if Net.active and _other_id() != 0:
-		line += "\nСоперник   %d / %d" % [_their_kills, _their_deaths]
-	_score.text = line
+	var score := _score_for(Net.local_id())
+	_score.text = "Убийства   %d        Смерти   %d" % [score.x, score.y]
+
+
+func _update_hint() -> void:
+	$Hint.text = "%s — выстрел    %s — перезарядка    Tab — счёт    Esc — меню" % [
+		GameSettings.binding_label(&"fire"), GameSettings.binding_label(&"reload_weapon")
+	]
 
 
 func _on_respawn() -> void:

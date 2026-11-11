@@ -3,6 +3,7 @@ extends Node3D
 const PLAYER_SCENE := preload("res://player.tscn")
 
 var _reloading := false
+var _started := false
 
 
 func _ready() -> void:
@@ -11,6 +12,54 @@ func _ready() -> void:
 	Net.joined.connect(_on_joined)
 	Net.connection_failed.connect(_on_connection_failed)
 	Net.host_lost.connect(_on_host_lost)
+	GameSettings.graphics_changed.connect(_apply_graphics)
+	_apply_graphics()
+
+
+func _apply_graphics() -> void:
+	$Sun.shadow_enabled = GameSettings.shadows
+	$WorldEnvironment.environment.ssao_enabled = GameSettings.ambient_occlusion
+
+
+func has_started() -> bool:
+	return _started
+
+
+func input_blocked() -> bool:
+	return $HUD/MatchMenu.visible
+
+
+func can_restart() -> bool:
+	return _started and (Net.solo or (Net.active and multiplayer.is_server()))
+
+
+func restart_round() -> void:
+	if not can_restart():
+		return
+	if Net.active:
+		net_restart.rpc()
+	else:
+		net_restart()
+
+
+func leave_round() -> void:
+	Net.leave_game()
+	get_tree().paused = false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	get_tree().reload_current_scene()
+
+
+@rpc("authority", "call_local", "reliable")
+func net_restart() -> void:
+	$HUD.reset_round()
+	for player in get_tree().get_nodes_in_group("player"):
+		player.restart_round()
+	$Bot.restart_round()
+
+
+@rpc("authority", "reliable")
+func net_score_snapshot(scores: Dictionary) -> void:
+	$HUD.apply_score_snapshot(scores)
 
 
 func start_solo() -> void:
@@ -57,6 +106,7 @@ func _spawn_player(peer_id: int) -> Node:
 	add_child(player)
 	_add_player_sync(player, peer_id)
 	if not Net.active or player.is_multiplayer_authority():
+		_started = true
 		$HUD.attach_local(player)
 		if str(player.weapon_id) == "":
 			$HUD/WeaponSelect.show_select()
@@ -98,9 +148,11 @@ func _on_connection_failed() -> void:
 
 
 func _on_host_lost() -> void:
-	if _reloading or multiplayer.is_server():
+	if _reloading:
 		return
 	_reloading = true
+	get_tree().paused = false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	get_tree().reload_current_scene()
 
 
@@ -132,6 +184,7 @@ func net_ready() -> void:
 	_show_sync(id)
 	# Player RPCs can reach this peer once its synchronizer makes the player visible.
 	get_node("1").send_weapon_to(id)
+	net_score_snapshot.rpc_id(id, $HUD.score_snapshot())
 
 
 func _show_sync(id: int) -> void:

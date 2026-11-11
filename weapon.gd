@@ -3,6 +3,14 @@ extends Node3D
 const AK47_MODEL := preload("res://assets/ak47/ak47.tscn")
 const AK47_SHOT := preload("res://assets/ak47/fire.wav")
 const AK47_RELOAD := preload("res://assets/ak47/reload.wav")
+const DEAGLE_SHOT := preload("res://assets/weapon_audio/deagle_fire.wav")
+const DEAGLE_SLIDE := preload("res://assets/weapon_audio/deagle_slide.wav")
+const SHOTGUN_SHOT := preload("res://assets/weapon_audio/shotgun_fire.wav")
+const SHOTGUN_PUMP := preload("res://assets/weapon_audio/shotgun_pump.wav")
+const SHELL_START := 0.28
+const SHELL_INTERVAL := 0.60
+const SHELL_FINISH := 0.20
+const SHELL_IN_HAND := Vector3(-0.024, 0.126, 0.052)
 
 const WEAPONS := {
 	"deagle": {
@@ -86,23 +94,34 @@ var _kick_pos := Vector3.ZERO
 var _kick_rot := 0.0
 var _bob_t := 0.0
 var _flash_left := 0.0
-var _shell_wait := 0.0
+var _pump_wait := 0.0
 var _rest_pos := Vector3.ZERO
+var _reload_units := 0
+var _shells_inserted := 0
+var _right_wrist: Marker3D
+var _left_wrist: Marker3D
+var _support_rest: Vector3
+var _support_basis: Basis
+var _magazine: Node3D
+var _magazine_skeleton: Skeleton3D
+var _magazine_bone := -1
+var _magazine_rest: Transform3D
+var _magazine_seat: Vector3
+var _shell: Node3D
+var _loading_port: Vector3
 
 var _view: Node3D
 var _muzzle: Marker3D
+var _barrel_length := 0.0
 var _flash: OmniLight3D
 var _shot_player: AudioStreamPlayer
-var _shell_player: AudioStreamPlayer
+var _pump_player: AudioStreamPlayer
 var _reload_player: AudioStreamPlayer
 var _world_shot: AudioStreamPlayer3D
-var _world_shell: AudioStreamPlayer3D
+var _world_pump: AudioStreamPlayer3D
 var _world_reload: AudioStreamPlayer3D
 var _last_net_msec := 0
-var _shot_deagle: AudioStream
-var _shotgun_shot: AudioStream
-var _shotgun_reload: AudioStream
-var _shotgun_shell: AudioStream
+var _shell_insert: AudioStream
 var _dry: AudioStream
 var _marks: Array[Node3D] = []
 
@@ -116,20 +135,16 @@ var _marks: Array[Node3D] = []
 func _ready() -> void:
 	_shot_player = _make_player()
 	_shot_player.max_polyphony = 5
-	_shell_player = _make_player()
+	_pump_player = _make_player()
 	_reload_player = _make_player()
 	_world_shot = _make_world_player()
 	_world_shot.max_polyphony = 5
-	_world_shell = _make_world_player()
-	_world_shell.volume_db = -4.0
+	_world_pump = _make_world_player()
+	_world_pump.volume_db = -4.0
 	_world_reload = _make_world_player()
-	_world_reload.stream = AK47_RELOAD
 	_world_reload.volume_db = -8.0
-	_shot_deagle = _make_shot(true)
 	_dry = _make_dry()
-	_shotgun_shot = load("res://drob/выстрел.mp3") as AudioStream
-	_shotgun_reload = load("res://drob/перезарядка.mp3") as AudioStream
-	_shotgun_shell = load("res://drob/гильза.mp3") as AudioStream
+	_shell_insert = _make_insert_sound()
 
 
 func equip(weapon_id: String) -> void:
@@ -140,15 +155,32 @@ func equip(weapon_id: String) -> void:
 	_cooldown = 0.0
 	_reload_left = 0.0
 	_reloading = false
+	_kick_pos = Vector3.ZERO
+	_kick_rot = 0.0
 	_shot_player.stop()
-	_shell_player.stop()
+	_pump_player.stop()
 	_reload_player.stop()
-	_shell_wait = 0.0
+	_world_reload.stop()
+	_pump_wait = 0.0
 	_active = true
 	_trigger_held = false
 	_build_viewmodel(weapon_id)
-	_update_hud()
-	_ammo.visible = true
+	if _player._is_local():
+		_update_hud()
+		_ammo.visible = true
+
+
+func restart_round() -> void:
+	_last_net_msec = 0
+	_world_shot.stop()
+	_world_pump.stop()
+	_flash_left = 0.0
+	for mark in _marks:
+		if is_instance_valid(mark):
+			mark.queue_free()
+	_marks.clear()
+	if _active:
+		equip(_weapon_id)
 
 
 func _process(delta: float) -> void:
@@ -156,31 +188,36 @@ func _process(delta: float) -> void:
 		return
 	_cooldown = maxf(_cooldown - delta, 0.0)
 	_flash_left = maxf(_flash_left - delta, 0.0)
-	if _shell_wait > 0.0:
-		_shell_wait = maxf(_shell_wait - delta, 0.0)
-		if _shell_wait == 0.0:
-			_play_shell()
+	if _pump_wait > 0.0:
+		_pump_wait = maxf(_pump_wait - delta, 0.0)
+		if _pump_wait == 0.0:
+			_play_pump()
 	if _flash:
 		_flash.light_energy = 5.0 if _flash_left > 0.0 else 0.0
 	if _reloading:
-		_reload_left -= delta
-		if _reload_left <= 0.0:
+		_reload_left = maxf(0.0, _reload_left - delta)
+		if _weapon_id == "shotgun":
+			_insert_loaded_shells()
+		if _reload_left == 0.0:
 			_finish_reload()
 	_kick_pos = _kick_pos.lerp(Vector3.ZERO, minf(1.0, delta * 9.0))
 	_kick_rot = lerpf(_kick_rot, 0.0, minf(1.0, delta * 9.0))
 	_apply_view(delta)
 
-	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or not _player.control_enabled:
-		_trigger_held = false
+	if not _player._is_local():
+		return
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or not _player.accepts_gameplay_input():
+		_trigger_held = Input.is_action_pressed(&"fire")
+		_reload_held = Input.is_action_pressed(&"reload_weapon")
 		return
 
-	var shooting := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	var shooting := Input.is_action_pressed(&"fire")
 	var repeat := bool(_stats.get("automatic", false)) and (_mag > 0 or _reserve > 0)
 	if shooting and (not _trigger_held or repeat):
 		_try_fire()
 	_trigger_held = shooting
 
-	var reload_key := Input.is_physical_key_pressed(KEY_R)
+	var reload_key := Input.is_action_pressed(&"reload_weapon")
 	if reload_key and not _reload_held:
 		_start_reload()
 	_reload_held = reload_key
@@ -207,8 +244,7 @@ func _shoot() -> void:
 	for _pellet in int(_stats["pellets"]):
 		dirs.append(_ray_direction(float(_stats["spread"])))
 	var result := _cast_all(_weapon_id, from, dirs, _authoritative())
-	var muzzle: Vector3 = _muzzle.global_position if _muzzle else from
-	_show_shot(muzzle, result, true)
+	_show_shot(result["muzzle"], result, true)
 	_flash_left = 0.05
 	_kick_pos = Vector3(randf_range(-0.008, 0.008), randf_range(0.0, 0.012), float(_stats["kick"]))
 	_kick_rot = -float(_stats["recoil"]) * 1.4
@@ -216,7 +252,7 @@ func _shoot() -> void:
 	var volume := -5.0 if _weapon_id == "ak47" else 0.0
 	_play_on(_shot_player, _shot_stream(_weapon_id), volume, true)
 	if _weapon_id == "shotgun":
-		_shell_wait = 0.38
+		_pump_wait = 0.38
 	if not Net.active:
 		return
 	var ends: PackedVector3Array = result["ends"]
@@ -233,43 +269,56 @@ func _authoritative() -> bool:
 	return not Net.active or multiplayer.is_server()
 
 
-func _cast_all(weapon_name: String, from: Vector3, dirs: PackedVector3Array, apply_damage: bool) -> Dictionary:
+func _cast_all(weapon_name: String, eye: Vector3, dirs: PackedVector3Array, apply_damage: bool) -> Dictionary:
 	var stats: Dictionary = WEAPONS[weapon_name]
 	var space := _camera.get_world_3d().direct_space_state
+	var muzzle := _muzzle.global_position
+	var barrel_forward := -_muzzle.global_basis.z
+	var breech := muzzle - barrel_forward * _barrel_length
+	var obstruction := _ray_hit(space, breech, muzzle)
 	var ends := PackedVector3Array()
 	var kinds := PackedInt32Array()
 	var normals := PackedVector3Array()
 	var reach := float(stats["range"])
-	var cap := int(stats["pellets"])
-	var count := mini(dirs.size(), cap)
-	for index in count:
-		var direction: Vector3 = dirs[index]
-		if direction.length_squared() < 0.001:
+	for index in mini(dirs.size(), int(stats["pellets"])):
+		var direction := dirs[index]
+		if not direction.is_finite() or direction.length_squared() < 0.001:
 			continue
 		direction = direction.normalized()
-		var end := from + direction * reach
+		var end := muzzle + direction * reach
+		var hit := obstruction
+		if hit.is_empty():
+			# Find the point under the crosshair, then test the path from the actual barrel.
+			var sight_end := eye + direction * reach
+			var sight_hit := _ray_hit(space, eye, sight_end)
+			var aim: Vector3 = sight_hit.get("position", sight_end)
+			var barrel_to_aim := aim - muzzle
+			if barrel_to_aim.dot(direction) > 0.02:
+				var distance := minf(reach, barrel_to_aim.length() + 0.015)
+				end = muzzle + barrel_to_aim.normalized() * distance
+			hit = _ray_hit(space, muzzle, end)
 		var kind := 2
 		var normal := Vector3.ZERO
-		var query := PhysicsRayQueryParameters3D.create(from, end)
-		query.exclude = [_player.get_rid()]
-		var hit := space.intersect_ray(query)
 		if not hit.is_empty():
 			end = hit["position"]
-			if _damage_body(hit["collider"], from.distance_to(end), apply_damage, stats):
+			if _damage_body(hit["collider"], muzzle.distance_to(end), apply_damage, stats):
 				kind = 1
 			else:
 				kind = 0
 				normal = hit["normal"]
+				if normal.is_zero_approx():
+					normal = -barrel_forward
 		ends.append(end)
 		kinds.append(kind)
 		normals.append(normal)
-	var forward := -_camera.global_transform.basis.z
-	return {
-		"ends": ends,
-		"kinds": kinds,
-		"normals": normals,
-		"muzzle": from + forward * 0.45,
-	}
+	return {"ends": ends, "kinds": kinds, "normals": normals, "muzzle": muzzle}
+
+
+func _ray_hit(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3) -> Dictionary:
+	var query := PhysicsRayQueryParameters3D.create(from, to)
+	query.exclude = [_player.get_rid()]
+	query.hit_from_inside = true
+	return space.intersect_ray(query)
 
 
 func _show_shot(muzzle: Vector3, result: Dictionary, local_view: bool) -> void:
@@ -278,7 +327,8 @@ func _show_shot(muzzle: Vector3, result: Dictionary, local_view: bool) -> void:
 	var normals: PackedVector3Array = result["normals"]
 	var any_hit := false
 	for index in ends.size():
-		_spawn_tracer(muzzle, ends[index])
+		if _muzzle == null or (ends[index] - muzzle).dot(-_muzzle.global_basis.z) > 0.0:
+			_spawn_tracer(muzzle, ends[index])
 		if kinds[index] == 2:
 			continue
 		any_hit = true
@@ -292,7 +342,7 @@ func _show_shot(muzzle: Vector3, result: Dictionary, local_view: bool) -> void:
 
 @rpc("authority", "reliable")
 func net_fire(weapon_name: String, from: Vector3, dirs: PackedVector3Array) -> void:
-	if not multiplayer.is_server() or not WEAPONS.has(weapon_name):
+	if not multiplayer.is_server() or weapon_name != _weapon_id or _muzzle == null:
 		return
 	var now := Time.get_ticks_msec()
 	var wait := int(float(WEAPONS[weapon_name]["cooldown"]) * 750.0)
@@ -300,14 +350,13 @@ func net_fire(weapon_name: String, from: Vector3, dirs: PackedVector3Array) -> v
 		return
 	_last_net_msec = now
 	var origin := _camera.global_position
-	if from.distance_to(origin) > 3.0:
+	if not from.is_finite() or from.distance_to(origin) > 3.0:
 		from = origin
 	var result := _cast_all(weapon_name, from, dirs, true)
 	_stats = WEAPONS[weapon_name]
 	_show_shot(result["muzzle"], result, false)
 	_play_world_shot(weapon_name)
-	if _player.has_method("play_shot_anim"):
-		_player.play_shot_anim()
+	_recoil_remote(weapon_name)
 	var shooter := get_multiplayer_authority()
 	var ends: PackedVector3Array = result["ends"]
 	var kinds: PackedInt32Array = result["kinds"]
@@ -324,10 +373,16 @@ func net_visual(weapon_name: String, muzzle: Vector3, ends: PackedVector3Array, 
 	if not WEAPONS.has(weapon_name):
 		return
 	_stats = WEAPONS[weapon_name]
-	_show_shot(muzzle, {"ends": ends, "kinds": kinds, "normals": normals}, false)
+	var visual_muzzle := _muzzle.global_position if weapon_name == _weapon_id and _muzzle else muzzle
+	_show_shot(visual_muzzle, {"ends": ends, "kinds": kinds, "normals": normals}, false)
 	_play_world_shot(weapon_name)
-	if _player.has_method("play_shot_anim"):
-		_player.play_shot_anim()
+	_recoil_remote(weapon_name)
+
+
+func _recoil_remote(weapon_name: String) -> void:
+	var stats: Dictionary = WEAPONS[weapon_name]
+	_kick_pos = Vector3(0, 0.008, float(stats["kick"]))
+	_kick_rot = -float(stats["recoil"]) * 1.4
 
 
 func _play_world_shot(weapon_name: String) -> void:
@@ -340,7 +395,7 @@ func _play_world_shot(weapon_name: String) -> void:
 	_world_shot.pitch_scale = randf_range(0.97, 1.03)
 	_world_shot.play()
 	if weapon_name == "shotgun":
-		get_tree().create_timer(0.38).timeout.connect(_play_world_shell)
+		get_tree().create_timer(0.38).timeout.connect(_play_world_pump)
 
 
 func _shot_stream(weapon_name: String) -> AudioStream:
@@ -348,17 +403,15 @@ func _shot_stream(weapon_name: String) -> AudioStream:
 		"ak47":
 			return AK47_SHOT
 		"shotgun":
-			return _shotgun_shot
+			return SHOTGUN_SHOT
 		_:
-			return _shot_deagle
+			return DEAGLE_SHOT
 
 
-func _play_world_shell() -> void:
-	if _world_shell == null or _shotgun_shell == null:
-		return
-	_world_shell.stream = _shotgun_shell
-	_world_shell.pitch_scale = randf_range(0.97, 1.03)
-	_world_shell.play()
+func _play_world_pump() -> void:
+	_world_pump.stream = SHOTGUN_PUMP
+	_world_pump.pitch_scale = randf_range(0.97, 1.03)
+	_world_pump.play()
 
 
 func _damage_body(collider: Object, distance: float, apply_damage: bool, stats: Dictionary) -> bool:
@@ -404,34 +457,81 @@ func _spawn_blood(at: Vector3) -> void:
 func _start_reload() -> void:
 	if _reloading or _mag == int(_stats["mag"]) or _reserve <= 0:
 		return
-	_reloading = true
-	_reload_time = float(_stats["reload"])
-	if _weapon_id == "shotgun" and _shotgun_reload != null:
-		var length: float = _shotgun_reload.get_length()
-		if length > 0.2:
-			_reload_time = length
-		_play_on(_reload_player, _shotgun_reload, -1.0, false)
-	elif _weapon_id == "ak47":
-		_play_on(_reload_player, AK47_RELOAD, -3.0, false)
-		if Net.active:
-			net_ak47_reload.rpc()
-	_reload_left = _reload_time
+	var units := mini(int(_stats["mag"]) - _mag, _reserve)
+	_begin_reload(units)
+	_play_on(_reload_player, _reload_stream(), -3.0, false)
+	if Net.active:
+		net_reload.rpc(_weapon_id, units)
 	_update_hud()
 
 
 @rpc("authority", "reliable")
-func net_ak47_reload() -> void:
-	if _player.weapon_id == "ak47" and _player.control_enabled:
+func net_reload(id: String, units: int) -> void:
+	if id != _weapon_id or not _player.control_enabled or units < 1 or units > int(_stats["mag"]):
+		return
+	_begin_reload(units)
+	_world_reload.stream = _reload_stream()
+	if _world_reload.stream:
+		_world_reload.play()
+
+
+func _begin_reload(units: int) -> void:
+	_reload_units = units
+	_shells_inserted = 0
+	_reloading = true
+	_reload_time = float(_stats["reload"])
+	if _weapon_id == "shotgun":
+		_reload_time = SHELL_START + SHELL_INTERVAL * units + SHELL_FINISH
+	_reload_left = _reload_time
+
+
+func _reload_stream() -> AudioStream:
+	match _weapon_id:
+		"ak47":
+			return AK47_RELOAD
+		_:
+			return null
+
+
+func _insert_loaded_shells() -> void:
+	var elapsed := _reload_time - _reload_left
+	var inserted := clampi(1 + floori((elapsed - SHELL_START - 0.49) / SHELL_INTERVAL), 0, _reload_units)
+	if inserted <= _shells_inserted:
+		return
+	var count := inserted - _shells_inserted
+	_shells_inserted = inserted
+	if _player._is_local():
+		_mag += count
+		_reserve -= count
+		_play_on(_reload_player, _shell_insert, -5.0, true)
+	else:
+		_world_reload.stream = _shell_insert
 		_world_reload.play()
 
 
 func _finish_reload() -> void:
-	var need := int(_stats["mag"]) - _mag
-	var take := mini(need, _reserve)
-	_mag += take
-	_reserve -= take
+	if _player._is_local() and _weapon_id != "shotgun":
+		_mag += _reload_units
+		_reserve -= _reload_units
 	_reloading = false
-	_update_hud()
+	if _weapon_id == "deagle":
+		if _player._is_local():
+			_play_on(_reload_player, DEAGLE_SLIDE, -6.0, false)
+		else:
+			_world_reload.stream = DEAGLE_SLIDE
+			_world_reload.play()
+	if _player._is_local():
+		_update_hud()
+
+
+func cancel_reload() -> void:
+	if not _reloading:
+		return
+	_reloading = false
+	_reload_player.stop()
+	_world_reload.stop()
+	if _player._is_local():
+		_update_hud()
 
 
 func _ray_direction(spread_deg: float) -> Vector3:
@@ -446,50 +546,236 @@ func _ray_direction(spread_deg: float) -> Vector3:
 func _apply_view(delta: float) -> void:
 	if _view == null:
 		return
-	var speed := Vector2(_player.velocity.x, _player.velocity.z).length()
-	if speed > 0.4 and _player.is_on_floor():
-		_bob_t += delta * speed * 1.7
-	else:
-		_bob_t += delta
-	var bob := Vector3.ZERO
-	if speed > 0.4 and _player.is_on_floor():
-		bob = Vector3(sin(_bob_t * 2.0) * 0.008, absf(cos(_bob_t * 2.0)) * 0.01, 0.0)
-	var dip := 0.0
-	if _reloading:
-		var t := 1.0 - clampf(_reload_left / _reload_time, 0.0, 1.0)
-		dip = sin(t * PI) * 0.1
-	_view.position = _rest_pos + bob + _kick_pos + Vector3(0.0, -dip, dip * 0.4)
-	_view.rotation_degrees = Vector3(_kick_rot, 0.0, _kick_rot * -0.25)
+	var speed: float = _player.visual_speed()
+	_bob_t += delta * speed * 1.7
+	var sway := minf(speed / 5.0, 1.0)
+	var bob := Vector3(sin(_bob_t * 2.0) * 0.008, absf(cos(_bob_t * 2.0)) * 0.01, 0.0) * sway
+	var progress := 1.0 - _reload_left / _reload_time if _reloading else 0.0
+	var reload_pose := smoothstep(0.0, 0.17, progress) * (1.0 - smoothstep(0.82, 1.0, progress))
+	# The eye can look farther up and down than the character can shoulder the weapon.
+	var aim_offset := clampf(_camera.rotation.x, -0.78, 0.78) - _camera.rotation.x
+	var pitch := Basis(Vector3.RIGHT, aim_offset)
+	var reload_roll := -0.56 if _weapon_id == "shotgun" else -0.40
+	_view.position = pitch * (_rest_pos + bob + _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose)
+	_view.basis = pitch * Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose, 0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
+	_pose_reload(progress)
+	var correction: Vector3 = _player.weapon_reach_correction()
+	if correction.length_squared() > 0.000001:
+		_view.global_position += correction
+		if _reloading:
+			_pose_reload(progress)
 
 
 func _build_viewmodel(weapon_id: String) -> void:
 	if _view:
+		_view.hide()
 		_view.queue_free()
 	_view = Node3D.new()
-	_view.position = _rest_pos
+	_view.name = "HeldWeapon"
 	add_child(_view)
 	var model := _make_model(weapon_id)
 	_view.add_child(model)
 	for animation_player in model.find_children("*", "AnimationPlayer", true, false):
 		animation_player.active = false
-	if weapon_id == "deagle":
-		# Pistol model points the muzzle along +Z. The camera looks down -Z.
-		model.rotation.y = PI
-	elif weapon_id == "shotgun":
-		# Shotgun OBJ lies along X, muzzle toward -X, up is +Y.
-		_apply_shotgun_material(model)
-		model.rotation.y = -PI / 2.0
-		_scale_longest_axis(model, 0.92)
-	elif weapon_id == "ak47":
-		model.rotation.y = 0.07
-	_seat_model(model, weapon_id)
+
+	var grip := Vector3.ZERO
+	var support := Vector3.ZERO
+	var right_fingers := Vector3(-0.06, 0.24, -1.0)
+	var left_fingers := Vector3(0.20, 0.14, -1.0)
+	var left_palm := Vector3(0.33, 0.94, 0.0)
+	match weapon_id:
+		"deagle":
+			model.rotation.y = PI
+			grip = Vector3(0.025, 0.067, 0.139)
+			support = Vector3(-0.058, 0.052, 0.123)
+			_rest_pos = Vector3(0.104, -0.237, -0.285)
+			left_fingers = Vector3(0.23, 0.19, -1.0)
+			left_palm = Vector3(0.94, 0.33, 0.0)
+			_barrel_length = 0.15
+		"shotgun":
+			_apply_shotgun_material(model)
+			model.rotation.y = -PI / 2.0
+			_scale_longest_axis(model, 0.92)
+			var bounds := _view_bounds(model)
+			var rear := bounds.end.z
+			grip = Vector3(0.029, bounds.position.y + 0.056, rear - 0.232)
+			support = Vector3(-0.039, bounds.position.y + 0.053, rear - 0.461)
+			_rest_pos = Vector3(0.138, -0.220, -0.122)
+			_barrel_length = 0.48
+		"ak47":
+			model.rotation.y = 0.10
+			grip = model.basis * Vector3(0.027, -0.030, 0.046)
+			support = model.basis * Vector3(-0.032, -0.011, -0.19)
+			_rest_pos = Vector3(0.125, -0.219, -0.109)
+			_barrel_length = 0.48
+	model.position = -grip
+	_support_rest = support - grip
+	_support_basis = _hand_basis(left_fingers, left_palm)
+
+	_right_wrist = _marker(Vector3.ZERO)
+	_right_wrist.name = "RightGrip"
+	_right_wrist.basis = _hand_basis(right_fingers, Vector3(-1.0, 0.15, 0.0))
+	_left_wrist = _marker(_support_rest)
+	_left_wrist.name = "LeftGrip"
+	_left_wrist.basis = _support_basis
+	_player.set_weapon_grips(_right_wrist, _left_wrist)
+
 	_muzzle = _marker(_muzzle_point(model, weapon_id))
+	_muzzle.name = "Muzzle"
+	if weapon_id == "ak47":
+		_muzzle.rotation.y = model.rotation.y
 	_flash = OmniLight3D.new()
 	_flash.light_color = Color(1, 0.78, 0.4)
 	_flash.omni_range = 2.2
 	_flash.light_energy = 0.0
 	_flash.shadow_enabled = false
 	_muzzle.add_child(_flash)
+	_prepare_reload(model)
+	_apply_view(0.0)
+
+
+func _hand_basis(fingers: Vector3, palm: Vector3) -> Basis:
+	var along := fingers.normalized()
+	var across := along.cross(palm).normalized()
+	return Basis(across, along, across.cross(along))
+
+
+func _prepare_reload(model: Node3D) -> void:
+	_magazine = null
+	_magazine_skeleton = null
+	_magazine_bone = -1
+	_shell = null
+	match _weapon_id:
+		"deagle":
+			_magazine = model.find_child("magazine", true, false) as Node3D
+			_magazine_rest = _magazine.transform
+			_magazine_seat = _view.to_local(_magazine.global_position)
+		"ak47":
+			_magazine_skeleton = model.find_child("Skeleton3D", true, false) as Skeleton3D
+			_magazine_bone = _magazine_skeleton.find_bone("MAGAZINE")
+			_magazine_rest = _magazine_skeleton.get_bone_global_rest(_magazine_bone)
+			_magazine_seat = _view.to_local(_magazine_skeleton.to_global(_magazine_rest.origin))
+		"shotgun":
+			_loading_port = Vector3(-0.028, 0.014, -0.14)
+			_shell = _make_shell()
+			_view.add_child(_shell)
+			_shell.hide()
+
+
+func _pose_reload(progress: float) -> void:
+	_left_wrist.position = _support_rest
+	_left_wrist.basis = _support_basis
+	_player.set_support_grip(0.0)
+	if _shell:
+		_shell.hide()
+	if not _reloading:
+		_place_magazine(_magazine_seat)
+		return
+
+	var pouch := _view.to_local(_player.reload_pouch_position())
+	# Arc forward from the pouch so the wrist clears the vest and receiver.
+	var reach := pouch + Vector3(-0.04, 0.08, -0.13)
+	_player.set_support_grip(smoothstep(0.0, 0.17, progress) * (1.0 - smoothstep(0.82, 1.0, progress)))
+	if _weapon_id == "shotgun":
+		_pose_shell_reload(pouch, reach)
+		return
+
+	var hand_offset := Vector3(-0.047, -0.035, 0.039)
+	var seated_hand := _magazine_seat + hand_offset
+	var extracted := seated_hand + Vector3(-0.024, -0.09, 0.025)
+	var carry_basis := _hand_basis(Vector3(0.52, 0.24, -0.82), Vector3(0.32, 0.92, 0.0))
+	var stow := pouch + hand_offset
+	var wrist := _path(progress, [0.0, 0.17, 0.30, 0.49, 0.58, 0.85, 1.0],
+		[_support_rest, seated_hand, extracted, stow, stow, seated_hand, _support_rest])
+	if progress > 0.58 and progress < 0.85:
+		var t := smoothstep(0.58, 0.85, progress)
+		var guide := reach + hand_offset
+		wrist = stow.lerp(guide, t).lerp(guide.lerp(seated_hand, t), t)
+	_left_wrist.position = wrist
+	_left_wrist.basis = _support_basis.slerp(carry_basis,
+		smoothstep(0.0, 0.17, progress) * (1.0 - smoothstep(0.85, 1.0, progress)))
+	if progress < 0.17 or progress >= 0.85:
+		_place_magazine(_magazine_seat)
+	else:
+		var tilt := -0.32 * smoothstep(0.17, 0.34, progress) * (1.0 - smoothstep(0.69, 0.85, progress))
+		_place_magazine(wrist - hand_offset, tilt)
+
+
+func _pose_shell_reload(pouch: Vector3, reach: Vector3) -> void:
+	var elapsed := _reload_time - _reload_left
+	var duration := SHELL_INTERVAL * _reload_units
+	var carry_basis := _hand_basis(Vector3(0.44, 0.22, -0.87), Vector3.UP)
+	var pinch := carry_basis * SHELL_IN_HAND
+	var pouch_hand := pouch - pinch
+	var loading_hand := _loading_port - pinch
+	if elapsed < SHELL_START:
+		var blend := smoothstep(0.0, SHELL_START, elapsed)
+		_left_wrist.position = _support_rest.lerp(pouch_hand, blend)
+		_left_wrist.basis = _support_basis.slerp(carry_basis, blend)
+	elif elapsed < SHELL_START + duration:
+		var phase := fmod(elapsed - SHELL_START, SHELL_INTERVAL) / SHELL_INTERVAL
+		_left_wrist.basis = carry_basis
+		var approach := loading_hand + Vector3(0.0, -0.015, 0.031)
+		if phase < 0.66:
+			var t := smoothstep(0.0, 0.66, phase)
+			var guide := reach - pinch
+			_left_wrist.position = pouch_hand.lerp(guide, t).lerp(guide.lerp(approach, t), t)
+		else:
+			_left_wrist.position = _path(phase, [0.66, 0.82, 1.0], [approach, loading_hand, pouch_hand])
+		_shell.visible = phase < 0.82
+		_shell.position = _left_wrist.transform * SHELL_IN_HAND
+		_shell.rotation.x = -PI / 2.0
+	else:
+		var blend := smoothstep(SHELL_START + duration, _reload_time, elapsed)
+		_left_wrist.position = pouch_hand.lerp(_support_rest, blend)
+		_left_wrist.basis = carry_basis.slerp(_support_basis, blend)
+
+
+func _path(progress: float, times: Array, points: Array) -> Vector3:
+	for i in range(1, times.size()):
+		if progress <= float(times[i]):
+			var from: Vector3 = points[i - 1]
+			return from.lerp(points[i], smoothstep(times[i - 1], times[i], progress))
+	return points.back()
+
+
+func _place_magazine(point: Vector3, tilt: float = 0.0) -> void:
+	var axis := _view.global_basis.z.normalized()
+	if _magazine:
+		_magazine.transform = _magazine_rest
+		_magazine.global_position = _view.to_global(point)
+		_magazine.global_rotate(axis, tilt)
+	elif _magazine_skeleton:
+		var pose := _magazine_rest
+		pose.origin = _magazine_skeleton.to_local(_view.to_global(point))
+		var local_axis := _magazine_skeleton.global_basis.inverse() * axis
+		pose.basis = Basis(local_axis.normalized(), tilt) * pose.basis
+		_magazine_skeleton.set_bone_global_pose(_magazine_bone, pose)
+
+
+func _make_shell() -> Node3D:
+	var shell := Node3D.new()
+	var hull := _shell_part(0.012, 0.052, Color(0.44, 0.035, 0.025), 0.15)
+	var cap := _shell_part(0.013, 0.013, Color(0.61, 0.40, 0.13), 0.7)
+	shell.add_child(hull)
+	shell.add_child(cap)
+	cap.position.y = -0.026
+	return shell
+
+
+func _shell_part(radius: float, height: float, color: Color, metallic: float) -> MeshInstance3D:
+	var instance := MeshInstance3D.new()
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = height
+	mesh.radial_segments = 12
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.metallic = metallic
+	mesh.material = material
+	instance.mesh = mesh
+	return instance
 
 
 func _make_model(weapon_id: String) -> Node3D:
@@ -528,66 +814,21 @@ func _scale_longest_axis(model: Node3D, length: float) -> void:
 		model.scale *= length / longest
 
 
-func _seat_model(model: Node3D, weapon_id: String) -> void:
-	var bounds := _view_bounds(model)
-	var back := bounds.position.z + bounds.size.z
-	var target_back := -0.25 if weapon_id == "deagle" else -0.08
-	var target_bottom := -0.22 if weapon_id == "deagle" else -0.2
-	var target_x := 0.18 if weapon_id == "deagle" else 0.12
-	if weapon_id == "ak47":
-		target_back = -0.3
-		target_bottom = -0.34
-		target_x = 0.22
-	model.position += Vector3(
-		target_x - bounds.get_center().x,
-		target_bottom - bounds.position.y,
-		target_back - back
-	)
-
-
 func _muzzle_point(model: Node3D, weapon_id: String) -> Vector3:
-	if weapon_id == "ak47":
-		return model.transform * (model.get_node("Muzzle") as Marker3D).position
-	if weapon_id != "shotgun":
-		var bounds := _view_bounds(model)
-		return Vector3(
-			bounds.get_center().x,
-			bounds.position.y + bounds.size.y * 0.58,
-			bounds.position.z - 0.02
-		)
-	var points := PackedVector3Array()
-	for mesh_instance in model.find_children("*", "MeshInstance3D", true, false):
-		var mesh: Mesh = mesh_instance.mesh
-		if mesh == null:
-			continue
-		var to_view: Transform3D = _view.global_transform.affine_inverse() * mesh_instance.global_transform
-		for surface in mesh.get_surface_count():
-			var arrays: Array = mesh.surface_get_arrays(surface)
-			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-			for vertex in vertices:
-				points.append(to_view * vertex)
-	var front_z := points[0].z
-	for point in points:
-		front_z = minf(front_z, point.z)
-	var xs: Array[float] = []
-	var ys: Array[float] = []
-	for point in points:
-		if point.z <= front_z + 0.06:
-			xs.append(point.x)
-			ys.append(point.y)
-	xs.sort()
-	ys.sort()
-	var mid := xs.size() / 2
-	# The front sight sits above the bore, so the raw tip is a little high.
-	return Vector3(xs[mid], ys[mid] - 0.012, front_z - 0.01)
+	match weapon_id:
+		"ak47":
+			return model.transform * (model.get_node("Muzzle") as Marker3D).position
+		"shotgun":
+			# Center of the ring at the front of the OBJ barrel.
+			return model.transform * Vector3(-8.94, 3.048, -0.001)
+		_:
+			return model.transform * Vector3(0.0, 0.1575, 0.112)
 
 
 func _view_bounds(model: Node3D) -> AABB:
 	var bounds := AABB()
 	var found := false
 	for mesh_instance in model.find_children("*", "MeshInstance3D", true, false):
-		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mesh_instance.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		var to_view: Transform3D = _view.global_transform.affine_inverse() * mesh_instance.global_transform
 		var piece: AABB = to_view * mesh_instance.get_aabb()
 		bounds = piece if not found else bounds.merge(piece)
@@ -597,7 +838,6 @@ func _view_bounds(model: Node3D) -> AABB:
 
 func _marker(at: Vector3) -> Marker3D:
 	var marker := Marker3D.new()
-	marker.name = "Muzzle"
 	marker.position = at
 	_view.add_child(marker)
 	return marker
@@ -706,27 +946,23 @@ func _play_on(player: AudioStreamPlayer, stream: AudioStream, volume_db: float, 
 	player.play()
 
 
-func _play_shell() -> void:
-	_play_on(_shell_player, _shotgun_shell, -4.0, true)
+func _play_pump() -> void:
+	_play_on(_pump_player, SHOTGUN_PUMP, -6.0, true)
 
 
-func _make_shot(pistol: bool) -> AudioStreamWAV:
+func _make_insert_sound() -> AudioStreamWAV:
 	var rate := 22050
-	var duration := 0.16 if pistol else 0.3
-	var count := int(rate * duration)
+	var count := int(rate * 0.13)
 	var data := PackedByteArray()
 	data.resize(count * 2)
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 7 if pistol else 19
-	var decay := 24.0 if pistol else 9.0
-	var tone := 150.0 if pistol else 62.0
+	rng.seed = 31
 	for i in count:
-		var t := float(i) / float(rate)
-		var envelope := exp(-t * decay)
-		var noise := rng.randf_range(-1.0, 1.0)
-		var body := sin(TAU * tone * t)
-		var sample := (noise * 0.72 + body * 0.28) * envelope
-		data.encode_s16(i * 2, int(clampf(sample, -1.0, 1.0) * 32000.0))
+		var t := float(i) / rate
+		var latch := maxf(0.0, t - 0.036)
+		var scrape := rng.randf_range(-1.0, 1.0) * exp(-t * 85.0) * 0.22
+		var click := sin(TAU * 1140.0 * latch) * exp(-latch * 106.0) * 0.30
+		data.encode_s16(i * 2, int((scrape + click) * 32767.0))
 	return _wav(rate, data)
 
 

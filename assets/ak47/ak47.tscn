@@ -36,6 +36,6 @@ surface_material_override/1 = SubResource("StandardMaterial3D_brass")
 surface_material_override/0 = SubResource("StandardMaterial3D_rifle")
 
 [node name="Muzzle" type="Marker3D" parent="."]
-position = Vector3(0, 0.0842, -0.635)
+position = Vector3(0, 0.0841, -0.6265)
 
 [editable path="Model"]

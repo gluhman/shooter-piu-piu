@@ -76,6 +76,11 @@ func join_game(ip: String) -> Error:
 	return OK
 
 
+func leave_game() -> void:
+	client_session = false
+	_close()
+
+
 func _close() -> void:
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
