@@ -3,15 +3,17 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://coru5ihub3k5i"
-path="res://.godot/imported/uniform_normal.webp-5883e137a7949ba9e4cb63c848095ce8.ctex"
+path.s3tc="res://.godot/imported/uniform_normal.webp-5883e137a7949ba9e4cb63c848095ce8.s3tc.ctex"
+path.etc2="res://.godot/imported/uniform_normal.webp-5883e137a7949ba9e4cb63c848095ce8.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/operator/textures/uniform_normal.webp"
-dest_files=["res://.godot/imported/uniform_normal.webp-5883e137a7949ba9e4cb63c848095ce8.ctex"]
+dest_files=["res://.godot/imported/uniform_normal.webp-5883e137a7949ba9e4cb63c848095ce8.s3tc.ctex", "res://.godot/imported/uniform_normal.webp-5883e137a7949ba9e4cb63c848095ce8.etc2.ctex"]
 
 [params]
 

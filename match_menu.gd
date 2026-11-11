@@ -209,7 +209,7 @@ func _build_controls(column: VBoxContainer) -> void:
 		_binding_buttons[action] = binding
 		_row(column, GameSettings.ACTIONS[action][0], binding)
 	_refresh_bindings()
-	_label(column, "1 / 2 / 3 — выбор оружия     Tab — счёт     Esc — меню", 14, MUTED)
+	_label(column, "Tab — счёт     Esc — меню", 14, MUTED)
 	_button(column, "Сбросить управление", _reset_controls)
 
 

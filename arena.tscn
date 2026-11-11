@@ -9,6 +9,7 @@
 [ext_resource type="Script" path="res://match_menu.gd" id="8_menu"]
 
 [ext_resource type="Script" path="res://projectile_simulation.gd" id="9_ballistics"]
+[ext_resource type="Script" path="res://loot.gd" id="10_loot"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.38, 0.5, 0.68, 1)
@@ -55,6 +56,9 @@ script = ExtResource("2_map")
 [node name="Ballistics" type="Node3D" parent="."]
 process_physics_priority = 10
 script = ExtResource("9_ballistics")
+
+[node name="Loot" type="Node3D" parent="."]
+script = ExtResource("10_loot")
 
 [node name="HUD" type="CanvasLayer" parent="."]
 script = ExtResource("6_hud")

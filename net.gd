@@ -1,6 +1,7 @@
 extends Node
 
 const PORT := 7777
+const MAX_PLAYERS := 10
 
 signal joined
 signal connection_failed
@@ -57,7 +58,7 @@ func play_solo() -> void:
 func host_game() -> Error:
 	_close()
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_server(PORT, 1)
+	var err := peer.create_server(PORT, MAX_PLAYERS - 1)
 	if err != OK:
 		return err
 	multiplayer.multiplayer_peer = peer

@@ -2,11 +2,14 @@ extends Control
 
 var _picked := false
 var _cards: Dictionary[String, Button] = {}
+var _card_text: Dictionary[String, String] = {}
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
+	_update_shortcuts()
+	GameSettings.controls_changed.connect(_update_shortcuts)
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
@@ -29,14 +32,17 @@ func show_select() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not visible or _picked or _match().input_blocked() or not (event is InputEventKey) or not event.pressed or event.echo:
+	if not visible or _picked or _match().input_blocked():
 		return
-	if event.physical_keycode == KEY_1:
-		_choose("deagle")
-	elif event.physical_keycode == KEY_2:
-		_choose("shotgun")
-	elif event.physical_keycode == KEY_3:
-		_choose("ak47")
+	var id := GameSettings.weapon_selection(event)
+	if id != "":
+		_choose(id)
+		get_viewport().set_input_as_handled()
+
+
+func _update_shortcuts() -> void:
+	for id in _cards:
+		_cards[id].text = "%s   %s" % [GameSettings.binding_label(GameSettings.WEAPON_KEYS[id]), _card_text[id]]
 
 
 func _build() -> void:
@@ -66,19 +72,19 @@ func _build() -> void:
 	column.add_child(row)
 	row.add_child(_card(
 		"deagle",
-		"1   DESERT EAGLE",
+		"DESERT EAGLE",
 		"Пистолет\nРежим стрельбы: одиночный\n52 урона · 7 патронов",
 		Color(0.8, 0.64, 0.32)
 	))
 	row.add_child(_card(
 		"shotgun",
-		"2   ДРОБОВИК",
+		"ДРОБОВИК",
 		"Помповый\nРежим стрельбы: картечь\n14×8 урона · 6 патронов",
 		Color(0.48, 0.62, 0.78)
 	))
 	row.add_child(_card(
 		"ak47",
-		"3   AK-47",
+		"AK-47",
 		"Автомат\nУдерживай ЛКМ для стрельбы\n24 урона · 30 патронов",
 		Color(0.55, 0.70, 0.42)
 	))
@@ -86,7 +92,7 @@ func _build() -> void:
 
 func _card(weapon_id: String, title: String, body: String, border: Color) -> Button:
 	var button := Button.new()
-	button.text = title + "\n\n" + body
+	_card_text[weapon_id] = title + "\n\n" + body
 	button.custom_minimum_size = Vector2(300, 220)
 	button.focus_mode = Control.FOCUS_NONE
 	button.add_theme_font_size_override("font_size", 18)

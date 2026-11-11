@@ -1,5 +1,7 @@
 extends CanvasLayer
 
+const INVENTORY_HUD := preload("res://inventory_hud.gd")
+
 var _health_back: ColorRect
 var _fill: ColorRect
 var _label: Label
@@ -7,7 +9,12 @@ var _flash: ColorRect
 var _death: Label
 var _score: Label
 var _net_label: Label
+var _loot_prompt: Label
+var _loot_notice: Label
+var _loot_notice_left := 0.0
+var _last_health := 100
 var _player: Node
+var _inventory_hud: HBoxContainer
 var _round_scores: Dictionary = {}
 
 
@@ -22,20 +29,22 @@ func attach_local(player: Node) -> void:
 	if _player == player:
 		return
 	_player = player
+	_last_health = player.health
 	_health_back.show()
 	_fill.show()
 	_label.show()
 	_score.show()
 	_player.health_changed.connect(_on_health)
 	_player.respawned.connect(_on_respawn)
+	_inventory_hud.attach_player(player)
 	_on_health(_player.health, _player.MAX_HEALTH)
 
 
-func show_host_ip(addresses: PackedStringArray, extra: String = "") -> void:
+func show_host_ip(addresses: PackedStringArray) -> void:
 	var ip_text := "адрес в сети не найден"
 	if not addresses.is_empty():
 		ip_text = ", ".join(addresses)
-	_net_label.text = ("%s " % extra if extra != "" else "") + "Для друга: " + ip_text
+	_net_label.text = "IP для подключения: " + ip_text
 	_net_label.visible = true
 
 
@@ -43,7 +52,22 @@ func hide_host_ip() -> void:
 	_net_label.visible = false
 
 
+func show_loot_prompt(text: String) -> void:
+	_loot_prompt.text = text
+	_loot_prompt.visible = text != ""
+
+
+func show_loot_notice(text: String) -> void:
+	_loot_notice.text = text
+	_loot_notice.show()
+	_loot_notice_left = 2.0
+
+
 func _process(delta: float) -> void:
+	if _loot_notice_left > 0.0:
+		_loot_notice_left -= delta
+		if _loot_notice_left <= 0.0:
+			_loot_notice.hide()
 	if _flash.color.a > 0.0:
 		var color := _flash.color
 		color.a = maxf(color.a - delta * 1.8, 0.0)
@@ -55,8 +79,9 @@ func _on_health(current: int, maximum: int) -> void:
 	_fill.offset_right = 8.0 + 220.0 * ratio
 	_fill.color = Color(lerpf(0.85, 0.25, ratio), lerpf(0.18, 0.72, ratio), 0.2)
 	_label.text = "%d HP" % current
-	if current < maximum and current > 0:
+	if current < _last_health and current > 0:
 		_flash.color = Color(0.7, 0.05, 0.04, 0.32)
+	_last_health = current
 
 
 func confirm_projectile_hit() -> void:
@@ -77,6 +102,7 @@ func on_frag(killer_id: int, victim_id: int) -> void:
 func reset_round() -> void:
 	_round_scores.clear()
 	_death.hide()
+	_loot_notice.hide()
 	_flash.color.a = 0.0
 	_refresh_score()
 
@@ -90,13 +116,18 @@ func apply_score_snapshot(scores: Dictionary) -> void:
 	_refresh_score()
 
 
+func remove_score(peer: int) -> void:
+	_round_scores.erase(peer)
+
+
 func score_rows() -> Array:
 	var local := Net.local_id()
 	var rows: Array = [_score_row(local, "Вы", true)]
-	for node in get_tree().get_nodes_in_group("player"):
-		var peer: int = node.get_multiplayer_authority()
-		if peer != local and not node.is_queued_for_deletion():
-			rows.append(_score_row(peer, "Хост" if peer == 1 else "Соперник", false))
+	var game := get_parent()
+	for slot in game.player_slots.size():
+		var peer: int = game.player_slots[slot]
+		if peer != 0 and peer != local:
+			rows.append(_score_row(peer, game.player_label(slot), false))
 	var bots := get_tree().get_nodes_in_group("bot")
 	for bot in bots:
 		var title := "Бот" if bots.size() == 1 else "Бот %d" % (1 - bot.combatant_id)
@@ -123,9 +154,9 @@ func _refresh_score() -> void:
 
 
 func _update_hint() -> void:
-	$Hint.text = "%s — выстрел    %s — прицел    %s — присесть    %s — перезарядка    Tab — счёт    Esc — меню" % [
+	$Hint.text = "%s — выстрел    %s — прицел    %s — присесть    %s — перезарядка    %s — подбор    Tab — счёт    Esc — меню" % [
 		GameSettings.binding_label(&"fire"), GameSettings.binding_label(&"aim_sights"),
-		GameSettings.binding_label(&"crouch"), GameSettings.binding_label(&"reload_weapon"),
+		GameSettings.binding_label(&"crouch"), GameSettings.binding_label(&"reload_weapon"), GameSettings.binding_label(&"interact"),
 	]
 
 
@@ -212,3 +243,26 @@ func _build() -> void:
 	_death.add_theme_color_override("font_color", Color(0.95, 0.9, 0.88))
 	_death.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_death)
+
+
+	_loot_prompt = _build_loot_label(31.0, Color(0.98, 0.96, 0.89))
+	_loot_notice = _build_loot_label(57.0, Color(0.76, 0.87, 0.56))
+	_inventory_hud = INVENTORY_HUD.new()
+	add_child(_inventory_hud)
+
+
+func _build_loot_label(offset: float, color: Color) -> Label:
+	var label := Label.new()
+	label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	label.offset_left = -320.0
+	label.offset_right = 320.0
+	label.offset_top = offset
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("outline_size", 6)
+	label.add_theme_font_size_override("font_size", 17)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.hide()
+	add_child(label)
+	return label

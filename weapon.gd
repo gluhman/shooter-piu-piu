@@ -123,6 +123,7 @@ var _dry: AudioStream
 
 @onready var _camera: Camera3D = get_parent()
 @onready var _player = get_parent().get_parent()
+@onready var _match := get_node("../../..")
 @onready var _ballistics := get_node("../../../Ballistics")
 @onready var _ammo: Label = get_node("../../../HUD/Ammo")
 @onready var _cross: ColorRect = get_node("../../../HUD/Crosshair")
@@ -142,12 +143,14 @@ func _ready() -> void:
 	_shell_insert = _make_insert_sound()
 
 
-func equip(weapon_id: String) -> void:
+func equip(weapon_id: String, magazine: int = -1, reserve: int = -1, switching: bool = false) -> void:
 	_weapon_id = weapon_id
 	_stats = WEAPONS[weapon_id]
-	_mag = int(_stats["mag"])
-	_reserve = int(_stats["reserve"])
-	_cooldown = 0.0
+	_mag = int(_stats.mag) if magazine < 0 else mini(magazine, int(_stats.mag))
+	_reserve = int(_stats.reserve) if reserve < 0 else mini(reserve, _player.ammo_capacity(weapon_id))
+	_aim_amount = 0.0
+	_last_net_msec = Time.get_ticks_msec() if switching else 0
+	_cooldown = maxf(_cooldown, 0.22) if switching else 0.0
 	_reload_left = 0.0
 	_reloading = false
 	_kick_pos = Vector3.ZERO
@@ -167,11 +170,20 @@ func equip(weapon_id: String) -> void:
 		_ammo.visible = true
 
 
-func restart_round() -> void:
-	_last_net_msec = 0
-	_world_pump.stop()
-	if _active:
-		equip(_weapon_id)
+func ammo_counts() -> Vector2i:
+	return Vector2i(_mag, _reserve)
+
+
+func reserve_space() -> int:
+	return _player.ammo_capacity(_weapon_id) - _reserve if _active else 0
+
+
+func add_reserve(amount: int) -> int:
+	var added := clampi(amount, 0, reserve_space())
+	_reserve += added
+	if _player._is_local():
+		_update_hud()
+	return added
 
 
 func _input(event: InputEvent) -> void:
@@ -244,7 +256,7 @@ func _process(delta: float) -> void:
 
 
 func _try_fire() -> void:
-	if _reloading or _cooldown > 0.0:
+	if _reloading or _cooldown > 0.0 or _player.weapon_switch_pending():
 		return
 	if _mag <= 0:
 		if _reserve > 0:
@@ -262,8 +274,7 @@ func _shoot() -> void:
 	var barrel := _muzzle.global_transform
 	if not Net.active or multiplayer.is_server():
 		_queue_projectiles(barrel)
-		if Net.active and not multiplayer.get_peers().is_empty():
-			net_visual.rpc(_weapon_id)
+		_send_shot_visual(_weapon_id)
 	else:
 		net_fire.rpc_id(1, _weapon_id, -barrel.basis.z)
 	_ballistics.muzzle_effect(_weapon_id, barrel, _player.shot_motion(), false)
@@ -277,19 +288,49 @@ func _shoot() -> void:
 
 
 func _queue_projectiles(barrel: Transform3D) -> void:
+	var spread := lerpf(float(_stats.spread), float(_stats.aim_spread), aim_blend())
+	_launch_projectiles(barrel, barrel.basis, spread, _stats)
+
+
+func fire_bot(target: Vector3, aim_error: float, damage: int) -> bool:
+	if _reloading or _muzzle == null:
+		return false
+	if _mag == 0:
+		if _reserve > 0:
+			_start_reload()
+		return false
+	_mag -= 1
+	_apply_view(0.0)
+	var barrel := _muzzle.global_transform
+	var aim := Basis.looking_at((target - barrel.origin).normalized(), _camera.global_basis.y)
+	var cone := tan(deg_to_rad(aim_error))
+	var offset := Vector2.from_angle(randf() * TAU) * sqrt(randf()) * cone
+	var bore := aim * Vector3(offset.x, offset.y, -1.0).normalized()
+	var stats := _stats.duplicate()
+	stats.damage = damage
+	stats.damage_min = mini(damage, maxi(1, roundi(damage * float(_stats.damage_min) / float(_stats.damage))))
+	var spread := float(_stats.aim_spread) if int(_stats.pellets) > 1 else 0.0
+	_launch_projectiles(barrel, Basis.looking_at(bore, aim.y), spread, stats)
+	_play_remote_shot(_weapon_id)
+	_send_shot_visual(_weapon_id)
+	return true
+
+
+func _launch_projectiles(barrel: Transform3D, aim: Basis, spread: float, stats: Dictionary) -> void:
 	var directions := PackedVector3Array()
-	var spread := lerpf(float(_stats["spread"]), float(_stats["aim_spread"]), aim_blend())
 	var cone := tan(deg_to_rad(spread))
-	for _pellet in int(_stats["pellets"]):
+	for _pellet in int(stats.pellets):
 		var offset := Vector2.from_angle(randf() * TAU) * sqrt(randf()) * cone
-		directions.append((barrel.basis * Vector3(offset.x, offset.y, -1.0)).normalized())
-	_ballistics.queue_shot(_weapon_id, _stats, _player, get_multiplayer_authority(), barrel,
+		directions.append((aim * Vector3(offset.x, offset.y, -1.0)).normalized())
+	_ballistics.queue_shot(_weapon_id, stats, _player, _player.score_id(), barrel,
 		_barrel_length, directions, _player.shot_motion())
 
 
 @rpc("authority", "reliable")
 func net_fire(weapon_name: String, bore: Vector3) -> void:
-	if not multiplayer.is_server() or weapon_name != _weapon_id or _muzzle == null or not _player.control_enabled:
+	if not multiplayer.is_server() or not _match.match_peers().has(multiplayer.get_remote_sender_id()):
+		return
+	if weapon_name != _weapon_id or _muzzle == null or not _player.control_enabled or _mag == 0 or _reloading:
 		return
 	if not bore.is_finite() or not is_equal_approx(bore.length_squared(), 1.0):
 		return
@@ -298,17 +339,25 @@ func net_fire(weapon_name: String, bore: Vector3) -> void:
 	if now - _last_net_msec < wait:
 		return
 	_last_net_msec = now
+	_mag -= 1
 	var barrel := _muzzle.global_transform
 	# Keep the host's muzzle position and use the firing client's orientation within normal aim limits.
 	if bore.dot(-_camera.global_basis.z) >= cos(deg_to_rad(40.0)):
 		barrel.basis = Basis.looking_at(bore, _camera.global_basis.y)
 	_queue_projectiles(barrel)
 	_play_remote_shot(weapon_name)
+	_send_shot_visual(weapon_name)
 
 
-@rpc("authority", "reliable")
+func _send_shot_visual(weapon_name: String) -> void:
+	for peer in _match.match_peers():
+		if peer != get_multiplayer_authority():
+			net_visual.rpc_id(peer, weapon_name)
+
+
+@rpc("any_peer", "unreliable")
 func net_visual(weapon_name: String) -> void:
-	if weapon_name == _weapon_id and _muzzle:
+	if multiplayer.get_remote_sender_id() == 1 and weapon_name == _weapon_id and _muzzle:
 		_play_remote_shot(weapon_name)
 
 
@@ -332,21 +381,48 @@ func _play_world_pump() -> void:
 
 
 func _start_reload() -> void:
-	if _reloading or _mag == int(_stats["mag"]) or _reserve <= 0:
+	if _reloading or _mag >= int(_stats.mag) or _reserve <= 0:
 		return
 	var units := mini(int(_stats["mag"]) - _mag, _reserve)
 	_begin_reload(units)
-	_play_on(_reload_player, _reload_stream(), -3.0, false)
+	if _player._is_local():
+		_play_on(_reload_player, _reload_stream(), -3.0, false)
+		_update_hud()
+	else:
+		_play_world_reload()
 	if Net.active:
-		net_reload.rpc(_weapon_id, units)
-	_update_hud()
+		if multiplayer.is_server():
+			_send_reload(_weapon_id, units)
+		else:
+			net_reload.rpc_id(1, _weapon_id, units)
 
 
-@rpc("authority", "reliable")
+func _send_reload(id: String, units: int) -> void:
+	for peer in _match.match_peers():
+		if peer != get_multiplayer_authority():
+			net_reload.rpc_id(peer, id, units)
+
+
+@rpc("any_peer", "reliable")
 func net_reload(id: String, units: int) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if multiplayer.is_server():
+		if sender != get_multiplayer_authority() or not _match.match_peers().has(sender):
+			return
+	elif sender != 1:
+		return
 	if id != _weapon_id or not _player.control_enabled or units < 1 or units > int(_stats["mag"]):
 		return
+	if multiplayer.is_server():
+		units = mini(units, mini(int(_stats.mag) - _mag, _reserve))
+		if _reloading or units <= 0:
+			return
+		_send_reload(id, units)
 	_begin_reload(units)
+	_play_world_reload()
+
+
+func _play_world_reload() -> void:
 	_world_reload.stream = _reload_stream()
 	if _world_reload.stream:
 		_world_reload.play()
@@ -377,17 +453,19 @@ func _insert_loaded_shells() -> void:
 		return
 	var count := inserted - _shells_inserted
 	_shells_inserted = inserted
-	if _player._is_local():
+	if _player._is_local() or _player._server_rules():
 		_mag += count
 		_reserve -= count
+	if _player._is_local():
 		_play_on(_reload_player, _shell_insert, -5.0, true)
+		_update_hud()
 	else:
 		_world_reload.stream = _shell_insert
 		_world_reload.play()
 
 
 func _finish_reload() -> void:
-	if _player._is_local() and _weapon_id != "shotgun":
+	if (_player._is_local() or _player._server_rules()) and _weapon_id != "shotgun":
 		_mag += _reload_units
 		_reserve -= _reload_units
 	_reloading = false
@@ -491,8 +569,8 @@ func _build_viewmodel(weapon_id: String) -> void:
 		"shotgun":
 			_apply_shotgun_material(model)
 			model.rotation.y = -PI / 2.0
-			_scale_longest_axis(model, 0.92)
-			var bounds := _view_bounds(model)
+			_scale_longest_axis(model, _view, 0.92)
+			var bounds := _view_bounds(model, _view)
 			var rear := bounds.end.z
 			grip = Vector3(0.029, bounds.position.y + 0.056, rear - 0.232)
 			support = Vector3(-0.039, bounds.position.y + 0.053, rear - 0.461)
@@ -699,7 +777,7 @@ func _shell_part(radius: float, height: float, color: Color, metallic: float) ->
 	return instance
 
 
-func _make_model(weapon_id: String) -> Node3D:
+static func _make_model(weapon_id: String) -> Node3D:
 	if weapon_id == "ak47":
 		return AK47_MODEL.instantiate() as Node3D
 	var path := "res://models/pistol.glb" if weapon_id == "deagle" else "res://drob/Shotgun.obj"
@@ -713,7 +791,7 @@ func _make_model(weapon_id: String) -> Node3D:
 	return holder
 
 
-func _apply_shotgun_material(model: Node3D) -> void:
+static func _apply_shotgun_material(model: Node3D) -> void:
 	var material := StandardMaterial3D.new()
 	material.albedo_texture = load("res://drob/Sg_Diffuse.png")
 	material.normal_enabled = true
@@ -728,14 +806,28 @@ func _apply_shotgun_material(model: Node3D) -> void:
 		mesh_instance.material_override = material
 
 
-func _scale_longest_axis(model: Node3D, length: float) -> void:
-	var bounds := _view_bounds(model)
+static func _scale_longest_axis(model: Node3D, root: Node3D, length: float) -> void:
+	var bounds := _view_bounds(model, root)
 	var longest := maxf(bounds.size.x, maxf(bounds.size.y, bounds.size.z))
 	if longest > 0.001:
 		model.scale *= length / longest
 
 
-func _muzzle_point(model: Node3D, weapon_id: String) -> Vector3:
+static func add_pickup_model(parent: Node3D, id: String) -> void:
+	var model := _make_model(id)
+	parent.add_child(model)
+	if id == "shotgun":
+		_apply_shotgun_material(model)
+		_scale_longest_axis(model, parent, 0.85)
+	model.rotation.z = PI * 0.5
+	var bounds := _view_bounds(model, parent)
+	model.position = -bounds.get_center()
+	model.position.y += bounds.size.y * 0.5
+	for animation in model.find_children("*", "AnimationPlayer", true, false):
+		animation.active = false
+
+
+static func _muzzle_point(model: Node3D, weapon_id: String) -> Vector3:
 	match weapon_id:
 		"ak47":
 			return model.transform * (model.get_node("Muzzle") as Marker3D).position
@@ -746,11 +838,11 @@ func _muzzle_point(model: Node3D, weapon_id: String) -> Vector3:
 			return model.transform * Vector3(0.0, 0.1575, 0.112)
 
 
-func _view_bounds(model: Node3D) -> AABB:
+static func _view_bounds(model: Node3D, root: Node3D) -> AABB:
 	var bounds := AABB()
 	var found := false
 	for mesh_instance in model.find_children("*", "MeshInstance3D", true, false):
-		var to_view: Transform3D = _view.global_transform.affine_inverse() * mesh_instance.global_transform
+		var to_view: Transform3D = root.global_transform.affine_inverse() * mesh_instance.global_transform
 		var piece: AABB = to_view * mesh_instance.get_aabb()
 		bounds = piece if not found else bounds.merge(piece)
 		found = true
@@ -784,6 +876,7 @@ func _update_hud() -> void:
 		return
 	var status := "перезарядка" if _reloading else "%d | %d" % [_mag, _reserve]
 	_ammo.text = "%s\n%s\n%s" % [str(_stats["name"]), str(_stats["mode"]), status]
+	_player.inventory_changed.emit()
 
 
 func _make_player() -> AudioStreamPlayer:

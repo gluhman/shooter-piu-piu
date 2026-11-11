@@ -13,7 +13,9 @@ var _ip: LineEdit
 var _busy := false
 var _map: OptionButton
 var _weapons: OptionButton
-var _guest_state: Label
+var _roster_title: Label
+var _player_names: Array[Label] = []
+var _player_states: Array[Label] = []
 
 
 func _ready() -> void:
@@ -34,7 +36,7 @@ func show_guest_room() -> void:
 
 func join_failed() -> void:
 	_busy = false
-	_status.text = "Не удалось подключиться. Проверь IP и попроси друга открыть комнату."
+	_status.text = "Не удалось подключиться. Проверь адрес и наличие свободного места."
 
 
 func refresh_room() -> void:
@@ -43,9 +45,14 @@ func refresh_room() -> void:
 	var game := _match()
 	_map.select(game.map_id)
 	_weapons.select(game.weapon_set)
-	var connected: bool = _screen == Screen.GUEST or game.guest_id != 0
-	_guest_state.text = "Подключён" if connected else "Не подключён"
-	_guest_state.modulate = ACCENT if connected else MUTED
+	var local := Net.local_id()
+	var connected_count: int = Net.MAX_PLAYERS - game.player_slots.count(0)
+	_roster_title.text = "Игроки  %d / %d" % [connected_count, Net.MAX_PLAYERS]
+	for slot in Net.MAX_PLAYERS:
+		var peer: int = game.player_slots[slot]
+		_player_names[slot].text = game.player_label(slot) + (" (вы)" if peer == local else "")
+		_player_states[slot].text = "Подключён" if peer != 0 else "Не подключён"
+		_player_states[slot].modulate = ACCENT if peer != 0 else MUTED
 
 
 func _build_layout() -> void:
@@ -128,9 +135,17 @@ func _show_room(screen: Screen) -> void:
 		return
 
 	_column.add_child(HSeparator.new())
-	_label(_column, "Игроки", 18)
-	_player_row("Хост (вы)" if host else "Хост", "Подключён")
-	_guest_state = _player_row("Соперник" if host else "Соперник (вы)", "")
+	_roster_title = _label(_column, "", 18)
+	var roster := VBoxContainer.new()
+	roster.add_theme_constant_override("separation", 2)
+	_column.add_child(roster)
+	for slot in Net.MAX_PLAYERS:
+		var row := HBoxContainer.new()
+		roster.add_child(row)
+		var player_name := _label(row, "", 15)
+		player_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_player_names.append(player_name)
+		_player_states.append(_label(row, "", 15))
 	refresh_room()
 
 	if host:
@@ -149,6 +164,8 @@ func _show_room(screen: Screen) -> void:
 
 
 func _clear() -> void:
+	_player_names.clear()
+	_player_states.clear()
 	for child in _column.get_children():
 		_column.remove_child(child)
 		child.queue_free()
@@ -175,14 +192,6 @@ func _row(text: String, control: Control) -> void:
 	var label := _label(row, text, 16)
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(control)
-
-
-func _player_row(text: String, state: String) -> Label:
-	var label := Label.new()
-	label.text = state
-	label.modulate = ACCENT
-	_row(text, label)
-	return label
 
 
 func _options(items: Array, selected: int) -> OptionButton:

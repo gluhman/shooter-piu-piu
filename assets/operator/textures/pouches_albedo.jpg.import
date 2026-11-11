@@ -3,15 +3,17 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cwpvo3eah122o"
-path="res://.godot/imported/pouches_albedo.jpg-2ced386d4a0579c4a179f24dd7a6dae1.ctex"
+path.s3tc="res://.godot/imported/pouches_albedo.jpg-2ced386d4a0579c4a179f24dd7a6dae1.s3tc.ctex"
+path.etc2="res://.godot/imported/pouches_albedo.jpg-2ced386d4a0579c4a179f24dd7a6dae1.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/operator/textures/pouches_albedo.jpg"
-dest_files=["res://.godot/imported/pouches_albedo.jpg-2ced386d4a0579c4a179f24dd7a6dae1.ctex"]
+dest_files=["res://.godot/imported/pouches_albedo.jpg-2ced386d4a0579c4a179f24dd7a6dae1.s3tc.ctex", "res://.godot/imported/pouches_albedo.jpg-2ced386d4a0579c4a179f24dd7a6dae1.etc2.ctex"]
 
 [params]
 

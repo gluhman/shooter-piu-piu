@@ -3,15 +3,17 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dv6dj0ihl13oj"
-path="res://.godot/imported/uniform_albedo.jpg-60fbc002ccce4f736d68db0f4b63f849.ctex"
+path.s3tc="res://.godot/imported/uniform_albedo.jpg-60fbc002ccce4f736d68db0f4b63f849.s3tc.ctex"
+path.etc2="res://.godot/imported/uniform_albedo.jpg-60fbc002ccce4f736d68db0f4b63f849.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/operator/textures/uniform_albedo.jpg"
-dest_files=["res://.godot/imported/uniform_albedo.jpg-60fbc002ccce4f736d68db0f4b63f849.ctex"]
+dest_files=["res://.godot/imported/uniform_albedo.jpg-60fbc002ccce4f736d68db0f4b63f849.s3tc.ctex", "res://.godot/imported/uniform_albedo.jpg-60fbc002ccce4f736d68db0f4b63f849.etc2.ctex"]
 
 [params]
 

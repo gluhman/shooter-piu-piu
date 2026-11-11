@@ -1,6 +1,21 @@
 extends SkeletonModifier3D
 
 const MODEL := preload("res://assets/operator/operator.glb")
+const FABRIC_TEXTURES := {
+	"Mil_Suit_R5": [
+		preload("res://assets/operator/textures/uniform_albedo.jpg"),
+		preload("res://assets/operator/textures/uniform_normal.webp"),
+	],
+	"Mil_Suit_R5__Plate": [
+		preload("res://assets/operator/textures/vest_albedo.jpg"),
+		preload("res://assets/operator/textures/vest_normal.webp"),
+	],
+	"Mil_Suit_R5_Puches": [
+		preload("res://assets/operator/textures/pouches_albedo.jpg"),
+		preload("res://assets/operator/textures/pouches_normal.webp"),
+	],
+}
+
 const RIGHT_ARM := [&"mixamorig_RightArm_09", &"mixamorig_RightForeArm_010", &"mixamorig_RightHand_011"]
 const LEFT_ARM := [&"mixamorig_LeftArm_033", &"mixamorig_LeftForeArm_034", &"mixamorig_LeftHand_035"]
 const RIGHT_LEG := [&"mixamorig_RightUpLeg_057", &"mixamorig_RightLeg_058", &"mixamorig_RightFoot_059"]
@@ -201,3 +216,21 @@ func _solve(skeleton: Skeleton3D, chain: PackedInt32Array, goal: Transform3D, po
 
 	goal.origin = end
 	skeleton.set_bone_global_pose(chain[2], goal)
+
+
+static func apply_textures(avatar: Node3D) -> void:
+	var upgraded: Dictionary = {}
+	for mesh: MeshInstance3D in avatar.find_children("*", "MeshInstance3D", true, false):
+		for surface in mesh.mesh.get_surface_count():
+			var original := mesh.get_active_material(surface) as BaseMaterial3D
+			if original == null or not FABRIC_TEXTURES.has(original.resource_name):
+				continue
+			var name := original.resource_name
+			if not upgraded.has(name):
+				var material := original.duplicate() as BaseMaterial3D
+				material.albedo_texture = FABRIC_TEXTURES[name][0]
+				material.normal_texture = FABRIC_TEXTURES[name][1]
+				material.normal_enabled = true
+				material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+				upgraded[name] = material
+			mesh.set_surface_override_material(surface, upgraded[name])

@@ -4,6 +4,7 @@ signal graphics_changed
 signal controls_changed
 
 const PATH := "user://settings.cfg"
+const WEAPON_KEYS := {"deagle": &"select_pistol", "shotgun": &"select_shotgun", "ak47": &"select_rifle"}
 const ACTIONS := {
 	&"move_forward": ["Вперёд", KEY_W],
 	&"move_back": ["Назад", KEY_S],
@@ -16,6 +17,11 @@ const ACTIONS := {
 	&"jump": ["Прыжок", KEY_SPACE],
 	&"fire": ["Выстрел", -MOUSE_BUTTON_LEFT],
 	&"reload_weapon": ["Перезарядка", KEY_R],
+	&"interact": ["Взаимодействие", KEY_ENTER],
+	&"select_pistol": ["Выбрать пистолет", KEY_1],
+	&"select_shotgun": ["Выбрать дробовик", KEY_2],
+	&"select_rifle": ["Выбрать автомат", KEY_3],
+	&"use_medkit": ["Использовать аптечку", KEY_H],
 }
 
 var sensitivity := 1.0
@@ -83,6 +89,13 @@ func _set_binding(action: StringName, code: int) -> void:
 
 func _left_modifier(action: StringName, code: int) -> bool:
 	return (action == &"crouch" and code == KEY_SHIFT) or (action == &"aim_sights_alt" and code == KEY_CTRL)
+
+
+func weapon_selection(event: InputEvent) -> String:
+	for id in WEAPON_KEYS:
+		if event.is_action_pressed(WEAPON_KEYS[id]):
+			return id
+	return ""
 
 
 func aim_pressed() -> bool:

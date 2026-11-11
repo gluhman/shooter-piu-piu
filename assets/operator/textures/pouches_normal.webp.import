@@ -3,15 +3,17 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://blq8n66hmkd75"
-path="res://.godot/imported/pouches_normal.webp-6d99f374748dd919cf1f0ac2df30eef8.ctex"
+path.s3tc="res://.godot/imported/pouches_normal.webp-6d99f374748dd919cf1f0ac2df30eef8.s3tc.ctex"
+path.etc2="res://.godot/imported/pouches_normal.webp-6d99f374748dd919cf1f0ac2df30eef8.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/operator/textures/pouches_normal.webp"
-dest_files=["res://.godot/imported/pouches_normal.webp-6d99f374748dd919cf1f0ac2df30eef8.ctex"]
+dest_files=["res://.godot/imported/pouches_normal.webp-6d99f374748dd919cf1f0ac2df30eef8.s3tc.ctex", "res://.godot/imported/pouches_normal.webp-6d99f374748dd919cf1f0ac2df30eef8.etc2.ctex"]
 
 [params]
 

@@ -15,6 +15,10 @@ class Projectile:
 	var profile: String
 	var velocity: Vector3
 	var distance := 0.0
+	var damage_scale := 1.0
+	var crossed_steel := false
+	var crossed_wood := false
+	var bounced := false
 	var reach: float
 	var drag: float
 	var shooter: int
@@ -104,8 +108,8 @@ func _launch(shot: Dictionary, space: PhysicsDirectSpaceState3D) -> void:
 		return
 	for index in velocities.size():
 		_spawn(start_id + index, profile, muzzle, velocities[index], reach, shot.shooter, shot.exclude, stats)
-	if Net.active and not multiplayer.get_peers().is_empty():
-		net_launch.rpc(start_id, profile, muzzle, velocities, reach, shot.shooter)
+	for peer in get_parent().match_peers():
+		net_launch.rpc_id(peer, start_id, profile, muzzle, velocities, reach, shot.shooter)
 
 
 func predict_impact(profile: String, barrel: Transform3D, barrel_length: float, reach: float,
@@ -161,10 +165,15 @@ func _spawn(id: int, profile: String, muzzle: Vector3, speed: Vector3, reach: fl
 	projectile.shooter = shooter
 	projectile.stats = stats
 	projectile.query = _query(exclude)
-	if AMMO[profile].trail > 0.0:
-		projectile.tracer = _effects.tracer(AMMO[profile])
-		projectile.tracer.set_meta("trail", float(AMMO[profile].trail))
+	_start_tracer(projectile)
 	_shots[id] = projectile
+
+
+func _start_tracer(projectile: Projectile) -> void:
+	var ammo: Dictionary = AMMO[projectile.profile]
+	if ammo.trail > 0.0:
+		projectile.tracer = _effects.tracer(ammo)
+		projectile.tracer.set_meta("trail", float(ammo.trail))
 
 
 func _step(id: int, projectile: Projectile, delta: float, space: PhysicsDirectSpaceState3D, authoritative: bool) -> void:
@@ -184,14 +193,105 @@ func _step(id: int, projectile: Projectile, delta: float, space: PhysicsDirectSp
 	projectile.previous = projectile.position
 	projectile.position = end
 	projectile.velocity = next_velocity
-	if not hit.is_empty():
-		if authoritative and not projectile.stats.is_empty():
-			_impact(id, hit, direction, projectile.profile, projectile.shooter, projectile.stats, projectile.distance)
-		_finish_tracer(projectile, end, direction, projectile.distance)
-		_remove(id)
+	if hit.is_empty():
+		return
+	if authoritative and not projectile.stats.is_empty():
+		var path := _redirect(projectile, hit, direction)
+		if not path.is_empty():
+			_continue(id, projectile, hit, direction, path)
+			return
+		_impact(id, hit, direction, projectile.profile, projectile.shooter, projectile.stats,
+			projectile.distance, projectile.damage_scale)
+	_finish_tracer(projectile, end, direction, projectile.distance)
+	_remove(id)
 
 
-func _impact(id: int, hit: Dictionary, direction: Vector3, profile: String, shooter: int, stats: Dictionary, distance: float) -> void:
+func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3) -> Dictionary:
+	var collider := hit.collider as Node3D
+	var normal: Vector3 = hit.normal
+	if collider == null or normal.is_zero_approx():
+		return {}
+	var surface: String = collider.get_meta(&"impact_surface", "concrete")
+	var incidence := clampf(-direction.dot(normal), 0.0, 1.0)
+	var speed := projectile.velocity.length()
+	if surface == "metal" and projectile.profile != "ak47" and not projectile.bounced:
+		var grazing_limit := 0.36 if projectile.profile == "deagle" else 0.27
+		if incidence <= grazing_limit and speed >= float(AMMO[projectile.profile].speed) * 0.38:
+			projectile.bounced = true
+			var reflected := direction.bounce(normal).normalized()
+			return {
+				"position": hit.position + normal * 0.018 + reflected * 0.013,
+				"velocity": reflected * speed * 0.46,
+				"distance": 0.03, "damage": 0.42, "through": false, "surface": surface,
+			}
+
+	if not collider.has_meta(&"ballistic_size") or speed < float(AMMO[projectile.profile].speed) * 0.40:
+		return {}
+	var steel := surface == "metal" and projectile.profile == "ak47" and not projectile.crossed_steel and incidence >= 0.55
+	var wood := surface == "wood" and projectile.profile != "shotgun" and not projectile.crossed_wood and incidence >= 0.33
+	if not steel and not wood:
+		return {}
+	var size: Vector3 = collider.get_meta(&"ballistic_size")
+	var thickness := _box_exit_distance(collider, size * 0.5, hit.position, direction)
+	var limit := 0.36 if steel else 1.9
+	if thickness <= 0.001 or thickness > limit or projectile.distance + thickness + 0.02 >= projectile.reach:
+		return {}
+	if steel:
+		projectile.crossed_steel = true
+	else:
+		projectile.crossed_wood = true
+	var axis := direction.cross(normal)
+	if axis.length_squared() < 0.0001:
+		var reference := Vector3.UP if absf(direction.y) < 0.9 else Vector3.RIGHT
+		axis = direction.cross(reference)
+	var deflection := randf_range(0.022, 0.064) if steel else randf_range(0.012, 0.045)
+	if randf() < 0.5:
+		deflection = -deflection
+	var outgoing := direction.rotated(axis.normalized(), deflection)
+	var loss := 0.68 if steel else 0.76
+	return {
+		"position": hit.position + direction * (thickness + 0.018),
+		"velocity": outgoing * speed * loss,
+		"distance": thickness + 0.018, "damage": loss * 0.84, "through": true, "surface": surface,
+	}
+
+
+func _box_exit_distance(box: Node3D, half_size: Vector3, impact: Vector3, direction: Vector3) -> float:
+	var point := box.to_local(impact)
+	var travel := box.global_basis.inverse() * direction
+	var depth := INF
+	for axis in 3:
+		if absf(travel[axis]) < 0.00001:
+			continue
+		var boundary := half_size[axis] if travel[axis] > 0.0 else -half_size[axis]
+		depth = minf(depth, (boundary - point[axis]) / travel[axis])
+	return depth
+
+
+func _continue(id: int, projectile: Projectile, hit: Dictionary, direction: Vector3, path: Dictionary) -> void:
+	var entry: Vector3 = hit.position
+	var normal: Vector3 = hit.normal
+	_finish_tracer(projectile, entry, direction, projectile.distance)
+	projectile.distance += float(path.distance)
+	projectile.damage_scale *= float(path.damage)
+	projectile.position = path.position
+	projectile.previous = projectile.position
+	projectile.velocity = path.velocity
+	_start_tracer(projectile)
+	_redirect_effects(entry, normal, path.surface, projectile.profile, path.position, path.through)
+	for peer in get_parent().match_peers():
+		net_redirect.rpc_id(peer, id, projectile.profile, projectile.shooter, entry, normal, path.surface,
+			path.position, path.velocity, projectile.reach - projectile.distance, path.through)
+
+
+func _redirect_effects(entry: Vector3, normal: Vector3, surface: String, profile: String, exit: Vector3, through: bool) -> void:
+	_effects.impact(entry, normal, surface, profile)
+	if through:
+		_effects.impact(exit, -normal, surface, profile)
+
+
+func _impact(id: int, hit: Dictionary, direction: Vector3, profile: String, shooter: int,
+		stats: Dictionary, distance: float, damage_scale: float = 1.0) -> void:
 	var collider := hit["collider"] as Node
 	var surface: String = collider.get_meta(&"impact_surface", "concrete") if collider else "concrete"
 	var damaged := false
@@ -199,15 +299,15 @@ func _impact(id: int, hit: Dictionary, direction: Vector3, profile: String, shoo
 		surface = "operator"
 		var health: int = collider.health
 		if shooter > 0 or collider.is_in_group("player"):
-			collider.take_damage(_damage_at(distance, stats), shooter)
+			collider.take_damage(maxi(1, roundi(_damage_at(distance, stats) * damage_scale)), shooter)
 		damaged = collider.health < health
 	var normal: Vector3 = hit["normal"]
 	if normal.is_zero_approx():
 		normal = -direction
 	var position: Vector3 = hit["position"]
 	_show_impact(position, normal, surface, profile, shooter, damaged)
-	if Net.active and not multiplayer.get_peers().is_empty():
-		net_impact.rpc(id, position, normal, surface, profile, shooter, damaged)
+	for peer in get_parent().match_peers():
+		net_impact.rpc_id(peer, id, position, normal, surface, profile, shooter, damaged)
 
 
 func _show_impact(at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int, damaged: bool) -> void:
@@ -218,7 +318,7 @@ func _show_impact(at: Vector3, normal: Vector3, surface: String, profile: String
 
 @rpc("authority", "reliable")
 func net_launch(first_id: int, profile: String, muzzle: Vector3, velocities: PackedVector3Array, reach: float, shooter: int) -> void:
-	var source := get_parent().get_node_or_null("Bot%d" % -shooter if shooter <= 0 else str(shooter)) as CollisionObject3D
+	var source := get_parent().combatant(shooter) as CollisionObject3D
 	var exclude := source.get_rid() if source else RID()
 	for index in velocities.size():
 		_spawn(first_id + index, profile, muzzle, velocities[index], reach, shooter, exclude, {})
@@ -226,13 +326,28 @@ func net_launch(first_id: int, profile: String, muzzle: Vector3, velocities: Pac
 
 @rpc("authority", "reliable")
 func net_impact(id: int, at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int, damaged: bool) -> void:
+	_end_remote_segment(id, at)
+	_show_impact(at, normal, surface, profile, shooter, damaged)
+
+
+@rpc("authority", "reliable")
+func net_redirect(id: int, profile: String, shooter: int, entry: Vector3, normal: Vector3, surface: String,
+		exit: Vector3, velocity: Vector3, reach: float, through: bool) -> void:
+	_end_remote_segment(id, entry)
+	_redirect_effects(entry, normal, surface, profile, exit, through)
+	if reach > 0.0:
+		var source := get_parent().combatant(shooter) as CollisionObject3D
+		var exclude := source.get_rid() if source else RID()
+		_spawn(id, profile, exit, velocity, reach, shooter, exclude, {})
+
+
+func _end_remote_segment(id: int, at: Vector3) -> void:
 	var projectile: Projectile = _shots.get(id)
 	if projectile:
 		var direction := projectile.velocity.normalized()
 		var remaining := (at - projectile.position).dot(direction)
 		_finish_tracer(projectile, at, direction, projectile.distance + remaining)
 	_remove(id)
-	_show_impact(at, normal, surface, profile, shooter, damaged)
 
 
 func _finish_tracer(projectile: Projectile, at: Vector3, direction: Vector3, distance: float) -> void:

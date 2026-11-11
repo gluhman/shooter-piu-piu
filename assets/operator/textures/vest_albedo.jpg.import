@@ -3,15 +3,17 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://025064t8qvj2"
-path="res://.godot/imported/vest_albedo.jpg-76a99d8e34b781b25a6be895bfc035fb.ctex"
+path.s3tc="res://.godot/imported/vest_albedo.jpg-76a99d8e34b781b25a6be895bfc035fb.s3tc.ctex"
+path.etc2="res://.godot/imported/vest_albedo.jpg-76a99d8e34b781b25a6be895bfc035fb.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/operator/textures/vest_albedo.jpg"
-dest_files=["res://.godot/imported/vest_albedo.jpg-76a99d8e34b781b25a6be895bfc035fb.ctex"]
+dest_files=["res://.godot/imported/vest_albedo.jpg-76a99d8e34b781b25a6be895bfc035fb.s3tc.ctex", "res://.godot/imported/vest_albedo.jpg-76a99d8e34b781b25a6be895bfc035fb.etc2.ctex"]
 
 [params]
 

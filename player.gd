@@ -11,28 +11,23 @@ const JUMP_VELOCITY := 4.6
 const MOUSE_SENS := 0.0022
 const MAX_HEALTH := 100
 const OperatorPose := preload("res://operator_pose.gd")
-
-const FABRIC_TEXTURES := {
-	"Mil_Suit_R5": [
-		preload("res://assets/operator/textures/uniform_albedo.jpg"),
-		preload("res://assets/operator/textures/uniform_normal.webp"),
-	],
-	"Mil_Suit_R5__Plate": [
-		preload("res://assets/operator/textures/vest_albedo.jpg"),
-		preload("res://assets/operator/textures/vest_normal.webp"),
-	],
-	"Mil_Suit_R5_Puches": [
-		preload("res://assets/operator/textures/pouches_albedo.jpg"),
-		preload("res://assets/operator/textures/pouches_normal.webp"),
-	],
-}
+const Weapon := preload("res://weapon.gd")
+const MEDKIT_HEAL := 45
 
 signal health_changed(current: int, maximum: int)
 signal respawned
+signal inventory_changed
 
 var control_enabled := false
 var health := MAX_HEALTH
 var weapon_id := ""
+var slot := 0
+var spawn_position: Vector3
+var _spawn_yaw := 0.0
+var _spawn_loadout := ""
+var medkits := 0
+var _stored: Dictionary[String, Vector2i] = {}
+var _switch_pending := false
 
 var crouched := false
 var aiming := false
@@ -62,6 +57,7 @@ var _visual_vertical := 0.0
 
 @onready var _camera: Camera3D = $Camera3D
 @onready var _collision: CollisionShape3D = $CollisionShape3D
+@onready var gun := $Camera3D/Weapon
 
 
 func _ready() -> void:
@@ -69,10 +65,11 @@ func _ready() -> void:
 	_standing_capsule = _collision.shape as CapsuleShape3D
 	_collision.shape = _standing_capsule.duplicate()
 	_prev_pos = global_position
-	if get_multiplayer_authority() == 1:
-		rotation.y = deg_to_rad(-40.0)
-	else:
-		rotation.y = deg_to_rad(140.0)
+	match slot:
+		0: _spawn_yaw = deg_to_rad(-40.0)
+		1: _spawn_yaw = deg_to_rad(140.0)
+		_: _spawn_yaw = atan2(spawn_position.x, spawn_position.z)
+	rotation.y = _spawn_yaw
 	if _is_local():
 		_camera.current = true
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -97,24 +94,193 @@ func take_damage(amount: int, killer_id: int = 0) -> void:
 		return
 	if _dead or amount <= 0 or _hurt_lock > 0.0:
 		return
-	health = maxi(health - amount, 0)
-	if Net.active:
-		net_set_health.rpc(health, killer_id)
-	else:
-		_commit(killer_id)
+	_set_health(maxi(health - amount, 0), killer_id)
+
+
+func restore_health(amount: int) -> void:
+	if _server_rules() and control_enabled:
+		_set_health(mini(MAX_HEALTH, health + amount), 0)
+
+
+func _set_health(value: int, killer_id: int) -> void:
+	health = value
+	for peer in get_parent().match_peers():
+		net_set_health.rpc_id(peer, health, killer_id)
+	_commit(killer_id)
 
 
 func equip(id: String) -> void:
-	if Net.active:
-		net_equip.rpc(id)
-	else:
-		_apply_equip(id)
-
-
-func send_weapon_to(peer: int) -> void:
-	if weapon_id == "":
+	if not get_parent().allows_weapon(id):
 		return
-	net_equip.rpc_id(peer, weapon_id)
+	_spawn_loadout = id
+	_apply_equip(id)
+	if _server_rules():
+		_send_equipment(id)
+	else:
+		net_equip.rpc_id(1, id, "")
+
+
+func grant_weapon(id: String, magazine: int = -1, reserve: int = -1) -> void:
+	if not _server_rules() or not get_parent().allows_weapon(id):
+		return
+	if score_id() <= 0:
+		if id == weapon_id and magazine >= 0:
+			grant_ammo(id, magazine + maxi(reserve, 0))
+		else:
+			_set_active_weapon(id, magazine, reserve, false)
+		return
+	var stats: Dictionary = Weapon.WEAPONS[id]
+	var loaded := int(stats.mag) if magazine < 0 else magazine
+	var loose := int(stats.reserve) if reserve < 0 else reserve
+	if owns_weapon(id):
+		grant_ammo(id, loaded + loose)
+		return
+	_stored[id] = Vector2i(loaded, mini(ammo_capacity(id), stock_for(id).y + loose))
+	_send_inventory()
+
+
+func owns_weapon(id: String) -> bool:
+	return weapon_id == id or stock_for(id).x >= 0
+
+
+func stock_for(id: String) -> Vector2i:
+	return gun.ammo_counts() if id == weapon_id else _stored.get(id, Vector2i(-1, 0))
+
+
+func ammo_capacity(id: String) -> int:
+	var base := int(Weapon.WEAPONS[id].reserve)
+	return base * 3 if score_id() > 0 else base
+
+
+func ammo_space(id: String) -> int:
+	return ammo_capacity(id) - stock_for(id).y
+
+
+func grant_ammo(id: String, amount: int) -> void:
+	if not _server_rules() or not get_parent().allows_weapon(id):
+		return
+	if id == weapon_id:
+		var added: int = gun.add_reserve(amount)
+		var peer := get_multiplayer_authority()
+		if added > 0 and get_parent().match_peers().has(peer):
+			net_loot_ammo.rpc_id(peer, id, added)
+	elif score_id() > 0:
+		var stock := stock_for(id)
+		stock.y += clampi(amount, 0, ammo_space(id))
+		_stored[id] = stock
+		_send_inventory()
+
+
+func grant_medkits(amount: int) -> void:
+	if not _server_rules():
+		return
+	if score_id() <= 0:
+		restore_health(MEDKIT_HEAL)
+		return
+	medkits += amount
+	_send_inventory()
+
+
+func inventory_stock() -> Dictionary[String, Vector2i]:
+	var stock := _stored.duplicate()
+	if weapon_id != "":
+		stock[weapon_id] = gun.ammo_counts()
+	return stock
+
+
+func select_weapon(id: String) -> void:
+	if not control_enabled or id == weapon_id or not owns_weapon(id) or _switch_pending:
+		return
+	if _server_rules():
+		_switch_weapon(id)
+	else:
+		_switch_pending = true
+		net_switch_weapon.rpc_id(1, id)
+
+
+func use_medkit() -> void:
+	if not control_enabled or medkits <= 0 or health >= MAX_HEALTH:
+		return
+	if _server_rules():
+		_consume_medkit()
+	else:
+		net_use_medkit.rpc_id(1)
+
+
+func weapon_switch_pending() -> bool:
+	return _switch_pending
+
+
+func _consume_medkit() -> void:
+	if control_enabled and medkits > 0 and health < MAX_HEALTH:
+		medkits -= 1
+		restore_health(MEDKIT_HEAL)
+		_send_inventory()
+
+
+func _switch_weapon(id: String) -> void:
+	if not control_enabled or not _stored.has(id) or _stored[id].x < 0:
+		_send_inventory()
+		return
+	var stock := _stored[id]
+	_stored.erase(id)
+	_stored[weapon_id] = gun.ammo_counts()
+	_set_active_weapon(id, stock.x, stock.y, true)
+	_send_inventory()
+
+
+func _set_active_weapon(id: String, magazine: int, reserve: int, switching: bool) -> void:
+	_apply_equip(id, magazine, reserve, switching)
+	for peer in get_parent().match_peers():
+		net_active_weapon.rpc_id(peer, id, magazine, reserve, switching, _spawn_loadout)
+
+
+func _send_inventory() -> void:
+	if _is_local():
+		inventory_changed.emit()
+	else:
+		var peer := get_multiplayer_authority()
+		if score_id() > 0 and get_parent().match_peers().has(peer):
+			net_inventory.rpc_id(peer, _stored, medkits)
+
+
+func _is_owner_request(sender: int) -> bool:
+	return multiplayer.is_server() and sender == get_multiplayer_authority() and get_parent().match_peers().has(sender)
+
+
+func score_id() -> int:
+	return get_multiplayer_authority()
+
+
+func aim_center() -> Vector3:
+	return global_position + Vector3.UP * (_capsule_height * 0.62)
+
+
+func _send_equipment(id: String) -> void:
+	for peer in get_parent().match_peers():
+		if peer != get_multiplayer_authority():
+			net_equip.rpc_id(peer, id, _spawn_loadout)
+
+
+func send_status_to(peer: int) -> void:
+	if peer != get_multiplayer_authority():
+		if weapon_id != "":
+			net_equip.rpc_id(peer, weapon_id, _spawn_loadout)
+		net_set_health.rpc_id(peer, health, 0)
+
+
+func network_pose() -> PackedFloat32Array:
+	return PackedFloat32Array([
+		position.x, position.y, position.z, rotation.y, _camera.rotation.x, float(crouched), float(aiming),
+	])
+
+
+func apply_network_pose(pose: PackedFloat32Array) -> void:
+	position = Vector3(pose[0], pose[1], pose[2])
+	rotation.y = pose[3]
+	_camera.rotation.x = pose[4]
+	crouched = pose[5] > 0.0
+	aiming = pose[6] > 0.0
 
 
 func set_weapon_grips(right: Marker3D, left: Marker3D) -> void:
@@ -144,35 +310,77 @@ func visual_speed() -> float:
 	return _visual_velocity.length()
 
 
-@rpc("any_peer", "call_local", "reliable")
+@rpc("any_peer", "reliable")
 func net_set_health(value: int, killer_id: int) -> void:
-	var sender := multiplayer.get_remote_sender_id()
-	if sender != 0 and sender != 1:
+	if multiplayer.get_remote_sender_id() != 1:
 		return
 	health = value
 	_commit(killer_id)
 
 
-@rpc("authority", "call_local", "reliable")
-func net_equip(id: String) -> void:
-	_apply_equip(id)
-
-
-@rpc("any_peer", "call_local", "reliable")
-func net_respawn() -> void:
+@rpc("any_peer", "reliable")
+func net_equip(id: String, loadout: String = "") -> void:
 	var sender := multiplayer.get_remote_sender_id()
-	if sender != 0 and sender != 1:
-		return
-	_apply_respawn()
+	if multiplayer.is_server():
+		if not _is_owner_request(sender):
+			return
+		if weapon_id == "" and not _dead and get_parent().allows_weapon(id):
+			_spawn_loadout = id
+			_apply_equip(id)
+			_send_equipment(id)
+	elif sender == 1:
+		_spawn_loadout = loadout
+		_apply_equip(id)
 
 
-func _apply_equip(id: String) -> void:
+@rpc("any_peer", "reliable")
+func net_respawn(id: String) -> void:
+	if multiplayer.get_remote_sender_id() == 1:
+		_apply_respawn(id)
+
+
+@rpc("any_peer", "reliable")
+func net_active_weapon(id: String, magazine: int, reserve: int, switching: bool, loadout: String) -> void:
+	if multiplayer.get_remote_sender_id() == 1:
+		_spawn_loadout = loadout
+		_apply_equip(id, magazine, reserve, switching)
+
+
+@rpc("any_peer", "reliable")
+func net_switch_weapon(id: String) -> void:
+	if _is_owner_request(multiplayer.get_remote_sender_id()):
+		_switch_weapon(id)
+
+
+@rpc("any_peer", "reliable")
+func net_use_medkit() -> void:
+	if _is_owner_request(multiplayer.get_remote_sender_id()):
+		_consume_medkit()
+
+
+@rpc("any_peer", "reliable")
+func net_inventory(stock: Dictionary[String, Vector2i], kits: int) -> void:
+	if multiplayer.get_remote_sender_id() == 1 and _is_local():
+		_stored = stock
+		medkits = kits
+		_switch_pending = false
+		inventory_changed.emit()
+
+
+@rpc("any_peer", "reliable")
+func net_loot_ammo(id: String, amount: int) -> void:
+	if multiplayer.get_remote_sender_id() == 1 and weapon_id == id:
+		gun.add_reserve(amount)
+
+
+func _apply_equip(id: String, magazine: int = -1, reserve: int = -1, switching: bool = false) -> void:
 	if not get_parent().allows_weapon(id):
 		return
 	weapon_id = id
 	control_enabled = true
-	$Camera3D/Weapon.equip(id)
-	if _is_local():
+	_switch_pending = false
+	gun.equip(id, magazine, reserve, switching)
+	if _is_local() and not get_parent().input_blocked():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
@@ -184,56 +392,77 @@ func _commit(killer_id: int) -> void:
 	_dead = true
 	aiming = false
 	control_enabled = false
-	$Camera3D/Weapon.cancel_reload()
-	$Camera3D/Weapon.visible = false
+	gun.cancel_reload()
+	gun.hide()
+	collision_layer = 0
+	collision_mask = 0
 	velocity = Vector3.ZERO
 	if _avatar:
 		_avatar.visible = false
 	if _bar_root:
 		_bar_root.visible = false
 	if _server_rules():
-		get_parent().announce(killer_id, get_multiplayer_authority())
-		_respawn_timer = get_tree().create_timer(2.2, false)
+		get_parent().get_node("Loot").drop_combatant(self)
+		get_parent().announce(killer_id, score_id())
+		_respawn_timer = get_tree().create_timer(_respawn_delay(), false)
 		_respawn_timer.timeout.connect(_request_respawn)
+	_clear_inventory()
+	inventory_changed.emit()
+
+
+func _clear_inventory() -> void:
+	_stored.clear()
+	medkits = 0
+	_switch_pending = false
 
 
 func _request_respawn() -> void:
 	_respawn_timer = null
-	if Net.active:
-		if multiplayer.is_server():
-			net_respawn.rpc()
-	else:
-		_apply_respawn()
+	var id := _next_respawn_weapon()
+	for peer in get_parent().match_peers():
+		net_respawn.rpc_id(peer, id)
+	_apply_respawn(id)
+
+
+func _next_respawn_weapon() -> String:
+	return _spawn_loadout
+
+
+func _respawn_delay() -> float:
+	return 2.2
 
 
 func restart_round() -> void:
 	if _respawn_timer and _respawn_timer.timeout.is_connected(_request_respawn):
 		_respawn_timer.timeout.disconnect(_request_respawn)
 	_respawn_timer = null
-	_apply_respawn()
+	_apply_respawn(_spawn_loadout)
 	_recoil_pitch = 0.0
 	_jump_held = Input.is_action_pressed(&"jump")
-	$Camera3D/Weapon.restart_round()
 
 
-func _apply_respawn() -> void:
-	var peer := get_multiplayer_authority()
-	global_position = Vector3(-14.6, 0.2, 14.2) if peer == 1 else Vector3(14.2, 0.2, -14.2)
+func _apply_respawn(id: String) -> void:
+	_clear_inventory()
+	global_position = spawn_position
 	velocity = Vector3.ZERO
-	rotation.y = deg_to_rad(-40.0) if peer == 1 else deg_to_rad(140.0)
+	rotation.y = _spawn_yaw
+	_camera.rotation.x = 0.0
 	health = MAX_HEALTH
 	_dead = false
+	collision_layer = 1
+	collision_mask = 1
 	crouched = false
 	aiming = false
 	_crouch_blend = 0.0
 	_update_capsule()
 	_hurt_lock = 1.0
-	control_enabled = weapon_id != ""
+	if id != "":
+		_apply_equip(id)
+	control_enabled = id != ""
 	_prev_pos = global_position
 	_visual_velocity = Vector3.ZERO
 	_visual_vertical = 0.0
 	if _is_local():
-		_camera.rotation.x = 0.0
 		respawned.emit()
 	if _avatar:
 		_avatar.visible = true
@@ -241,7 +470,7 @@ func _apply_respawn() -> void:
 		_bar_root.visible = true
 	health_changed.emit(health, MAX_HEALTH)
 	_refresh_bar()
-	$Camera3D/Weapon.visible = true
+	gun.show()
 
 
 func add_recoil(pitch_deg: float, yaw_deg: float) -> void:
@@ -273,6 +502,19 @@ func _recover_recoil(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _is_local() or not accepts_gameplay_input():
 		return
+	var selection := GameSettings.weapon_selection(event)
+	if selection != "":
+		select_weapon(selection)
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"use_medkit"):
+		use_medkit()
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"interact"):
+		get_parent().get_node("Loot").interact(self)
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed(&"fire"):
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -290,6 +532,8 @@ func accepts_gameplay_input() -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	if _dead:
+		return
 	if not _is_local():
 		_update_capsule()
 		PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, global_transform)
@@ -367,7 +611,7 @@ func _build_operator() -> void:
 	_avatar.scale = Vector3.ONE * 0.96
 	_avatar.position = Vector3(0.169, 0.0, -0.041)
 	add_child(_avatar)
-	_apply_operator_textures()
+	OperatorPose.apply_textures(_avatar)
 	_skeleton = _avatar.find_child("Skeleton3D", true, false) as Skeleton3D
 	_skeleton.reset_bone_poses()
 	_pose = OperatorPose.new()
@@ -391,24 +635,6 @@ func _build_operator() -> void:
 			var mesh := _avatar.find_child(mesh_name, true, false) as MeshInstance3D
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		eyes.hide()
-
-
-func _apply_operator_textures() -> void:
-	var upgraded: Dictionary = {}
-	for mesh: MeshInstance3D in _avatar.find_children("*", "MeshInstance3D", true, false):
-		for surface in mesh.mesh.get_surface_count():
-			var original := mesh.get_active_material(surface) as BaseMaterial3D
-			if original == null or not FABRIC_TEXTURES.has(original.resource_name):
-				continue
-			var name := original.resource_name
-			if not upgraded.has(name):
-				var material := original.duplicate() as BaseMaterial3D
-				material.albedo_texture = FABRIC_TEXTURES[name][0]
-				material.normal_texture = FABRIC_TEXTURES[name][1]
-				material.normal_enabled = true
-				material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-				upgraded[name] = material
-			mesh.set_surface_override_material(surface, upgraded[name])
 
 
 func _update_operator(delta: float) -> void:
