@@ -1,6 +1,7 @@
 extends Control
 
 var _picked := false
+var _cards: Dictionary[String, Button] = {}
 
 
 func _ready() -> void:
@@ -12,6 +13,8 @@ func _ready() -> void:
 
 func show_select() -> void:
 	_picked = false
+	for id in _cards:
+		_cards[id].visible = _match().allows_weapon(id)
 	visible = true
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -26,7 +29,7 @@ func show_select() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not visible or _picked or get_parent().get_parent().input_blocked() or not (event is InputEventKey) or not event.pressed or event.echo:
+	if not visible or _picked or _match().input_blocked() or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	if event.physical_keycode == KEY_1:
 		_choose("deagle")
@@ -57,13 +60,6 @@ func _build() -> void:
 	title.add_theme_font_size_override("font_size", 34)
 	title.add_theme_color_override("font_color", Color(0.96, 0.94, 0.9))
 	column.add_child(title)
-
-	var subtitle := Label.new()
-	subtitle.text = "На появление — одно из трёх"
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 16)
-	subtitle.add_theme_color_override("font_color", Color(0.78, 0.76, 0.7))
-	column.add_child(subtitle)
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 18)
@@ -103,6 +99,7 @@ func _card(weapon_id: String, title: String, body: String, border: Color) -> But
 	button.add_theme_stylebox_override("pressed", hover)
 	button.add_theme_stylebox_override("focus", normal)
 	button.pressed.connect(_choose.bind(weapon_id))
+	_cards[weapon_id] = button
 	return button
 
 
@@ -120,7 +117,7 @@ func _panel(bg: Color, border: Color) -> StyleBoxFlat:
 
 
 func _choose(weapon_id: String) -> void:
-	if _picked:
+	if _picked or not _match().allows_weapon(weapon_id):
 		return
 	_picked = true
 	visible = false
@@ -140,3 +137,7 @@ func _local_player() -> Node:
 		if not Net.active or node.is_multiplayer_authority():
 			return node
 	return null
+
+
+func _match() -> Node:
+	return get_parent().get_parent()

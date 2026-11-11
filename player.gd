@@ -167,6 +167,8 @@ func net_respawn() -> void:
 
 
 func _apply_equip(id: String) -> void:
+	if not get_parent().allows_weapon(id):
+		return
 	weapon_id = id
 	control_enabled = true
 	$Camera3D/Weapon.equip(id)

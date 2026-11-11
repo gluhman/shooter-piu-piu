@@ -198,7 +198,8 @@ func _impact(id: int, hit: Dictionary, direction: Vector3, profile: String, shoo
 	if collider and (collider.is_in_group("player") or collider.is_in_group("bot")):
 		surface = "operator"
 		var health: int = collider.health
-		collider.take_damage(_damage_at(distance, stats), shooter)
+		if shooter > 0 or collider.is_in_group("player"):
+			collider.take_damage(_damage_at(distance, stats), shooter)
 		damaged = collider.health < health
 	var normal: Vector3 = hit["normal"]
 	if normal.is_zero_approx():
@@ -217,7 +218,7 @@ func _show_impact(at: Vector3, normal: Vector3, surface: String, profile: String
 
 @rpc("authority", "reliable")
 func net_launch(first_id: int, profile: String, muzzle: Vector3, velocities: PackedVector3Array, reach: float, shooter: int) -> void:
-	var source := get_parent().get_node_or_null("Bot" if shooter == 0 else str(shooter)) as CollisionObject3D
+	var source := get_parent().get_node_or_null("Bot%d" % -shooter if shooter <= 0 else str(shooter)) as CollisionObject3D
 	var exclude := source.get_rid() if source else RID()
 	for index in velocities.size():
 		_spawn(first_id + index, profile, muzzle, velocities[index], reach, shooter, exclude, {})

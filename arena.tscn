@@ -3,7 +3,6 @@
 [ext_resource type="Script" path="res://match.gd" id="1_match"]
 [ext_resource type="Script" path="res://map_builder.gd" id="2_map"]
 [ext_resource type="Script" path="res://weapon_select.gd" id="4_select"]
-[ext_resource type="Script" path="res://bot.gd" id="5_bot"]
 [ext_resource type="Script" path="res://health_hud.gd" id="6_hud"]
 [ext_resource type="Script" path="res://lobby.gd" id="7_lobby"]
 
@@ -56,11 +55,6 @@ script = ExtResource("2_map")
 [node name="Ballistics" type="Node3D" parent="."]
 process_physics_priority = 10
 script = ExtResource("9_ballistics")
-
-[node name="Bot" type="CharacterBody3D" parent="."]
-position = Vector3(12, 0.2, -12)
-floor_snap_length = 0.2
-script = ExtResource("5_bot")
 
 [node name="HUD" type="CanvasLayer" parent="."]
 script = ExtResource("6_hud")

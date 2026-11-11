@@ -2,20 +2,21 @@ extends CharacterBody3D
 
 const MAX_HEALTH := 100
 const MOVE_SPEED := 3.3
-const SHOOT_DAMAGE := 14
-const SHOOT_RANGE := 26.0
-const SHOT_STATS := {"range": SHOOT_RANGE, "damage": SHOOT_DAMAGE, "damage_min": SHOOT_DAMAGE,
-	"falloff_start": 0.0, "falloff_end": SHOOT_RANGE}
-const PREFER_DISTANCE := 7.0
-const SPAWN_POSITION := Vector3(12.0, 0.2, -12.0)
-
-const WAYPOINTS := [
-	Vector3(12.0, 0.2, -10.0),
-	Vector3(8.0, 0.2, 8.0),
-	Vector3(-2.0, 0.2, 12.0),
-	Vector3(-8.0, 0.2, -6.0),
-	Vector3(2.0, 0.2, -4.0),
+const SHOT_STATS := {
+	"deagle": {"range": 26.0, "damage": 14, "damage_min": 14, "falloff_start": 0.0, "falloff_end": 26.0},
+	"shotgun": {"range": 18.0, "damage": 5, "damage_min": 2, "falloff_start": 4.0, "falloff_end": 15.0},
+}
+const DIFFICULTY := [
+	{"speed": 0.85, "shot_delay": 1.35, "spread": 1.45},
+	{"speed": 1.0, "shot_delay": 1.0, "spread": 1.0},
+	{"speed": 1.15, "shot_delay": 0.72, "spread": 0.66},
 ]
+
+var combatant_id := 0
+var weapon_id := "deagle"
+var difficulty := 1
+var spawn_position: Vector3
+var patrol_route: Array
 
 var health := MAX_HEALTH
 var defeated := false
@@ -40,6 +41,10 @@ var _flash_mat: StandardMaterial3D
 var _flash_left := 0.0
 var _flash_on := false
 var _muzzle: Marker3D
+var _spawn_waypoint := 0
+var _speed_scale := 1.0
+var _shot_delay_scale := 1.0
+var _spread_scale := 1.0
 
 @onready var _ballistics := get_node("../Ballistics")
 var _remote_prev := Vector3.ZERO
@@ -48,6 +53,15 @@ var _remote_slide := 0.0
 
 func _ready() -> void:
 	add_to_group("bot")
+	var modifiers: Dictionary = DIFFICULTY[difficulty]
+	_speed_scale = modifiers.speed
+	_shot_delay_scale = modifiers.shot_delay
+	_spread_scale = modifiers.spread
+	for index in patrol_route.size():
+		if spawn_position.distance_squared_to(patrol_route[index]) < spawn_position.distance_squared_to(patrol_route[_spawn_waypoint]):
+			_spawn_waypoint = index
+	_waypoint = _spawn_waypoint
+	_shoot_wait *= randf_range(0.75, 1.25) * _shot_delay_scale
 	_build_body()
 	_build_health_bar()
 	_remote_prev = global_position
@@ -97,15 +111,16 @@ func _physics_process(delta: float) -> void:
 		var to_player: Vector3 = player.global_position - global_position
 		to_player.y = 0.0
 		var distance: float = to_player.length()
-		if distance > PREFER_DISTANCE + 1.2:
+		var preferred_distance := 5.0 if weapon_id == "shotgun" else 7.0
+		if distance > preferred_distance + 1.2:
 			wish = to_player.normalized()
-		elif distance < PREFER_DISTANCE - 1.5:
+		elif distance < preferred_distance - 1.5:
 			wish = -to_player.normalized()
 		_face(to_player)
 		_shoot_wait -= delta
 		if engaged and _shoot_wait <= 0.0:
 			_shoot_at(player)
-			_shoot_wait = randf_range(0.85, 1.35)
+			_shoot_wait = randf_range(0.85, 1.35) * _shot_delay_scale
 	else:
 		wish = _wander_direction()
 		_face(wish)
@@ -114,8 +129,8 @@ func _physics_process(delta: float) -> void:
 		velocity.y += get_gravity().y * delta
 	else:
 		velocity.y = 0.0
-	velocity.x = wish.x * MOVE_SPEED
-	velocity.z = wish.z * MOVE_SPEED
+	velocity.x = wish.x * MOVE_SPEED * _speed_scale
+	velocity.z = wish.z * MOVE_SPEED * _speed_scale
 	move_and_slide()
 	var facing := Vector3(-global_transform.basis.z.x, 0.0, -global_transform.basis.z.z)
 	_update_anim(wish.length_squared() > 0.04, wish.dot(facing))
@@ -124,7 +139,7 @@ func _physics_process(delta: float) -> void:
 func _can_fight(player: Node) -> bool:
 	if player == null or not player.control_enabled or player.health <= 0:
 		return false
-	return global_position.distance_to(player.global_position) <= SHOOT_RANGE
+	return global_position.distance_to(player.global_position) <= float(SHOT_STATS[weapon_id].range)
 
 
 func _has_line_of_sight(player: Node) -> bool:
@@ -143,14 +158,24 @@ func _shoot_at(player: Node) -> void:
 		return
 	var muzzle := _muzzle.global_transform
 	var aim: Vector3 = (player.global_position + Vector3(0.0, 1.15, 0.0) - muzzle.origin).normalized()
-	var spread := deg_to_rad(randf_range(3.5, 8.0))
+	var spread := randf_range(3.5, 8.0)
 	if randf() < 0.22:
-		spread = deg_to_rad(randf_range(11.0, 18.0))
-	var basis := Basis.looking_at(aim)
-	var cone := tan(spread)
-	var direction := (basis * Vector3(randf_range(-cone, cone), randf_range(-cone, cone), -1.0).normalized()).normalized()
-	_ballistics.queue_shot("deagle", SHOT_STATS, self, 0, muzzle, 0.15,
-		PackedVector3Array([direction]), velocity)
+		spread = randf_range(11.0, 18.0)
+	var aim_basis := Basis.looking_at(aim)
+	var aim_cone := tan(deg_to_rad(spread * _spread_scale))
+	var aim_error := Vector3(randf_range(-aim_cone, aim_cone), randf_range(-aim_cone, aim_cone), -1.0)
+	var directions := PackedVector3Array()
+	var shotgun := weapon_id == "shotgun"
+	var pellet_basis := Basis.looking_at((aim_basis * aim_error).normalized())
+	if shotgun:
+		var pellet_cone := tan(deg_to_rad(5.4))
+		for _pellet in 8:
+			var offset := Vector2.from_angle(randf() * TAU) * sqrt(randf()) * pellet_cone
+			directions.append((pellet_basis * Vector3(offset.x, offset.y, -1.0)).normalized())
+	else:
+		directions.append(-pellet_basis.z)
+	_ballistics.queue_shot(weapon_id, SHOT_STATS[weapon_id], self, combatant_id, muzzle,
+		0.48 if shotgun else 0.15, directions, velocity)
 	_play_shot_fx()
 	if Net.active and multiplayer.is_server() and not multiplayer.get_peers().is_empty():
 		net_shot_fx.rpc()
@@ -158,19 +183,19 @@ func _shoot_at(player: Node) -> void:
 
 func _play_shot_fx() -> void:
 	if _muzzle:
-		_ballistics.muzzle_effect("deagle", _muzzle.global_transform, velocity, true)
+		_ballistics.muzzle_effect(weapon_id, _muzzle.global_transform, velocity, true)
 	if _clip != "Jog_Fwd":
 		_clip = ""
 		_play_clip("Pistol_Shoot")
 
 
 func _wander_direction() -> Vector3:
-	var target: Vector3 = WAYPOINTS[_waypoint]
+	var target: Vector3 = patrol_route[_waypoint]
 	var offset: Vector3 = target - global_position
 	offset.y = 0.0
 	if offset.length() < 1.3:
-		_waypoint = (_waypoint + 1) % WAYPOINTS.size()
-		target = WAYPOINTS[_waypoint]
+		_waypoint = (_waypoint + 1) % patrol_route.size()
+		target = patrol_route[_waypoint]
 		offset = target - global_position
 		offset.y = 0.0
 	if offset.length_squared() < 0.01:
@@ -191,7 +216,7 @@ func _die(killer_id: int) -> void:
 	collision_mask = 0
 	_avatar.visible = false
 	_bar_root.visible = false
-	get_parent().announce(killer_id, 0)
+	get_parent().announce(killer_id, combatant_id)
 	_respawn_timer = get_tree().create_timer(3.5, false)
 	_respawn_timer.timeout.connect(_respawn)
 
@@ -200,8 +225,6 @@ func restart_round() -> void:
 	if _respawn_timer and _respawn_timer.timeout.is_connected(_respawn):
 		_respawn_timer.timeout.disconnect(_respawn)
 	_respawn()
-	_shoot_wait = 0.8
-	_waypoint = 0
 	_flash_left = 0.0
 	_update_flash()
 	_remote_prev = global_position
@@ -210,7 +233,9 @@ func restart_round() -> void:
 
 func _respawn() -> void:
 	_respawn_timer = null
-	global_position = SPAWN_POSITION
+	global_position = spawn_position
+	_waypoint = _spawn_waypoint
+	_shoot_wait = randf_range(0.6, 1.0) * _shot_delay_scale
 	velocity = Vector3.ZERO
 	health = MAX_HEALTH
 	_dead = false
@@ -246,7 +271,7 @@ func _build_body() -> void:
 	if _skeleton:
 		_skeleton.reset_bone_poses()
 		_pin_to_head()
-		_attach_pistol()
+		_attach_weapon()
 		_setup_anims()
 		_play_clip("Pistol_Idle")
 	_flash_mat = StandardMaterial3D.new()
@@ -279,12 +304,14 @@ func _pin_to_head() -> void:
 		node.transform = head_global.affine_inverse() * keep
 
 
-func _attach_pistol() -> void:
+func _attach_weapon() -> void:
 	var attach := BoneAttachment3D.new()
 	attach.name = "GunAttach"
 	attach.bone_name = "hand_r"
 	_skeleton.add_child(attach)
-	var packed: PackedScene = load("res://models/pistol.glb")
+	var shotgun := weapon_id == "shotgun"
+	var path := "res://models/shotgun.glb" if shotgun else "res://models/pistol.glb"
+	var packed: PackedScene = load(path)
 	var gun := packed.instantiate() as Node3D
 	gun.name = "Gun"
 	attach.add_child(gun)
@@ -292,7 +319,7 @@ func _attach_pistol() -> void:
 	gun.position = Vector3(0.0, 0.1, 0.02)
 	gun.scale = Vector3(0.9, 0.9, 0.9)
 	_muzzle = Marker3D.new()
-	_muzzle.position = Vector3(0.0, 0.1575, 0.112)
+	_muzzle.position = Vector3(0.0, 0.15, 0.35) if shotgun else Vector3(0.0, 0.1575, 0.112)
 	_muzzle.rotation.y = PI
 	gun.add_child(_muzzle)
 

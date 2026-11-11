@@ -11,6 +11,32 @@ const COLOR_GREEN := Color(0.28, 0.52, 0.34)
 const COLOR_ORANGE := Color(0.95, 0.48, 0.14)
 const COLOR_GREY := Color(0.72, 0.74, 0.72)
 
+const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток"]
+
+const BOT_SPAWNS := [
+	Vector3(12, 0.2, -12), Vector3(0, 0.2, -14), Vector3(-7, 0.2, -14),
+	Vector3(-14, 0.2, -12), Vector3(-15, 0.2, -3), Vector3(-15, 0.2, 5),
+	Vector3(-8, 0.2, 14), Vector3(0, 0.2, 14), Vector3(8, 0.2, 14),
+	Vector3(14, 0.2, 7),
+]
+
+const PATROL_ROUTES := [
+	[
+		Vector3(15, 0.2, -15), Vector3(-15, 0.2, -15),
+		Vector3(-15, 0.2, 15), Vector3(15, 0.2, 15),
+	],
+	[
+		Vector3(15, 0.2, -15), Vector3(-15, 0.2, -15), Vector3(-15, 0.2, 0),
+		Vector3(15, 0.2, 0), Vector3(15, 0.2, 15), Vector3(-15, 0.2, 15),
+		Vector3(-15, 0.2, -15),
+	],
+	[
+		Vector3(15, 0.2, 15), Vector3(15, 0.2, -15), Vector3(0, 0.2, -15),
+		Vector3(0, 0.2, 15), Vector3(-15, 0.2, 15), Vector3(-15, 0.2, -15),
+		Vector3(15, 0.2, -15),
+	],
+]
+
 var _floor_mat: StandardMaterial3D
 var _wall_mat: StandardMaterial3D
 var _wood_mat: StandardMaterial3D
@@ -19,11 +45,6 @@ var _corr_normal: Texture2D
 var _corr_rough: Texture2D
 var _corr_metal: Texture2D
 var _corr_ao: Texture2D
-
-
-func _ready() -> void:
-	_load_textures()
-	_build()
 
 
 func _load_textures() -> void:
@@ -37,13 +58,21 @@ func _load_textures() -> void:
 	_corr_ao = load("res://textures/corrugated_ao.jpg")
 
 
-func _build() -> void:
+func build(map_id: int) -> void:
+	_load_textures()
 	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(36.0, 0.5, 36.0), _floor_mat)
 	_add_box(Vector3(0.0, 2.75, -17.25), Vector3(35.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
 	_add_box(Vector3(0.0, 2.75, 17.25), Vector3(35.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
 	_add_box(Vector3(17.25, 2.75, 0.0), Vector3(0.5, 5.5, 35.0), _wall_mat, 0.0, "brick")
 	_add_box(Vector3(-17.25, 2.75, 0.0), Vector3(0.5, 5.5, 35.0), _wall_mat, 0.0, "brick")
 
+	match map_id:
+		1: _build_storage()
+		2: _build_crossroads()
+		_: _build_container_yard()
+
+
+func _build_container_yard() -> void:
 	_add_container(Vector3(-12.2, 1.295, -1.0), CONTAINER_WIDTH, LENGTH_40, COLOR_BLUE)
 	_add_container(Vector3(-12.2, 3.885, -4.0), CONTAINER_WIDTH, LENGTH_20, COLOR_RED)
 	_add_container(Vector3(1.0, 1.295, -10.5), LENGTH_40, CONTAINER_WIDTH, COLOR_GREEN)
@@ -62,6 +91,26 @@ func _build() -> void:
 	_add_crate(Vector3(-0.2, 1.65, 3.7))
 	_add_crate(Vector3(6.2, 0.55, -4.2))
 	_add_crate(Vector3(7.4, 0.55, -3.5))
+
+
+func _build_storage() -> void:
+	for x in [-9.0, 0.0, 9.0]:
+		_add_container(Vector3(x, 1.295, -7.0), CONTAINER_WIDTH, LENGTH_40, COLOR_BLUE)
+		_add_container(Vector3(x, 1.295, 7.0), CONTAINER_WIDTH, LENGTH_40, COLOR_GREEN)
+	_add_container(Vector3(0, 3.885, -8), CONTAINER_WIDTH, LENGTH_20, COLOR_ORANGE)
+	_add_container(Vector3(9, 3.885, 8), CONTAINER_WIDTH, LENGTH_20, COLOR_GREY)
+	_add_crate(Vector3(-4.5, 0.55, -4))
+	_add_crate(Vector3(4.5, 0.55, 4))
+
+
+func _build_crossroads() -> void:
+	for x in [-8.0, 8.0]:
+		for z in [-8.0, 8.0]:
+			var color := COLOR_RED if x * z > 0 else COLOR_ORANGE
+			_add_container(Vector3(x, 1.295, z), LENGTH_40, CONTAINER_WIDTH, color)
+			_add_container(Vector3(x, 3.885, z), LENGTH_20, CONTAINER_WIDTH, COLOR_GREY)
+			_add_crate(Vector3(x, 0.55, z * 0.5))
+			_add_crate(Vector3(x * 0.75, 0.55, z * 0.5))
 
 
 func _add_container(center: Vector3, size_x: float, size_z: float, color: Color, yaw_deg: float = 0.0) -> void:

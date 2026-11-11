@@ -1,5 +1,6 @@
 extends CanvasLayer
 
+var _health_back: ColorRect
 var _fill: ColorRect
 var _label: Label
 var _flash: ColorRect
@@ -21,6 +22,10 @@ func attach_local(player: Node) -> void:
 	if _player == player:
 		return
 	_player = player
+	_health_back.show()
+	_fill.show()
+	_label.show()
+	_score.show()
 	_player.health_changed.connect(_on_health)
 	_player.respawned.connect(_on_respawn)
 	_on_health(_player.health, _player.MAX_HEALTH)
@@ -92,7 +97,10 @@ func score_rows() -> Array:
 		var peer: int = node.get_multiplayer_authority()
 		if peer != local and not node.is_queued_for_deletion():
 			rows.append(_score_row(peer, "Хост" if peer == 1 else "Соперник", false))
-	rows.append(_score_row(0, "Бот", false))
+	var bots := get_tree().get_nodes_in_group("bot")
+	for bot in bots:
+		var title := "Бот" if bots.size() == 1 else "Бот %d" % (1 - bot.combatant_id)
+		rows.append(_score_row(bot.combatant_id, title, false))
 	return rows
 
 
@@ -132,14 +140,15 @@ func _build() -> void:
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_flash)
 
-	var back := ColorRect.new()
-	back.color = Color(0.05, 0.05, 0.05, 0.85)
-	back.offset_left = 24.0
-	back.offset_top = 24.0
-	back.offset_right = 260.0
-	back.offset_bottom = 48.0
-	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(back)
+	_health_back = ColorRect.new()
+	_health_back.color = Color(0.05, 0.05, 0.05, 0.85)
+	_health_back.offset_left = 24.0
+	_health_back.offset_top = 24.0
+	_health_back.offset_right = 260.0
+	_health_back.offset_bottom = 48.0
+	_health_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_health_back.hide()
+	add_child(_health_back)
 
 	_fill = ColorRect.new()
 	_fill.color = Color(0.25, 0.72, 0.2)
@@ -148,6 +157,7 @@ func _build() -> void:
 	_fill.offset_right = 228.0
 	_fill.offset_bottom = 44.0
 	_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fill.hide()
 	add_child(_fill)
 
 	_label = Label.new()
@@ -158,6 +168,7 @@ func _build() -> void:
 	_label.add_theme_font_size_override("font_size", 16)
 	_label.add_theme_color_override("font_color", Color(0.95, 0.94, 0.9))
 	_label.text = "100 HP"
+	_label.hide()
 	add_child(_label)
 
 	_score = Label.new()
@@ -173,6 +184,7 @@ func _build() -> void:
 	_score.add_theme_constant_override("outline_size", 6)
 	_score.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_score.text = "Убийства   0        Смерти   0"
+	_score.hide()
 	add_child(_score)
 
 	_net_label = Label.new()
