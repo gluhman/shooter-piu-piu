@@ -1,0 +1,163 @@
+[gd_scene format=3 uid="uid://cshootarena01"]
+
+[ext_resource type="Script" path="res://game/match/match.gd" id="1_match"]
+[ext_resource type="Script" path="res://game/maps/map_builder.gd" id="2_map"]
+[ext_resource type="Script" path="res://game/ui/weapon_select.gd" id="4_select"]
+[ext_resource type="Script" path="res://game/ui/reticle.gd" id="16_reticle"]
+[ext_resource type="Script" path="res://game/ui/health_hud.gd" id="6_hud"]
+[ext_resource type="Script" path="res://game/ui/weapon_hud.gd" id="16_weapon_hud"]
+[ext_resource type="Script" path="res://game/ui/lobby.gd" id="7_lobby"]
+
+[ext_resource type="Script" path="res://game/ui/match_menu.gd" id="8_menu"]
+
+[ext_resource type="Script" path="res://game/combat/projectile_simulation.gd" id="9_ballistics"]
+[ext_resource type="Script" uid="uid://usvf6x6prcnq" path="res://game/combat/grenades.gd" id="15_grenades"]
+[ext_resource type="Script" path="res://game/match/loot.gd" id="10_loot"]
+[ext_resource type="Script" path="res://addons/sky_3d/src/Sky3D.gd" id="11_sky"]
+[ext_resource type="Script" path="res://addons/sky_3d/src/SkyDome.gd" id="12_dome"]
+[ext_resource type="Script" path="res://addons/sky_3d/src/TimeOfDay.gd" id="13_time"]
+[ext_resource type="Shader" path="res://addons/sky_3d/shaders/SkyMaterial.gdshader" id="14_sky_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
+resource_local_to_scene = true
+shader = ExtResource("14_sky_shader")
+
+[sub_resource type="Sky" id="Sky_main"]
+resource_local_to_scene = true
+radiance_size = 2
+process_mode = 2
+sky_material = SubResource("ShaderMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+resource_local_to_scene = true
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 3
+ambient_light_sky_contribution = 0.8
+ambient_light_energy = 0.8
+tonemap_mode = 2
+tonemap_exposure = 1.05
+ssao_enabled = true
+ssao_radius = 1.4
+ssao_intensity = 1.3
+
+[node name="Arena" type="Node3D"]
+script = ExtResource("1_match")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+script = ExtResource("11_sky")
+
+[node name="SunLight" type="DirectionalLight3D" parent="WorldEnvironment"]
+shadow_enabled = true
+directional_shadow_mode = 1
+directional_shadow_max_distance = 52.0
+
+[node name="MoonLight" type="DirectionalLight3D" parent="WorldEnvironment"]
+light_energy = 0.0
+
+[node name="SkyDome" type="Node3D" parent="WorldEnvironment"]
+script = ExtResource("12_dome")
+sun_light_energy = 1.16
+fog_visible = false
+process_method = 2
+cumulus_visible = false
+cirrus_coverage = 0.42
+star_scintillation = false
+
+[node name="TimeOfDay" type="Node" parent="WorldEnvironment"]
+script = ExtResource("13_time")
+editor_time_enabled = false
+game_time_enabled = false
+current_time = 13.0
+dome_path = NodePath("../SkyDome")
+
+[node name="Map" type="Node3D" parent="."]
+script = ExtResource("2_map")
+
+[node name="Ballistics" type="Node3D" parent="."]
+process_physics_priority = 10
+script = ExtResource("9_ballistics")
+
+[node name="Grenades" type="Node3D" parent="."]
+script = ExtResource("15_grenades")
+
+[node name="Loot" type="Node3D" parent="."]
+script = ExtResource("10_loot")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("6_hud")
+
+[node name="Crosshair" type="Control" parent="HUD"]
+visible = false
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("16_reticle")
+
+[node name="Hint" type="Label" parent="HUD"]
+visible = false
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -460.0
+offset_top = -36.0
+offset_right = 460.0
+offset_bottom = -12.0
+theme_override_colors/font_color = Color(1, 1, 1, 0.8)
+theme_override_font_sizes/font_size = 14
+text = "Tab — счёт    Esc — меню"
+horizontal_alignment = 1
+
+[node name="Ammo" type="PanelContainer" parent="HUD"]
+visible = false
+custom_minimum_size = Vector2(248, 0)
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -272.0
+offset_top = -50.0
+offset_right = -24.0
+offset_bottom = -50.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("16_weapon_hud")
+
+[node name="WeaponSelect" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("4_select")
+
+[node name="Lobby" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("7_lobby")
+
+
+[node name="MatchMenu" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("8_menu")
