@@ -426,7 +426,6 @@ func _show_loading() -> void:
 	_waiting_for_host = false
 	_loading = true
 	$HUD/MatchMenu.close()
-	$HUD/Lobby.show()
 	$HUD/Lobby.show_loading()
 
 

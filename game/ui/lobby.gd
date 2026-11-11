@@ -52,6 +52,7 @@ func _ready() -> void:
 
 
 func show_loading() -> void:
+	show()
 	_screen = Screen.LOADING
 	_music.stop()
 	_backdrop.hide()
@@ -435,7 +436,8 @@ func _cancel_join() -> void:
 func _finish_join(message: String) -> void:
 	_set_join_pending(false)
 	_set_status(message)
-	_ip.grab_focus()
+	if _ip.is_visible_in_tree():
+		_ip.grab_focus()
 
 
 func _set_join_pending(pending: bool) -> void:

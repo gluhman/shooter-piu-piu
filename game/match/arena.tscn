@@ -11,7 +11,7 @@
 [ext_resource type="Script" path="res://game/ui/match_menu.gd" id="8_menu"]
 
 [ext_resource type="Script" path="res://game/combat/projectile_simulation.gd" id="9_ballistics"]
-[ext_resource type="Script" uid="uid://usvf6x6prcnq" path="res://game/combat/grenades.gd" id="15_grenades"]
+[ext_resource type="Script" path="res://game/combat/grenades.gd" id="15_grenades"]
 [ext_resource type="Script" path="res://game/match/loot.gd" id="10_loot"]
 [ext_resource type="Script" path="res://addons/sky_3d/src/Sky3D.gd" id="11_sky"]
 [ext_resource type="Script" path="res://addons/sky_3d/src/SkyDome.gd" id="12_dome"]
