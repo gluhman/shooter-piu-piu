@@ -231,7 +231,6 @@ var _pending_knife := Vector3.ZERO
 var _reload_left := 0.0
 var _reload_time := 1.0
 var _reloading := false
-var _visual_elapsed := 0.0
 var _active := false
 var _trigger_held := false
 var _fire_requested := false
@@ -328,7 +327,6 @@ func equip(weapon_id: String, magazine: int = -1, reserve: int = -1, switching: 
 	_world_reload.stop()
 	_pump_wait = 0.0
 	_active = true
-	_visual_elapsed = 0.0
 	_trigger_held = false
 	_fire_requested = false
 	_build_viewmodel(weapon_id)
@@ -401,11 +399,6 @@ func _process(delta: float) -> void:
 			_ammo.set_reload_progress(1.0 - _reload_left / _reload_time)
 	_kick_pos = _kick_pos.lerp(Vector3.ZERO, minf(1.0, delta * 9.0))
 	_kick_rot = lerpf(_kick_rot, 0.0, minf(1.0, delta * 9.0))
-	_visual_elapsed += delta
-	if _visual_elapsed >= _player.visual_update_interval():
-		_apply_view(_visual_elapsed)
-		_visual_elapsed = 0.0
-
 	if not _player._is_local():
 		return
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or not _player.accepts_gameplay_input():
@@ -429,7 +422,7 @@ func _process(delta: float) -> void:
 
 
 func _try_fire() -> void:
-	if _reloading or _cooldown > 0.0 or _player.weapon_switch_pending() or not _player.can_fire_from_cover():
+	if _reloading or _cooldown > 0.0 or _player.weapon_switch_pending():
 		return
 	if _weapon_id == "knife":
 		_cooldown = float(_stats.cooldown)
@@ -470,7 +463,8 @@ func _physics_process(_delta: float) -> void:
 		return
 	var previous_health: int = victim.health
 	var zone: String = victim.projectile_zone(hit.position)
-	victim.take_damage(int(_stats.damage), _player.score_id(), zone, 0.45)
+	victim.take_damage(int(_stats.damage), _player.score_id(), zone, 0.45,
+		{"velocity": bore * 0.8, "point": hit.position, "zone": zone})
 	if victim.health < previous_health:
 		if _player._is_local():
 			confirm_projectile_hit()
@@ -591,8 +585,8 @@ func net_fire(weapon_name: String, bore: Vector3, pose: PackedFloat32Array) -> v
 		return
 	if not bore.is_finite() or not is_equal_approx(bore.length_squared(), 1.0):
 		return
-	# Resolve the shot with the stance at trigger time, even if the movement snapshot arrived late.
-	if not _match.apply_client_pose(_player, pose) or not _player.can_fire_from_cover():
+	# Resolve the shot with the pose at trigger time, even if the movement snapshot arrived late.
+	if not _match.apply_client_pose(_player, pose):
 		return
 	var now := Time.get_ticks_msec()
 	var wait := int(float(_stats.cooldown) * (1000.0 if weapon_name == "knife" else 750.0))
@@ -791,13 +785,18 @@ func aim_blend() -> float:
 	return smoothstep(0.0, 1.0, _aim_amount)
 
 
+func update_pose(delta: float) -> void:
+	if _active and not _match.round_finished():
+		_apply_view(delta)
+
+
 func _apply_view(delta: float) -> void:
 	if _view == null:
 		return
 	if _weapon_id == "knife":
 		_apply_knife_view()
 		return
-	var wants_aim: bool = _player.aiming and _player.control_enabled and not _reloading and _player.can_fire_from_cover()
+	var wants_aim: bool = _player.aiming and _player.control_enabled and not _reloading
 	_aim_amount = move_toward(_aim_amount, float(wants_aim), delta / float(_handling.get("aim_seconds", 0.16)))
 	var blend := aim_blend()
 	if _player._is_local():
@@ -815,11 +814,11 @@ func _apply_view(delta: float) -> void:
 	var aim_offset := (clampf(_camera.rotation.x, -0.78, 0.78) - _camera.rotation.x) * reload_pose
 	var pitch := Basis(Vector3.RIGHT, aim_offset)
 	var reload_roll := -0.56 if _weapon_id == "shotgun" else -0.40
-	var tucked: float = _player.cover_tuck()
+	var sprint_carry := smoothstep(5.6, 7.2, speed) * (1.0 - reload_pose)
 	var hip_position := pitch * (_rest_pos + bob + _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose)
 	var hip_basis := pitch * Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose, 0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
-	hip_position += Vector3(0.0, -0.08, 0.17) * tucked
-	hip_basis *= Basis(Vector3.RIGHT, -1.05 * tucked)
+	hip_position += Vector3(0.018, -0.065, 0.065) * sprint_carry
+	hip_basis *= Basis.from_euler(Vector3(-0.19 + 0.025 * sin(_bob_t * 2.0), 0.04, -0.12) * sprint_carry)
 	_view.position = hip_position.lerp(_aim_pose.origin + Vector3.BACK * _kick_pos.z, blend)
 	_view.basis = hip_basis.slerp(_aim_pose.basis, blend)
 	if not _player._is_local() or blend < 1.0:

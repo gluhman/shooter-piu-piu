@@ -4,6 +4,9 @@ const WALK_SPEED := 5.0
 const SPRINT_SPEED := 7.4
 const CROUCH_SPEED := 2.6
 const AIM_SPEED := 3.2
+const GROUND_ACCELERATION := 42.0
+const GROUND_BRAKING := 46.0
+const AIR_ACCELERATION := 24.0
 const STANDING_HEIGHT := 1.7
 const CROUCH_HEIGHT := 1.22
 const CROUCH_DROP := STANDING_HEIGHT - CROUCH_HEIGHT
@@ -15,12 +18,9 @@ const HIT_MULTIPLIERS := {"head": 2.35, "chest": 1.0, "stomach": 0.85, "arm": 0.
 const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
 const NETWORK_POSE_SIZE := 13
 const REMOTE_BLEND_TIME := 0.045
-const COVER_SPEED := 1.85
-const COVER_PEEK_SPEED := 4.6
-const COVER_PEEK_DISTANCE := 0.55
-const COVER_EDGE_PROBE := 0.34
-const COVER_WALL_REACH := 0.72
-const COVER_LOOK_LIMIT := 1.45
+const LEAN_DISTANCE := 0.28
+const LEAN_SPEED := 8.0
+const LEAN_CLEARANCE := 0.07
 const FIRST_PERSON_BODY_LAYER := 3
 const OperatorPose := preload("res://game/actors/operator_pose.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
@@ -63,10 +63,8 @@ var _switch_pending := false
 var crouched := false
 var aiming := false
 
-var _cover_normal := Vector3.ZERO
-var _peek_anchor := Vector3.ZERO
-var _peek_direction := 0.0
-var _cover_peek := 0.0
+var _lean_amount := 0.0
+var _view_lean := 0.0
 
 var _crouch_blend := 0.0
 var _capsule_height := STANDING_HEIGHT
@@ -131,7 +129,7 @@ func _server_rules() -> bool:
 	return not Net.active or multiplayer.is_server()
 
 
-func take_damage(amount: int, killer_id: int = 0, zone: String = "chest", vest_fraction: float = 0.0) -> void:
+func take_damage(amount: int, killer_id: int = 0, zone: String = "chest", vest_fraction: float = 0.0, impact: Dictionary = {}) -> void:
 	if not _server_rules() or get_parent().round_finished():
 		return
 	if _dead or not control_enabled or amount <= 0 or _hurt_lock > 0.0:
@@ -141,7 +139,7 @@ func take_damage(amount: int, killer_id: int = 0, zone: String = "chest", vest_f
 		var absorbed := mini(armor, clampi(roundi(amount * vest_fraction), 0, amount - 1))
 		armor -= absorbed
 		amount -= absorbed
-	_set_health(maxi(health - amount, 0), killer_id)
+	_set_health(maxi(health - amount, 0), killer_id, impact)
 
 
 func projectile_zone(at: Vector3) -> String:
@@ -228,11 +226,11 @@ func restore_health(amount: int) -> void:
 		_set_health(mini(MAX_HEALTH, health + amount), 0)
 
 
-func _set_health(value: int, killer_id: int) -> void:
+func _set_health(value: int, killer_id: int, impact: Dictionary = {}) -> void:
 	health = value
 	for peer in get_parent().match_peers():
 		net_set_health.rpc_id(peer, health, armor, killer_id)
-	_commit(killer_id)
+	_commit(killer_id, impact)
 
 
 func equip(id: String) -> void:
@@ -478,9 +476,10 @@ func network_pose() -> PackedFloat32Array:
 		return _latest_pose
 	_pose_sequence += 1
 	var grounded := is_on_floor() if _is_local() or (_server_rules() and is_in_group("bot")) else _net_grounded
+	# The two former wall-normal fields keep the existing pose layout.
 	return PackedFloat32Array([
 		position.x, position.y, position.z, rotation.y, _camera.rotation.x, float(crouched), float(aiming),
-		_cover_normal.x, _cover_normal.z, _cover_peek, float(grounded), float(_spawn_revision), float(_pose_sequence),
+		0.0, 0.0, _view_lean, float(grounded), float(_spawn_revision), float(_pose_sequence),
 	])
 
 
@@ -498,10 +497,15 @@ func apply_network_pose(pose: PackedFloat32Array) -> void:
 	_pose_elapsed = REMOTE_BLEND_TIME if snap else 0.0
 	if snap:
 		_interpolate_network_pose(0.0)
+		_prev_pos = global_position
+		_visual_velocity = Vector3.ZERO
+		_visual_vertical = 0.0
+		_pose.reset_locomotion()
 	crouched = pose[5] > 0.0
 	aiming = pose[6] > 0.0
-	_cover_normal = Vector3(clampf(pose[7], -1.0, 1.0), 0.0, clampf(pose[8], -1.0, 1.0)).normalized()
-	_cover_peek = clampf(pose[9], -1.0, 1.0) if in_cover() else 0.0
+	var basis := Basis(Vector3.UP, pose[3])
+	var eye := target + basis * _neutral_eye(pose[4], float(crouched))
+	_lean_amount = _limit_lean(clampf(pose[9], -1.0, 1.0), eye, basis.x)
 	_net_grounded = pose[10] > 0.0
 	_update_capsule()
 	_update_view_pose()
@@ -521,26 +525,13 @@ func current_shot_transform(rendered: Transform3D) -> Transform3D:
 	if _latest_pose.is_empty() or _is_local() or is_in_group("bot"):
 		return rendered
 	var yaw_adjustment := Basis(Vector3.UP, angle_difference(rotation.y, _latest_pose[3]))
-	var pitch_adjustment := Basis(Vector3.RIGHT, _latest_pose[4] - _camera.rotation.x)
+	var pitch_adjustment := Basis(global_basis.x.normalized(), _latest_pose[4] - _camera.rotation.x)
 	var camera_at := _camera.global_position
 	var offset := camera_at - global_position
 	var target := Vector3(_latest_pose[0], _latest_pose[1], _latest_pose[2])
-	var camera_basis := _camera.global_basis.orthonormalized()
-	var aim_rotation := yaw_adjustment * camera_basis * pitch_adjustment * camera_basis.inverse()
+	var aim_rotation := yaw_adjustment * pitch_adjustment
 	return Transform3D(aim_rotation * rendered.basis,
 		target + yaw_adjustment * offset + aim_rotation * (rendered.origin - camera_at))
-
-
-func in_cover() -> bool:
-	return _cover_normal != Vector3.ZERO
-
-
-func can_fire_from_cover() -> bool:
-	return not in_cover() or absf(_cover_peek) >= 0.78
-
-
-func cover_tuck() -> float:
-	return 1.0 - smoothstep(0.08, 0.82, absf(_cover_peek)) if in_cover() else 0.0
 
 
 func set_weapon_grips(right: Marker3D, left: Marker3D, knife: bool) -> void:
@@ -667,7 +658,7 @@ func _apply_equip(id: String, magazine: int = -1, reserve: int = -1, switching: 
 		GameSettings.capture_gameplay_mouse()
 
 
-func _commit(killer_id: int) -> void:
+func _commit(killer_id: int, impact: Dictionary = {}) -> void:
 	_vest.visible = armor > 0
 	health_changed.emit(health, MAX_HEALTH)
 	_refresh_bar()
@@ -675,20 +666,24 @@ func _commit(killer_id: int) -> void:
 		return
 	_dead = true
 	_movement_audio.reset()
-	_leave_cover()
+	_lean_amount = 0.0
+	_view_lean = 0.0
 	aiming = false
 	control_enabled = false
 	gun.cancel_reload()
 	gun.hide()
 	collision_layer = 0
 	collision_mask = 0
+	var drift := shot_motion().limit_length(4.0)
 	velocity = Vector3.ZERO
 	if _avatar:
 		_avatar.visible = false
 	if _bar_root:
 		_bar_root.visible = false
 	if _server_rules():
-		get_parent().get_node("Loot").drop_combatant(self)
+		var body_impact := impact.duplicate()
+		body_impact["drift"] = drift
+		get_parent().get_node("Loot").drop_combatant(self, body_impact)
 		get_parent().announce(killer_id, score_id())
 		_respawn_timer = get_tree().create_timer(_respawn_delay(), false, true)
 		_respawn_timer.timeout.connect(_request_respawn)
@@ -741,6 +736,8 @@ func stop_round() -> void:
 	_cancel_respawn()
 	_movement_audio.reset()
 	gun.stop_round()
+	_lean_amount = 0.0
+	_view_lean = 0.0
 	aiming = false
 	velocity = Vector3.ZERO
 
@@ -755,9 +752,11 @@ func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
 	_clear_inventory()
 	_reset_support()
 	_restore_starting_supplies()
-	_leave_cover()
+	_lean_amount = 0.0
+	_view_lean = 0.0
 	_spawn_revision = revision
 	_latest_pose = PackedFloat32Array()
+	_net_grounded = true
 	_last_spawn_position = at
 	global_position = at
 	_movement_audio.reset()
@@ -771,6 +770,7 @@ func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
 	crouched = false
 	aiming = false
 	_crouch_blend = 0.0
+	_update_view_pose()
 	_update_capsule()
 	_hurt_lock = 1.0
 	if id != "":
@@ -797,7 +797,7 @@ func add_recoil(pitch_deg: float, yaw_deg: float) -> void:
 	if not _is_local():
 		return
 	var pitch := deg_to_rad(pitch_deg)
-	_turn_yaw(deg_to_rad(yaw_deg))
+	rotate_y(deg_to_rad(yaw_deg))
 	_camera.rotation.x = clampf(_camera.rotation.x + pitch, deg_to_rad(-80.0), deg_to_rad(80.0))
 	_recoil_pitch += pitch
 
@@ -812,12 +812,12 @@ func _process(delta: float) -> void:
 	else:
 		_interpolate_network_pose(delta)
 	_operator_elapsed += delta
-	if _operator_elapsed >= visual_update_interval():
+	if _operator_elapsed >= _visual_update_interval():
 		_update_operator(_operator_elapsed)
 		_operator_elapsed = 0.0
 
 
-func visual_update_interval() -> float:
+func _visual_update_interval() -> float:
 	if _is_local():
 		return 0.0
 	var camera := get_viewport().get_camera_3d()
@@ -872,7 +872,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var sensitivity := MOUSE_SENS * GameSettings.sensitivity * (0.2 if _scoped else lerpf(1.0, 0.55, gun.aim_blend()))
 		var pitch_sign := 1.0 if GameSettings.invert_y else -1.0
-		_turn_yaw(-event.relative.x * sensitivity)
+		rotate_y(-event.relative.x * sensitivity)
 		var pitch: float = _camera.rotation.x + event.relative.y * sensitivity * pitch_sign
 		_camera.rotation.x = clampf(pitch, deg_to_rad(-80.0), deg_to_rad(80.0))
 
@@ -884,15 +884,6 @@ func _throw_grenade(kind: String) -> void:
 
 func accepts_gameplay_input() -> bool:
 	return control_enabled and GameSettings.game_window_focused() and not get_parent().input_blocked()
-
-
-func _turn_yaw(amount: float) -> void:
-	if not in_cover():
-		rotate_y(amount)
-		return
-	var wall_yaw := atan2(_cover_normal.x, _cover_normal.z)
-	var angle := angle_difference(wall_yaw, rotation.y)
-	rotation.y = wall_yaw + clampf(angle + amount, -COVER_LOOK_LIMIT, COVER_LOOK_LIMIT)
 
 
 func _physics_process(delta: float) -> void:
@@ -907,18 +898,8 @@ func _physics_process(delta: float) -> void:
 	var jump_held := Input.is_action_pressed(&"jump")
 	var jump_pressed := jump_held and not _jump_held
 	_jump_held = jump_held
-	var side := signf(Input.get_axis(&"cover_left", &"cover_right")) if accepts_input else 0.0
-	var leaving_cover := accepts_input and (jump_pressed or Input.is_action_pressed(&"move_back"))
-	if is_on_floor() and not in_cover() and side != 0.0 and not leaving_cover:
-		_try_cover_ahead()
-	if in_cover():
-		if not is_on_floor() or leaving_cover:
-			_leave_cover()
-		else:
-			_move_in_cover(side, delta)
-			_track_movement_audio(delta, true)
-			aiming = accepts_input and can_fire_from_cover() and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and GameSettings.aim_pressed()
-			return
+	var lean_input := Input.get_axis(&"cover_left", &"cover_right") if accepts_input else 0.0
+	_lean_amount = move_toward(_lean_amount, lean_input, LEAN_SPEED * delta)
 
 	aiming = accepts_input and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and GameSettings.aim_pressed()
 	if accepts_input:
@@ -949,98 +930,28 @@ func _physics_process(delta: float) -> void:
 		speed = AIM_SPEED
 	elif sprinting:
 		speed = SPRINT_SPEED
-	var direction := (global_transform.basis * Vector3(wish.x, 0.0, wish.y))
-	if direction.length_squared() > 0.001:
-		direction = direction.normalized()
-		velocity.x = direction.x * speed
-		velocity.z = direction.z * speed
-	else:
-		velocity.x = move_toward(velocity.x, 0.0, speed * 8.0 * delta)
-		velocity.z = move_toward(velocity.z, 0.0, speed * 8.0 * delta)
+	var direction := (global_basis * Vector3(wish.x, 0.0, wish.y)).limit_length()
+	var acceleration := AIR_ACCELERATION
+	if is_on_floor():
+		acceleration = GROUND_BRAKING if wish.is_zero_approx() else GROUND_ACCELERATION
+	var horizontal := Vector2(velocity.x, velocity.z).move_toward(Vector2(direction.x, direction.z) * speed, acceleration * delta)
+	velocity.x = horizontal.x
+	velocity.z = horizontal.y
 	velocity.y = vertical
 	move_and_slide()
 	_track_movement_audio(delta, true)
-	if sprinting and wish.y < -0.7 and is_on_floor():
-		_try_attach_cover(direction)
 
 
-func _try_attach_cover(direction: Vector3) -> void:
-	for index in get_slide_collision_count():
-		var contact := get_slide_collision(index)
-		var normal := contact.get_normal()
-		if not contact.get_collider() is StaticBody3D or absf(normal.y) > 0.12:
-			continue
-		var wall_normal := Vector3(normal.x, 0.0, normal.z).normalized()
-		if direction.dot(wall_normal) > -0.91 or not _has_cover_wall(global_position, wall_normal):
-			continue
-		_enter_cover(wall_normal)
-		return
-
-
-func _try_cover_ahead() -> void:
-	var forward := -global_basis.z
-	var normal := _wall_normal_at(global_position, forward)
-	if normal.dot(forward) < -0.65 and _has_cover_wall(global_position, normal):
-		_enter_cover(normal)
-
-
-func _enter_cover(normal: Vector3) -> void:
-	_cover_normal = normal
-	velocity = Vector3.ZERO
-	_update_crouch(true)
-	_turn_yaw(0.0)
-
-
-func _wall_normal_at(at: Vector3, direction: Vector3) -> Vector3:
-	var origin := at + Vector3.UP * 1.26
-	var ray := PhysicsRayQueryParameters3D.create(origin, origin + direction * COVER_WALL_REACH, 2, [get_rid()])
+func _limit_lean(amount: float, eye: Vector3, right: Vector3) -> float:
+	if is_zero_approx(amount):
+		return 0.0
+	var offset := right * (amount * LEAN_DISTANCE)
+	var ray := PhysicsRayQueryParameters3D.create(eye, eye + offset + offset.normalized() * LEAN_CLEARANCE, 2)
+	ray.hit_from_inside = true
 	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
-	if hit.is_empty() or not hit.collider is StaticBody3D or absf(hit.normal.y) > 0.12:
-		return Vector3.ZERO
-	return Vector3(hit.normal.x, 0.0, hit.normal.z).normalized()
-
-
-func _has_cover_wall(at: Vector3, normal: Vector3) -> bool:
-	return normal.dot(_wall_normal_at(at, -normal)) > 0.88
-
-
-func _move_in_cover(side: float, delta: float) -> void:
-	var tangent := Vector3.UP.cross(_cover_normal)
-	if _peek_direction == 0.0 and side != 0.0:
-		var travel := tangent * side
-		if not _has_cover_wall(global_position + travel * COVER_EDGE_PROBE, _cover_normal):
-			if not test_move(global_transform, travel * COVER_PEEK_DISTANCE):
-				_peek_anchor = global_position
-				_peek_direction = side
-			else:
-				side = 0.0
-
-	if _peek_direction == 0.0:
-		velocity = tangent * side * COVER_SPEED - _cover_normal * 0.65
-		velocity.y = -1.0
-		move_and_slide()
-		if not _has_cover_wall(global_position, _cover_normal):
-			_leave_cover()
-		return
-
-	# Keep the crouched body partially exposed at the edge and retrace the same path on release.
-	var peek_axis := tangent * _peek_direction
-	var target_distance := COVER_PEEK_DISTANCE if side == _peek_direction else 0.0
-	var distance := (global_position - _peek_anchor).dot(peek_axis)
-	velocity = peek_axis * clampf((target_distance - distance) / delta, -COVER_PEEK_SPEED, COVER_PEEK_SPEED)
-	velocity.y = -1.0
-	move_and_slide()
-	distance = (global_position - _peek_anchor).dot(peek_axis)
-	_cover_peek = _peek_direction * clampf(distance / COVER_PEEK_DISTANCE, 0.0, 1.0)
-	if target_distance == 0.0 and absf(distance) < 0.015:
-		_peek_direction = 0.0
-		_cover_peek = 0.0
-
-
-func _leave_cover() -> void:
-	_cover_normal = Vector3.ZERO
-	_peek_direction = 0.0
-	_cover_peek = 0.0
+	if hit.is_empty():
+		return amount
+	return signf(amount) * minf(absf(amount), maxf(0.0, eye.distance_to(hit.position) - LEAN_CLEARANCE) / LEAN_DISTANCE)
 
 
 func _track_movement_audio(delta: float, simulated: bool) -> void:
@@ -1123,33 +1034,41 @@ func _update_operator(delta: float) -> void:
 		return
 	var step := global_position - _prev_pos
 	_prev_pos = global_position
-	var vertical_speed := step.y / maxf(delta, 0.001)
-	_visual_vertical = lerpf(_visual_vertical, vertical_speed, minf(1.0, delta * 12.0))
-	step.y = 0.0
-	var instant := step / maxf(delta, 0.001)
-	_visual_velocity = _visual_velocity.lerp(instant, minf(1.0, delta * 12.0))
-	_pose.planar_velocity = _visual_velocity
 	var simulates_motion := _is_local() or (is_in_group("bot") and _server_rules())
-	_pose.grounded = is_on_floor() if simulates_motion else _movement_audio.grounded or not control_enabled
+	var motion := get_real_velocity() if simulates_motion else step / maxf(delta, 0.001)
+	var blend := 1.0 - exp(-delta * 14.0)
+	_visual_vertical = lerpf(_visual_vertical, motion.y, blend)
+	motion.y = 0.0
+	_visual_velocity = _visual_velocity.lerp(motion, blend)
+	_pose.planar_velocity = _visual_velocity
+	_pose.grounded = (is_on_floor() if simulates_motion else _net_grounded) or not control_enabled
+	_pose.aim_pitch = clampf(_camera.rotation.x, -0.78, 0.78)
 	var animation_vertical := velocity.y if simulates_motion and not _pose.grounded else _visual_vertical
 	_pose.update_locomotion(delta, crouched, animation_vertical)
-	_pose.aim_pitch = clampf(_camera.rotation.x, -0.78, 0.78)
 	_crouch_blend = move_toward(_crouch_blend, float(crouched), delta * 7.5)
 	_update_view_pose()
+	gun.update_pose(delta)
 
 
 func _update_view_pose() -> void:
 	_pose.aim_pitch = clampf(_camera.rotation.x, -0.78, 0.78)
-	var stance := Vector3(0.0, -CROUCH_DROP, 0.05) * smoothstep(0.0, 1.0, _crouch_blend)
-	var lean := Vector3.UP.cross(_cover_normal) * (_cover_peek * 0.12) - _cover_normal * 0.055
-	var lean_local := global_basis.inverse() * lean
-	_pose.stance_offset = stance + lean_local * 0.65
-	_camera.position = _head_pivot + (_eye_rest - _head_pivot).rotated(Vector3.RIGHT, _pose.aim_pitch) + stance + lean_local
-	_camera.rotation.y = -_cover_peek * 0.30
-	_camera.rotation.z = -_cover_peek * 0.11
+	var crouch_weight := smoothstep(0.0, 1.0, _crouch_blend)
+	var stance := Vector3(0.0, -CROUCH_DROP, 0.05) * crouch_weight
+	var eye := _neutral_eye(_camera.rotation.x, crouch_weight)
+	_view_lean = _limit_lean(_lean_amount, to_global(eye), global_basis.x) if _is_local() else _lean_amount
+	var lean_offset := Vector3.RIGHT * (_view_lean * LEAN_DISTANCE)
+	_pose.lean = _view_lean
+	_pose.stance_offset = stance + lean_offset * 0.65
+	_camera.position = eye + lean_offset
+	_camera.rotation.z = -_view_lean * 0.16
 	_pouch.position = _pouch_rest + _pose.stance_offset
 	if _bar_root:
 		_bar_root.position.y = 1.98 + stance.y
+
+
+func _neutral_eye(pitch: float, crouch_weight: float) -> Vector3:
+	var eye_offset := (_eye_rest - _head_pivot).rotated(Vector3.RIGHT, clampf(pitch, -0.78, 0.78))
+	return _head_pivot + eye_offset + Vector3(0.0, -CROUCH_DROP, 0.05) * crouch_weight
 
 
 func _build_bar() -> void:

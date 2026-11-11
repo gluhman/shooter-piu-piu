@@ -66,8 +66,8 @@ func warm_effects() -> void:
 	await _effects.warm_rendering(AMMO)
 
 
-func grenade_effect(at: Vector3, flash: bool) -> void:
-	_effects.grenade_burst(at, flash)
+func grenade_effect(at: Vector3, flash: bool, radius: float, launcher: bool) -> void:
+	_effects.grenade_burst(at, flash, radius, launcher)
 
 
 func play_explosion_sound(clip: AudioStream, at: Vector3, gain: float, reach: float) -> void:
@@ -350,7 +350,9 @@ func _impact(id: int, hit: Dictionary, direction: Vector3, profile: String, shoo
 		var zone: String = collider.projectile_zone(hit.position)
 		var penetration := penetration_density(profile, speed)
 		var vest_fraction := lerpf(0.65, 0.30, smoothstep(8.0, 70.0, penetration))
-		collider.take_damage(maxi(1, roundi(remaining_damage)), shooter, zone, vest_fraction)
+		var fall_speed := clampf(remaining_damage / 48.0, 0.6, 2.8)
+		collider.take_damage(maxi(1, roundi(remaining_damage)), shooter, zone, vest_fraction,
+			{"velocity": direction * fall_speed, "point": hit.position, "zone": zone})
 		damaged = collider.health < health or collider.armor < armor
 		headshot = damaged and zone == "head"
 	var normal: Vector3 = hit["normal"]

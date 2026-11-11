@@ -1,6 +1,7 @@
 extends "res://game/actors/player.gd"
 
 const BOT_SPEED := 3.3
+const BOT_ACCELERATION := 22.0
 const SEARCH_TIME := 10.0
 const COVER_REACH := 9.0
 const COVER_TRAVEL_TIME := 3.5
@@ -85,9 +86,9 @@ func shot_motion() -> Vector3:
 	return velocity if _server_rules() else super.shot_motion()
 
 
-func take_damage(amount: int, killer_id: int = 0, zone: String = "chest", vest_fraction: float = 0.0) -> void:
+func take_damage(amount: int, killer_id: int = 0, zone: String = "chest", vest_fraction: float = 0.0, impact: Dictionary = {}) -> void:
 	var previous_health := health
-	super.take_damage(amount, killer_id, zone, vest_fraction)
+	super.take_damage(amount, killer_id, zone, vest_fraction, impact)
 	if health <= 0 or health == previous_health:
 		return
 	var attacker: Node = get_parent().combatant(killer_id)
@@ -191,13 +192,15 @@ func _physics_process(delta: float) -> void:
 		_blocked_time -= delta
 		if wish != Vector3.ZERO and not target:
 			wish = _detour
-	velocity.x = wish.x * speed
-	velocity.z = wish.z * speed
+	var horizontal := Vector2(velocity.x, velocity.z).move_toward(Vector2(wish.x, wish.z) * speed, BOT_ACCELERATION * delta)
+	velocity.x = horizontal.x
+	velocity.z = horizontal.y
 	velocity.y = 0.0 if is_on_floor() else velocity.y + get_gravity().y * delta
 	var before := global_position
 	move_and_slide()
 	_track_movement_audio(delta, true)
-	if wish != Vector3.ZERO and global_position.distance_squared_to(before) < 0.00009 and _blocked_time <= 0.0:
+	var blocked_distance_sq := minf(0.00009, horizontal.length_squared() * delta * delta * 0.25)
+	if wish != Vector3.ZERO and global_position.distance_squared_to(before) < blocked_distance_sq and _blocked_time <= 0.0:
 		_detour = wish.rotated(Vector3.UP, (PI / 2.0) * (-1.0 if randf() < 0.5 else 1.0))
 		_blocked_time = 0.4
 		_strafe_side *= -1.0

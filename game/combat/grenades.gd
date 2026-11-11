@@ -3,6 +3,8 @@ extends Node3D
 const ASSETS := preload("res://game/combat/arsenal_assets.gd")
 const SMOKE_SHADER := preload("res://game/combat/smoke_cloud.gdshader")
 const EXPLOSION := preload("res://assets/match_audio/explosion_body.wav")
+const DISTANT_EXPLOSION := preload("res://assets/match_audio/explosion_distant.wav")
+const DISTANT_EXPLOSION_DISTANCE := 35.0
 const FLASH_BANG := preload("res://assets/arsenal/flash_bang.wav")
 const SMOKE_HISS := preload("res://assets/arsenal/smoke_hiss.wav")
 const GRAVITY := Vector3.DOWN * 9.8
@@ -10,8 +12,7 @@ const LAUNCH_SPEED := 29.0
 const ROUND_FUSE := 3.0
 const SMOKE_RADIUS := 4.2
 const SMOKE_TIME := 18.0
-const FRAG_RADIUS := 8.5
-const ROUND_RADIUS := 6.5
+const EXPLOSIVE_RADIUS := 5.0
 const FLASH_RADIUS := 16.0
 
 class Flight:
@@ -156,7 +157,7 @@ func _process(delta: float) -> void:
 
 
 func _throw(actor: Node, kind: String, space: PhysicsDirectSpaceState3D) -> void:
-	if not is_instance_valid(actor) or not actor.control_enabled or not actor.can_fire_from_cover():
+	if not is_instance_valid(actor) or not actor.control_enabled:
 		return
 	if not actor.consume_grenade(kind):
 		return
@@ -244,7 +245,7 @@ func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) ->
 		net_detonate.rpc_id(peer, id, kind, at)
 	if kind == "smoke":
 		return
-	var radius := FLASH_RADIUS if kind == "flash" else (ROUND_RADIUS if kind == "round" else FRAG_RADIUS)
+	var radius := FLASH_RADIUS if kind == "flash" else EXPLOSIVE_RADIUS
 	var space := get_world_3d().direct_space_state
 	for actor in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
 		if not actor.control_enabled or _match.round_finished():
@@ -263,7 +264,10 @@ func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) ->
 			var facing := (-shot_camera.basis.z).dot((at - target).normalized())
 			actor.apply_flash(pow(strength, 0.7) * lerpf(0.19, 1.0, smoothstep(-0.15, 0.75, facing)))
 		else:
-			actor.take_damage(roundi(damage * pow(strength, 0.70)), shooter, "chest", 0.25)
+			var away := (target - at).normalized()
+			var launch := (away + Vector3.UP * 0.40).normalized() * lerpf(3.0, 10.0, strength)
+			actor.take_damage(roundi(damage * pow(strength, 0.70)), shooter, "chest", 0.25,
+				{"velocity": launch, "point": target, "zone": "blast"})
 
 
 @rpc("authority", "reliable")
@@ -279,9 +283,14 @@ func net_detonate(id: int, kind: String, at: Vector3) -> void:
 		effects.play_explosion_sound(SMOKE_HISS, at, -13.0, 28.0)
 	else:
 		var flash := kind == "flash"
-		effects.play_explosion_sound(FLASH_BANG if flash else EXPLOSION, at, -5.0 if flash else -1.5,
-			105.0 if flash else 155.0)
-		effects.grenade_effect(at, flash)
+		if flash:
+			effects.play_explosion_sound(FLASH_BANG, at, -5.0, 105.0)
+		else:
+			var camera := get_viewport().get_camera_3d()
+			var distant := camera != null and camera.global_position.distance_to(at) >= DISTANT_EXPLOSION_DISTANCE
+			effects.play_explosion_sound(DISTANT_EXPLOSION if distant else EXPLOSION, at,
+				-10.0 if distant else -3.0, 155.0)
+		effects.grenade_effect(at, flash, EXPLOSIVE_RADIUS, kind == "round")
 
 
 @rpc("authority", "reliable")

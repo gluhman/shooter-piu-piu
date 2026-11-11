@@ -5,7 +5,7 @@ enum Kind { CRATE, WEAPON, AMMO, MEDKIT, BODY, ARMOR, GRENADE }
 const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
 
 const CRATE_MODEL := preload("res://assets/arena_props/supply_crate.glb")
-const OPERATOR := preload("res://game/actors/operator_pose.gd")
+const FALLEN_OPERATOR := preload("res://game/actors/fallen_operator.gd")
 const WEAPON := preload("res://game/combat/weapon.gd")
 const LIFETIME := 60.0
 const REACH := 2.3
@@ -94,10 +94,13 @@ func send_state(peer: int) -> void:
 			net_open_crate.rpc_id(peer, index, false)
 	for id in _drops:
 		var drop := _drops[id]
-		net_add_drop.rpc_id(peer, id, drop.kind, drop.weapon, drop.amount, drop.position, drop.yaw, false)
+		var body_state: Dictionary = {}
+		if drop.kind == Kind.BODY:
+			body_state = drop.node.snapshot()
+		net_add_drop.rpc_id(peer, id, drop.kind, drop.weapon, drop.amount, drop.position, drop.yaw, false, body_state)
 
 
-func drop_combatant(actor: Node) -> void:
+func drop_combatant(actor: Node, impact: Dictionary) -> void:
 	var at: Vector3 = actor.global_position
 	var ignored: Array[RID] = []
 	for combatant in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
@@ -106,7 +109,13 @@ func drop_combatant(actor: Node) -> void:
 	var ground := get_world_3d().direct_space_state.intersect_ray(query)
 	if not ground.is_empty():
 		at.y = ground.position.y
-	_add_drop(Kind.BODY, "", actor.armor, at, actor.rotation.y, true)
+	var body_state := impact.duplicate()
+	var skeleton: Skeleton3D = actor._skeleton
+	var pose: Array[Transform3D] = []
+	for index in skeleton.get_bone_count():
+		pose.append(skeleton.get_bone_pose(index))
+	body_state["pose"] = pose
+	_add_drop(Kind.BODY, "", actor.armor, actor.global_position, actor.rotation.y, true, body_state)
 	var items: Array[Dictionary] = []
 	var inventory: Dictionary[String, Vector2i] = actor.inventory_stock()
 	for id in inventory:
@@ -435,17 +444,17 @@ func _set_open(index: int, opened: bool, animate: bool) -> void:
 		_lids[index].rotation.x = angle
 
 
-func _add_drop(kind: int, weapon: String, amount: int, at: Vector3, yaw: float, animate: bool) -> void:
+func _add_drop(kind: int, weapon: String, amount: int, at: Vector3, yaw: float, animate: bool, body_state: Dictionary = {}) -> void:
 	var id := _next_id
 	_next_id += 1
-	net_add_drop(id, kind, weapon, amount, at, yaw, animate)
+	net_add_drop(id, kind, weapon, amount, at, yaw, animate, body_state)
 	for peer in _match.match_peers():
-		net_add_drop.rpc_id(peer, id, kind, weapon, amount, at, yaw, animate)
+		net_add_drop.rpc_id(peer, id, kind, weapon, amount, at, yaw, animate, body_state)
 
 
 @rpc("authority", "reliable")
-func net_add_drop(id: int, kind: int, weapon: String, amount: int, at: Vector3, yaw: float, animate: bool) -> void:
-	var drop := Node3D.new()
+func net_add_drop(id: int, kind: int, weapon: String, amount: int, at: Vector3, yaw: float, animate: bool, body_state: Dictionary = {}) -> void:
+	var drop := FALLEN_OPERATOR.new() as Node3D if kind == Kind.BODY else Node3D.new()
 	drop.position = at
 	drop.rotation.y = yaw
 	add_child(drop)
@@ -457,7 +466,7 @@ func net_add_drop(id: int, kind: int, weapon: String, amount: int, at: Vector3, 
 		Kind.WEAPON: WEAPON.add_pickup_model(drop, weapon)
 		Kind.AMMO: _build_ammo(drop)
 		Kind.MEDKIT: _build_medkit(drop)
-		Kind.BODY: _build_body(drop, amount > 0)
+		Kind.BODY: drop.build(amount > 0, body_state, animate)
 		Kind.ARMOR: drop.add_child(ARSENAL.make_model("armor"))
 		Kind.GRENADE: drop.add_child(ARSENAL.make_model(weapon))
 	if animate and kind != Kind.BODY:
@@ -479,43 +488,6 @@ func net_remove_drop(id: int) -> void:
 	drop.hide()
 	drop.queue_free()
 	_drops.erase(id)
-
-
-func _build_body(drop: Node3D, has_armor: bool) -> void:
-	var pivot := Node3D.new()
-	pivot.position.y = 0.20
-	drop.add_child(pivot)
-	var avatar := OPERATOR.MODEL.instantiate() as Node3D
-	avatar.rotation.y = PI
-	avatar.scale = Vector3.ONE * 0.96
-	avatar.position = Vector3(0.169, 0, -0.041)
-	pivot.add_child(avatar)
-	OPERATOR.apply_textures(avatar)
-	avatar.find_child(OPERATOR.VEST_MESH, true, false).visible = has_armor
-	avatar.find_child("Object_111", true, false).hide()
-	avatar.find_child("Mil_R5_Eye", true, false).hide()
-	var skeleton := avatar.find_child("Skeleton3D", true, false) as Skeleton3D
-	skeleton.reset_bone_poses()
-	_relax_arm(skeleton, pivot, OPERATOR.RIGHT_ARM, Vector3(0.19, -0.95, -0.22))
-	_relax_arm(skeleton, pivot, OPERATOR.LEFT_ARM, Vector3(-0.34, -0.88, -0.1))
-	pivot.rotation.x = PI * 0.5
-
-
-func _relax_arm(skeleton: Skeleton3D, pivot: Node3D, names: Array, direction: Vector3) -> void:
-	var upper := skeleton.find_bone(names[0])
-	var lower := skeleton.find_bone(names[1])
-	var hand := skeleton.find_bone(names[2])
-	var forearm := skeleton.get_bone_global_pose(lower)
-	var shoulder := skeleton.get_bone_global_pose(upper)
-	var target := (skeleton.global_basis.inverse() * pivot.global_basis * direction).normalized()
-	var turn := Quaternion((forearm.origin - shoulder.origin).normalized(), target)
-	shoulder.basis = Basis(turn) * shoulder.basis
-	skeleton.set_bone_global_pose(upper, shoulder)
-	forearm = skeleton.get_bone_global_pose(lower)
-	var wrist := skeleton.get_bone_global_pose(hand)
-	var relaxed := (target + skeleton.global_basis.inverse() * pivot.global_basis * Vector3(0, 0.18, -0.40)).normalized()
-	forearm.basis = Basis(Quaternion((wrist.origin - forearm.origin).normalized(), relaxed)) * forearm.basis
-	skeleton.set_bone_global_pose(lower, forearm)
 
 
 func _build_ammo(drop: Node3D) -> void:

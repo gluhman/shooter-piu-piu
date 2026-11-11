@@ -29,7 +29,6 @@ var _kill_limit: Label
 var _net_label: Label
 var _loot_prompt: Label
 var _loot_notice: Label
-var _cover_hint: Label
 var _loot_notice_left := 0.0
 var _last_health := 100
 var _player: Node
@@ -96,7 +95,6 @@ func _process(delta: float) -> void:
 	if _blind_time > 0.0:
 		_blind_time = maxf(0.0, _blind_time - delta)
 		_blind.color.a = _blind_peak * smoothstep(0.0, _blind_duration * 0.72, _blind_time)
-	_cover_hint.visible = is_instance_valid(_player) and _player.in_cover() and _player.accepts_gameplay_input()
 	if _loot_notice_left > 0.0:
 		_loot_notice_left -= delta
 		if _loot_notice_left <= 0.0:
@@ -232,13 +230,10 @@ func _refresh_score() -> void:
 
 
 func _update_hint() -> void:
-	$Hint.text = "%s — атака    %s — прицел    %s — присесть    %s — перезарядка    %s — подбор    Tab — счёт    Esc — меню" % [
+	$Hint.text = "%s — атака    %s — прицел    %s — присесть    %s — перезарядка    %s — подбор    %s / %s — наклон    Tab — счёт    Esc — меню" % [
 		GameSettings.binding_label(&"fire"), GameSettings.binding_label(&"aim_sights"),
 		GameSettings.binding_label(&"crouch"), GameSettings.binding_label(&"reload_weapon"), GameSettings.binding_label(&"interact"),
-	]
-	_cover_hint.text = "%s / %s — вдоль стены и выглянуть    %s — выйти" % [
 		GameSettings.binding_label(&"cover_left"), GameSettings.binding_label(&"cover_right"),
-		GameSettings.binding_label(&"move_back"),
 	]
 	_refresh_medkit_hint()
 
@@ -296,11 +291,6 @@ func _build() -> void:
 
 	_loot_prompt = _build_loot_label(31.0, Color(0.98, 0.96, 0.89))
 	_loot_notice = _build_loot_label(57.0, Color(0.76, 0.87, 0.56))
-	_cover_hint = _build_loot_label(-152.0, Color(0.89, 0.93, 0.78))
-	_cover_hint.anchor_top = 1.0
-	_cover_hint.anchor_bottom = 1.0
-	_cover_hint.offset_top = -152.0
-	_cover_hint.offset_bottom = -120.0
 	_inventory_hud = INVENTORY_HUD.new()
 	add_child(_inventory_hud)
 

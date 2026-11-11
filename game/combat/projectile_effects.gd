@@ -3,6 +3,7 @@ extends Node3D
 const Classic := preload("res://game/combat/classic_weapons.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const SpatialAudio := preload("res://addons/spatial_audio_3d/spatial_audio_3d.gd")
+const BLAST_FOG := preload("res://game/combat/blast_fog.gdshader")
 const SHOT_HEARING_DISTANCE := 125.0
 const SHOT_DISTANCE_LOSS_DB := 16.0
 
@@ -144,8 +145,8 @@ func warm_rendering(ammo: Dictionary) -> void:
 			var sample := tracer(profile)
 			sample.set_meta("trail", float(profile.trail))
 			move_tracer(sample, at, -barrel.basis.z, 0.4)
-	grenade_burst(at, false)
-	grenade_burst(at, true)
+	grenade_burst(at, false, 5.0, false)
+	grenade_burst(at, true, 5.0, false)
 	await RenderingServer.frame_post_draw
 	await get_tree().process_frame
 	clear()
@@ -283,36 +284,59 @@ func impact(at: Vector3, normal: Vector3, surface: String, profile: String, rema
 			Vector3.DOWN * 9.8, "chip")
 
 
-func grenade_burst(at: Vector3, flash: bool) -> void:
+func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 	var camera := get_viewport().get_camera_3d()
 	if not camera or camera.global_position.distance_squared_to(at) > 95.0 * 95.0:
 		return
-	var center := at + Vector3.UP * 0.36
+	var scale := radius / 5.0 * (0.82 if launcher else 1.0)
+	var center := at + Vector3.UP * 0.38 * scale
 	var core := MeshInstance3D.new()
 	core.mesh = _flash_mesh if flash else _explosion_mesh
 	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	core.position = center
-	core.scale = Vector3.ONE * (1.7 if flash else 2.6)
+	core.scale = Vector3.ONE * (1.35 if flash else 2.2 * scale)
 	add_child(core)
 	var light := OmniLight3D.new()
 	light.light_color = Color(0.85, 0.91, 1.0) if flash else Color(1.0, 0.66, 0.30)
-	light.light_energy = 6.4 if flash else 8.0
-	light.omni_range = 12.0 if flash else 15.0
+	light.light_energy = 6.4 if flash else 10.0 * scale
+	light.omni_range = 12.0 if flash else radius * 2.4 * scale
+	light.shadow_enabled = not flash and camera.global_position.distance_squared_to(at) < 28.0 * 28.0
 	core.add_child(light)
 	var fade := core.create_tween()
-	fade.tween_property(core, "transparency", 1.0, 0.22)
-	fade.parallel().tween_property(core, "scale", core.scale * 1.6, 0.22)
-	fade.parallel().tween_property(light, "light_energy", 0.0, 0.18)
+	fade.tween_property(core, "transparency", 1.0, 0.14)
+	fade.parallel().tween_property(core, "scale", core.scale * 1.55, 0.14)
+	fade.parallel().tween_property(light, "light_energy", 0.0, 0.16)
 	fade.tween_callback(core.queue_free)
-	_burst(center, Vector3.UP, Color(1.0, 0.76, 0.33), 10 if flash else 34, 0.52, 13.0, 130.0,
-		0.05, Vector3.DOWN * 9.8, "spark")
+	_burst(center, Vector3.UP, Color(1.0, 0.74, 0.29), 10 if flash else (32 if launcher else 44),
+		0.52, 13.0 * scale, 125.0, 0.062 * scale, Vector3.DOWN * 9.8, "spark", 1.2)
 	if not flash:
+		_blast_volume(center, scale)
 		_burst(at + Vector3.UP * 0.18, Vector3.UP, Color(0.53, 0.45, 0.34, 0.60),
-			18, 0.86, 6.3, 125.0, 1.05, Vector3.UP * 0.40, "smoke")
+			18, 0.94, 6.3 * scale, 115.0, 1.05 * scale, Vector3.UP * 0.40, "smoke")
 		_burst(center, Vector3.UP, Color(0.28, 0.27, 0.25, 0.67),
-			22, 1.8, 4.8, 62.0, 1.45, Vector3.UP * 0.65, "smoke")
+			24, 2.4, 3.7 * scale, 67.0, 1.55 * scale, Vector3.UP * 0.65, "smoke")
+
+
+func _blast_volume(center: Vector3, scale: float) -> void:
+	if RenderingServer.get_current_rendering_method() != "forward_plus":
+		return
+	var cloud := FogVolume.new()
+	cloud.size = Vector3(2.1, 1.6, 2.1) * scale
+	var material := ShaderMaterial.new()
+	material.shader = BLAST_FOG
+	cloud.material = material
+	add_child(cloud)
+	cloud.global_position = center
+	var fade := cloud.create_tween().set_parallel(true)
+	fade.tween_method(func(heat: float) -> void: material.set_shader_parameter(&"heat", heat),
+		1.0, 0.0, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+	fade.tween_method(func(thickness: float) -> void: material.set_shader_parameter(&"thickness", thickness),
+		1.35, 0.0, 2.05).set_delay(0.16).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	fade.tween_property(cloud, "size", Vector3(6.4, 4.0, 6.4) * scale, 2.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	fade.tween_property(cloud, "position:y", cloud.position.y + 1.1 * scale, 2.2)
+	fade.chain().tween_callback(cloud.queue_free)
 
 
 func tracer(ammo: Dictionary) -> MeshInstance3D:

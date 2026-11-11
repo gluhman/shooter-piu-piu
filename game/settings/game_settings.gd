@@ -39,8 +39,8 @@ const ACTIONS := {
 	&"throw_frag": ["Бросить осколочную", KEY_G],
 	&"throw_flash": ["Бросить светошумовую", KEY_F],
 	&"throw_grenade": ["Бросить выбранную гранату", KEY_C],
-	&"cover_left": ["Влево вдоль укрытия", KEY_Q],
-	&"cover_right": ["Вправо вдоль укрытия", KEY_E],
+	&"cover_left": ["Наклон влево", KEY_Q],
+	&"cover_right": ["Наклон вправо", KEY_E],
 	&"throw_smoke": ["Бросить дымовую", KEY_T],
 }
 
