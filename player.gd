@@ -92,7 +92,7 @@ func _server_rules() -> bool:
 func take_damage(amount: int, killer_id: int = 0) -> void:
 	if not _server_rules():
 		return
-	if _dead or amount <= 0 or _hurt_lock > 0.0:
+	if _dead or amount <= 0 or _hurt_lock > 0.0 or get_parent().round_finished():
 		return
 	_set_health(maxi(health - amount, 0), killer_id)
 
@@ -324,7 +324,7 @@ func net_equip(id: String, loadout: String = "") -> void:
 	if multiplayer.is_server():
 		if not _is_owner_request(sender):
 			return
-		if weapon_id == "" and not _dead and get_parent().allows_weapon(id):
+		if weapon_id == "" and not _dead and not get_parent().round_finished() and get_parent().allows_weapon(id):
 			_spawn_loadout = id
 			_apply_equip(id)
 			_send_equipment(id)
@@ -418,6 +418,8 @@ func _clear_inventory() -> void:
 
 func _request_respawn() -> void:
 	_respawn_timer = null
+	if get_parent().round_finished():
+		return
 	var id := _next_respawn_weapon()
 	for peer in get_parent().match_peers():
 		net_respawn.rpc_id(peer, id)
@@ -532,7 +534,7 @@ func accepts_gameplay_input() -> bool:
 
 
 func _physics_process(delta: float) -> void:
-	if _dead:
+	if _dead or get_parent().round_finished():
 		return
 	if not _is_local():
 		_update_capsule()

@@ -2,6 +2,9 @@ extends Control
 
 enum Screen { MAIN, SOLO, HOST, GUEST }
 
+const ROUND_MINUTES := [0, 1, 3, 5, 10, 15, 20, 30, 60]
+const KILL_LIMITS := [0, 1, 5, 10, 15, 20, 30, 50, 100]
+
 const INK := Color(0.91, 0.93, 0.89)
 const MUTED := Color(0.65, 0.70, 0.66)
 const ACCENT := Color(0.69, 0.77, 0.51)
@@ -13,6 +16,8 @@ var _ip: LineEdit
 var _busy := false
 var _map: OptionButton
 var _weapons: OptionButton
+var _duration: OptionButton
+var _kill_limit: OptionButton
 var _roster_title: Label
 var _player_names: Array[Label] = []
 var _player_states: Array[Label] = []
@@ -45,6 +50,8 @@ func refresh_room() -> void:
 	var game := _match()
 	_map.select(game.map_id)
 	_weapons.select(game.weapon_set)
+	_duration.select(ROUND_MINUTES.find(game.round_limits.x))
+	_kill_limit.select(KILL_LIMITS.find(game.round_limits.y))
 	var local := Net.local_id()
 	var connected_count: int = Net.MAX_PLAYERS - game.player_slots.count(0)
 	_roster_title.text = "Игроки  %d / %d" % [connected_count, Net.MAX_PLAYERS]
@@ -85,6 +92,7 @@ func _build_layout() -> void:
 
 func _show_main() -> void:
 	_screen = Screen.MAIN
+	_column.add_theme_constant_override("separation", 12)
 	_clear()
 	_title("Главное меню")
 	_button("Играть одному", _on_solo)
@@ -107,6 +115,7 @@ func _show_main() -> void:
 
 func _show_room(screen: Screen) -> void:
 	_screen = screen
+	_column.add_theme_constant_override("separation", 8)
 	_clear()
 	var solo := screen == Screen.SOLO
 	var host := screen == Screen.HOST
@@ -117,6 +126,10 @@ func _show_room(screen: Screen) -> void:
 	_weapons = _options(game.WEAPON_SET_NAMES, game.weapon_set)
 	_row("Карта", _map)
 	_row("Набор оружия", _weapons)
+	_duration = _limit_options(ROUND_MINUTES, "%d мин", game.round_limits.x)
+	_kill_limit = _limit_options(KILL_LIMITS, "%d", game.round_limits.y)
+	_row("Время раунда", _duration)
+	_row("Убийств для победы", _kill_limit)
 
 	if solo:
 		var bots := SpinBox.new()
@@ -129,7 +142,7 @@ func _show_room(screen: Screen) -> void:
 		_row("Сложность", difficulty)
 		_button("Начать матч", func() -> void:
 			bots.apply()
-			game.start_solo(int(bots.value), difficulty.selected, _weapons.selected, _map.selected)
+			game.start_solo(int(bots.value), difficulty.selected, _weapons.selected, _map.selected, _selected_limits())
 		)
 		_button("Назад", _show_main)
 		return
@@ -155,10 +168,14 @@ func _show_room(screen: Screen) -> void:
 		invite.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_map.item_selected.connect(_on_rules_changed)
 		_weapons.item_selected.connect(_on_rules_changed)
+		_duration.item_selected.connect(_on_rules_changed)
+		_kill_limit.item_selected.connect(_on_rules_changed)
 		_button("Начать матч", game.start_host_match)
 	else:
 		_map.disabled = true
 		_weapons.disabled = true
+		_duration.disabled = true
+		_kill_limit.disabled = true
 		_label(_column, "Ожидание запуска матча хостом…", 15, MUTED)
 	_button("Покинуть комнату", game.leave_round)
 
@@ -203,6 +220,17 @@ func _options(items: Array, selected: int) -> OptionButton:
 	return options
 
 
+func _limit_options(values: Array, format: String, selected: int) -> OptionButton:
+	var labels := []
+	for value in values:
+		labels.append("Без лимита" if value == 0 else format % value)
+	return _options(labels, values.find(selected))
+
+
+func _selected_limits() -> Vector2i:
+	return Vector2i(ROUND_MINUTES[_duration.selected], KILL_LIMITS[_kill_limit.selected])
+
+
 func _button(text: String, handler: Callable) -> void:
 	var button := Button.new()
 	button.text = text
@@ -213,7 +241,7 @@ func _button(text: String, handler: Callable) -> void:
 
 
 func _on_rules_changed(_index: int) -> void:
-	_match().update_host_rules(_weapons.selected, _map.selected)
+	_match().update_host_rules(_weapons.selected, _map.selected, _selected_limits())
 
 
 func _on_solo() -> void:

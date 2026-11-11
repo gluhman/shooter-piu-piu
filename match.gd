@@ -14,6 +14,7 @@ const WEAPON_SETS := [
 
 var map_id := 0
 var weapon_set := 0
+var round_limits := Vector2i.ZERO
 var _layout_seed := 0
 var player_slots := PackedInt32Array()
 
@@ -21,6 +22,11 @@ var _reloading := false
 var _started := false
 var _ready_peers: Array[int] = []
 var _pose_time := 0.0
+var _round_time := 0.0
+var _clock_seconds := -1
+var _round_finished := false
+var _winner := ""
+var _winning_score := 0
 
 
 func _ready() -> void:
@@ -52,8 +58,12 @@ func has_started() -> bool:
 	return _started
 
 
+func round_finished() -> bool:
+	return _round_finished
+
+
 func input_blocked() -> bool:
-	return $HUD/MatchMenu.visible
+	return _round_finished or $HUD/MatchMenu.visible
 
 
 func allows_weapon(id: String) -> bool:
@@ -99,6 +109,8 @@ func _reload_main_menu() -> void:
 
 @rpc("authority", "reliable")
 func net_restart() -> void:
+	$HUD/MatchMenu.clear_round_result()
+	_reset_round_clock()
 	$Ballistics.reset_round()
 	$Map.clear_bullet_holes()
 	$HUD.reset_round()
@@ -114,23 +126,26 @@ func net_score_snapshot(scores: Dictionary) -> void:
 	$HUD.apply_score_snapshot(scores)
 
 
-func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int) -> void:
+func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limits: Vector2i = Vector2i.ZERO) -> void:
 	if _started or Net.active:
 		return
 	Net.play_solo()
 	weapon_set = weapons
 	map_id = arena
+	round_limits = limits
+	_reset_round_clock()
 	$Loot.build_crates($Map.build(map_id, randi()))
 	_spawn_bots(clampi(bot_count, 1, 10), difficulty)
 	_started = true
 	_spawn_player(1, 0)
 
 
-func update_host_rules(weapons: int, arena: int) -> void:
+func update_host_rules(weapons: int, arena: int, limits: Vector2i = Vector2i.ZERO) -> void:
 	if _started or not Net.active or not multiplayer.is_server():
 		return
 	weapon_set = weapons
 	map_id = arena
+	round_limits = limits
 	_send_room_state()
 
 
@@ -138,10 +153,10 @@ func start_host_match() -> void:
 	if _started or not Net.active or not multiplayer.is_server():
 		return
 	_layout_seed = randi()
-	_begin_network_match(weapon_set, map_id, player_slots, _layout_seed)
+	_begin_network_match(weapon_set, map_id, player_slots, _layout_seed, round_limits)
 	for peer in player_slots:
 		if peer > 1:
-			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed)
+			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, round_limits)
 	if player_slots.count(0) == Net.MAX_PLAYERS - 1:
 		$HUD.show_host_ip(Net.lan_addresses())
 
@@ -150,30 +165,33 @@ func _send_room_state() -> void:
 	$HUD/Lobby.refresh_room()
 	for peer in player_slots:
 		if peer > 1:
-			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots)
+			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, round_limits)
 
 
 @rpc("authority", "reliable")
-func net_room_state(weapons: int, arena: int, roster: PackedInt32Array) -> void:
+func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: Vector2i) -> void:
 	if _started:
 		return
 	weapon_set = weapons
 	map_id = arena
+	round_limits = limits
 	player_slots = roster
 	$HUD/Lobby.refresh_room()
 
 
 @rpc("authority", "reliable")
-func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int) -> void:
+func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int, limits: Vector2i) -> void:
 	if not _started:
-		_begin_network_match(weapons, arena, roster, layout_seed)
+		_begin_network_match(weapons, arena, roster, layout_seed, limits)
 		net_ready.rpc_id(1)
 
 
-func _begin_network_match(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int) -> void:
+func _begin_network_match(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int, limits: Vector2i) -> void:
 	weapon_set = weapons
 	map_id = arena
 	player_slots = roster
+	round_limits = limits
+	_reset_round_clock()
 	$Loot.build_crates($Map.build(map_id, layout_seed))
 	_spawn_bots(1, 1)
 	_started = true
@@ -199,14 +217,91 @@ func _spawn_bots(count: int, difficulty: int) -> void:
 
 
 func announce(killer_id: int, victim_id: int) -> void:
+	if _round_finished:
+		return
 	for peer in _ready_peers:
 		net_frag.rpc_id(peer, killer_id, victim_id)
 	net_frag(killer_id, victim_id)
+	if round_limits.y > 0 and killer_id != victim_id and $HUD.kills_for(killer_id) >= round_limits.y:
+		var winner := combatant(killer_id)
+		if winner:
+			_finish_round(_combatant_label(winner), $HUD.kills_for(killer_id))
 
 
 @rpc("authority", "reliable")
 func net_frag(killer_id: int, victim_id: int) -> void:
 	$HUD.on_frag(killer_id, victim_id)
+
+
+func _reset_round_clock() -> void:
+	_round_finished = false
+	_winner = ""
+	_winning_score = 0
+	_round_time = float(round_limits.x * 60)
+	net_round_clock(ceili(_round_time) if round_limits.x > 0 else -1)
+
+
+func _tick_round_clock(delta: float) -> void:
+	if round_limits.x == 0:
+		return
+	_round_time = maxf(0.0, _round_time - delta)
+	var seconds := ceili(_round_time)
+	if seconds != _clock_seconds:
+		for peer in _ready_peers:
+			net_round_clock.rpc_id(peer, seconds)
+		net_round_clock(seconds)
+	if _round_time == 0.0:
+		_finish_timed_round()
+
+
+@rpc("authority", "reliable")
+func net_round_clock(seconds: int) -> void:
+	_clock_seconds = seconds
+	$HUD.show_round_limits(seconds, round_limits.y)
+
+
+func _combatants() -> Array[Node]:
+	var actors := get_tree().get_nodes_in_group("player")
+	actors.append_array(get_tree().get_nodes_in_group("bot"))
+	return actors
+
+
+func _combatant_label(actor: Node) -> String:
+	if actor.is_in_group("bot"):
+		return "Бот" if get_tree().get_node_count_in_group("bot") == 1 else "Бот %d" % (1 - actor.combatant_id)
+	return "Вы" if Net.solo else player_label(actor.slot)
+
+
+func _finish_timed_round() -> void:
+	var best := -1
+	var winner := ""
+	for actor in _combatants():
+		var kills: int = $HUD.kills_for(actor.score_id())
+		if kills > best:
+			best = kills
+			winner = _combatant_label(actor)
+		elif kills == best:
+			winner = ""
+	_finish_round(winner, maxi(0, best))
+
+
+func _finish_round(winner: String, score: int) -> void:
+	for peer in _ready_peers:
+		net_round_finished.rpc_id(peer, winner, score)
+	net_round_finished(winner, score)
+
+
+@rpc("authority", "reliable")
+func net_round_finished(winner: String, score: int) -> void:
+	_round_finished = true
+	_winner = winner
+	_winning_score = score
+	for actor in _combatants():
+		actor.control_enabled = false
+		actor.aiming = false
+		actor.velocity = Vector3.ZERO
+	$HUD.show_loot_prompt("")
+	$HUD/MatchMenu.show_round_result(winner, score)
 
 
 func _spawn_player(peer_id: int, slot: int) -> void:
@@ -226,7 +321,11 @@ func _spawn_player(peer_id: int, slot: int) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if not _started or not Net.active:
+	if not _started or _round_finished:
+		return
+	if not Net.active or multiplayer.is_server():
+		_tick_round_clock(delta)
+	if not Net.active or _round_finished:
 		return
 	_pose_time += delta
 	if _pose_time < POSE_INTERVAL:
@@ -264,6 +363,8 @@ func net_client_pose(pose: PackedFloat32Array) -> void:
 
 @rpc("authority", "unreliable_ordered")
 func net_poses(poses: Dictionary[int, PackedFloat32Array]) -> void:
+	if _round_finished:
+		return
 	for peer in poses:
 		if peer == Net.local_id():
 			continue
@@ -294,7 +395,7 @@ func _welcome(id: int) -> void:
 	_set_slot(slot, id)
 	if _started:
 		_send_slot(slot, id, id)
-		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed)
+		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed, round_limits)
 	else:
 		_send_room_state()
 
@@ -312,6 +413,9 @@ func net_ready() -> void:
 	for player in get_tree().get_nodes_in_group("player"):
 		player.send_status_to(id)
 	net_score_snapshot.rpc_id(id, $HUD.score_snapshot())
+	net_round_clock.rpc_id(id, _clock_seconds)
+	if _round_finished:
+		net_round_finished.rpc_id(id, _winner, _winning_score)
 	$HUD.hide_host_ip()
 
 

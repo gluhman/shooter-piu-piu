@@ -16,6 +16,7 @@ var _last_health := 100
 var _player: Node
 var _inventory_hud: HBoxContainer
 var _round_scores: Dictionary = {}
+var _limits_text := ""
 
 
 func _ready() -> void:
@@ -148,9 +149,23 @@ func refresh_score() -> void:
 	_refresh_score()
 
 
+func kills_for(id: int) -> int:
+	return _score_for(id).x
+
+
+func show_round_limits(seconds: int, kill_limit: int) -> void:
+	var parts := PackedStringArray()
+	if seconds >= 0:
+		parts.append("%02d:%02d" % [floori(seconds / 60.0), seconds % 60])
+	if kill_limit > 0:
+		parts.append("До %d убийств" % kill_limit)
+	_limits_text = "\n" + "    ·    ".join(parts) if not parts.is_empty() else ""
+	_refresh_score()
+
+
 func _refresh_score() -> void:
 	var score := _score_for(Net.local_id())
-	_score.text = "Убийства   %d        Смерти   %d" % [score.x, score.y]
+	_score.text = ("Убийства   %d        Смерти   %d" % [score.x, score.y]) + _limits_text
 
 
 func _update_hint() -> void:

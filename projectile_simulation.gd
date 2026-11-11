@@ -65,12 +65,16 @@ func queue_shot(profile: String, stats: Dictionary, source: CollisionObject3D, s
 
 
 func _physics_process(delta: float) -> void:
+	if get_parent().round_finished():
+		return
 	var space := get_world_3d().direct_space_state
 	for shot in _pending:
 		_launch(shot, space)
 	_pending.clear()
 	var authoritative := not Net.active or multiplayer.is_server()
 	for id in _shots.keys():
+		if get_parent().round_finished():
+			break
 		_step(id, _shots[id], delta, space, authoritative)
 
 

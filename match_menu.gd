@@ -12,6 +12,7 @@ var _panel: VBoxContainer
 var _score_overlay: Control
 var _score_rows: VBoxContainer
 var _settings := false
+var _showing_result := false
 var _binding: StringName
 var _binding_buttons: Dictionary
 var _resume_capture := false
@@ -37,7 +38,7 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.physical_keycode == KEY_ESCAPE:
 		get_viewport().set_input_as_handled()
-		if not event.pressed or event.echo:
+		if not event.pressed or event.echo or _showing_result:
 			return
 		if _binding != &"":
 			_binding = &""
@@ -95,10 +96,35 @@ func show_settings() -> void:
 	_show_settings(0)
 
 
+func show_round_result(winner: String, score: int) -> void:
+	if not visible:
+		_open()
+	_showing_result = true
+	_settings = false
+	_binding = &""
+	_clear_menu()
+	_panel = _layout(self, Vector2(420, 0), true)
+	_label(_panel, "Раунд завершён", 34)
+	_label(_panel, "Ничья" if winner.is_empty() else "Победитель — %s" % winner, 23, ACCENT)
+	_label(_panel, "Лучший счёт — %d" % score, 16, MUTED)
+	if _match.can_restart():
+		_button(_panel, "Начать новый раунд", _match.restart_round).grab_focus()
+	else:
+		_label(_panel, "Ожидание нового раунда", 15, MUTED)
+	_button(_panel, "Выйти в главное меню", _leave)
+
+
+func clear_round_result() -> void:
+	if _showing_result:
+		_showing_result = false
+		close()
+
+
 func close() -> void:
 	var should_capture := visible and _resume_capture
 	_binding = &""
 	_settings = false
+	_showing_result = false
 	_score_overlay.hide()
 	hide()
 	if Net.solo:
