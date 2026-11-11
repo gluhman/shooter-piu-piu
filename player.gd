@@ -75,6 +75,7 @@ var _pouch: Marker3D
 var _bar_root: Node3D
 var _bar_fill: MeshInstance3D
 var _bar_mat: StandardMaterial3D
+var _name_label: Label3D
 var _prev_pos := Vector3.ZERO
 var _visual_velocity := Vector3.ZERO
 var _visual_vertical := 0.0
@@ -923,6 +924,21 @@ func _build_bar() -> void:
 	_bar_fill.position.z = 0.01
 	_bar_root.add_child(_bar_fill)
 	_refresh_bar()
+
+
+func set_name_label(display_name: String) -> void:
+	if not _bar_root:
+		return
+	if not _name_label:
+		_name_label = Label3D.new()
+		_name_label.position.y = 0.14
+		_name_label.font_size = 32
+		_name_label.pixel_size = 0.004
+		_name_label.modulate = Color(1.0, 1.0, 1.0, 0.82)
+		_name_label.outline_size = 4
+		_name_label.outline_modulate = Color(0.0, 0.0, 0.0, 0.55)
+		_bar_root.add_child(_name_label)
+	_name_label.text = display_name
 
 
 func _refresh_bar() -> void:

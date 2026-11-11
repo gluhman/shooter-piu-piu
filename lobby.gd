@@ -19,6 +19,7 @@ var _map: OptionButton
 var _weapons: OptionButton
 var _duration: OptionButton
 var _kill_limit: OptionButton
+var _lan_bots: OptionButton
 var _roster_title: Label
 var _player_names: Array[Label] = []
 var _player_states: Array[Label] = []
@@ -55,6 +56,7 @@ func refresh_room() -> void:
 	_weapons.select(game.weapon_set)
 	_duration.select(ROUND_MINUTES.find(game.round_limits.x))
 	_kill_limit.select(KILL_LIMITS.find(game.round_limits.y))
+	_lan_bots.select(game.lan_bot_count)
 	var local := Net.local_id()
 	var connected_count: int = Net.MAX_PLAYERS - game.player_slots.count(0)
 	_roster_title.text = "Игроки  %d / %d" % [connected_count, Net.MAX_PLAYERS]
@@ -142,7 +144,7 @@ func _show_room(screen: Screen) -> void:
 	if solo:
 		var bots := SpinBox.new()
 		bots.min_value = 1
-		bots.max_value = 10
+		bots.max_value = game.MAX_BOTS
 		bots.step = 1
 		bots.custom_minimum_size.x = 92
 		_row("Количество ботов", bots)
@@ -154,6 +156,12 @@ func _show_room(screen: Screen) -> void:
 		)
 		_button("Назад", _show_main)
 		return
+
+	var bot_counts := []
+	for count in range(game.MAX_BOTS + 1):
+		bot_counts.append(str(count))
+	_lan_bots = _options(bot_counts, game.lan_bot_count)
+	_row("Количество ботов", _lan_bots)
 
 	_display_name = LineEdit.new()
 	_display_name.text = Net.display_name
@@ -188,6 +196,7 @@ func _show_room(screen: Screen) -> void:
 		_weapons.item_selected.connect(_on_rules_changed)
 		_duration.item_selected.connect(_on_rules_changed)
 		_kill_limit.item_selected.connect(_on_rules_changed)
+		_lan_bots.item_selected.connect(_on_rules_changed)
 		_button("Начать матч", func() -> void:
 			_save_display_name()
 			game.start_host_match()
@@ -197,6 +206,7 @@ func _show_room(screen: Screen) -> void:
 		_weapons.disabled = true
 		_duration.disabled = true
 		_kill_limit.disabled = true
+		_lan_bots.disabled = true
 		_label(_column, "Ожидание запуска матча хостом…", 15, MUTED)
 	_button("Покинуть комнату", game.leave_round)
 
@@ -267,7 +277,7 @@ func _save_display_name() -> void:
 
 
 func _on_rules_changed(_index: int) -> void:
-	_match().update_host_rules(_weapons.selected, _map.selected, _selected_limits())
+	_match().update_host_rules(_weapons.selected, _map.selected, _selected_limits(), _lan_bots.selected)
 
 
 func _on_solo() -> void:
