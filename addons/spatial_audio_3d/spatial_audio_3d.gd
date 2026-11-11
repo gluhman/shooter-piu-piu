@@ -32,6 +32,7 @@ class_name SpatialAudio3D extends AudioStreamPlayer3D
 @export_range(-1, 5, 0.05, "or_greater", "suffix:s") var reverb_fadeintime: float = 2.0 ## Fade-in time when a reverb is added at a wall.[br][br]The default of 2s is a good value where changes in environment merge well into the overall sound mix.[br]If you have small areas with little changes of distances, set this value to low (0.2s) so that repositioned reverbs don't get stuck for too long in a position. In a large area, when the raycast suddenly hits a close wall, the sudden appearing reverb can sound unnatural.[br][br]Set to -1 for dynamic fade time (based on wetness).
 @export_range(-1, 8, 0.05, "or_greater", "suffix:s") var reverb_fadeouttime: float = 2.0 ## Fade-out time when a reverb is removed.[br][br]The default of 2s is a good value where changes in environment merge well into the overall sound mix.[br]If you have small areas with little changes of distances, set this value to low (0.2s) so that repositioned reverbs don't get stuck for too long in a position.[br][br]Set to -1 for dynamic fade time (based on wetness).
 @export_range(1, 20_000, 0.1, "suffix:Hz") var occlusion_lp_cutoff: int = 600 ## Frequency when soundsource is occluded behind walls.
+@export_range(1, 20_000, 1, "suffix:Hz") var occlusion_min_lp_cutoff: int = 120 ## Lowest cutoff for a wall near the source.
 @export_range(0, 5, 0.05, "or_greater", "suffix:s") var occlusion_fadetime: float = 0.5 ## Fadetime when occlusion changes.
 @export_range(0, 100, 0.1, "or_greater", "suffix:m") var bass_proximity: int = 50 ## The closer you are to a wall, the more bass you will hear.[br][br]The effect starts at this value (distance to the wall).[br][br]0 to disable.
 
@@ -100,6 +101,7 @@ func _ready():
 	soundsource.reverb_fadeintime = reverb_fadeintime
 	soundsource.reverb_fadeouttime = reverb_fadeouttime
 	soundsource.occlusion_lp_cutoff = occlusion_lp_cutoff
+	soundsource.occlusion_min_lp_cutoff = occlusion_min_lp_cutoff
 	soundsource.occlusion_fadetime = occlusion_fadetime
 
 	# module vars
@@ -231,6 +233,7 @@ func create_soundplayer(name_p: String, with_reverb_fx: bool = true) -> Soundpla
 	soundplayer.reverb_fadeintime = reverb_fadeintime
 	soundplayer.reverb_fadeouttime = reverb_fadeouttime
 	soundplayer.occlusion_lp_cutoff = occlusion_lp_cutoff
+	soundplayer.occlusion_min_lp_cutoff = occlusion_min_lp_cutoff
 	soundplayer.occlusion_fadetime = occlusion_fadetime
 
 	# module vars
@@ -503,6 +506,7 @@ class Soundsource extends SpatialAudio3D:
 		reverber.reverb_fadeintime = reverb_fadeintime
 		reverber.reverb_fadeouttime = reverb_fadeouttime
 		reverber.occlusion_lp_cutoff = occlusion_lp_cutoff
+		reverber.occlusion_min_lp_cutoff = occlusion_min_lp_cutoff
 		reverber.occlusion_fadetime = occlusion_fadetime
 
 		# module vars
@@ -999,7 +1003,8 @@ class Soundplayer extends SpatialAudio3D:
 			var listener_distance := global_position.distance_to(player_camera.global_position)
 			var wall_to_player_ratio := ray_distance / maxf(listener_distance, 0.001)
 			if ray_distance < listener_distance:
-				_cutoff = clampi(roundi(occlusion_lp_cutoff * wall_to_player_ratio), 120, occlusion_lp_cutoff)
+				_cutoff = clampi(roundi(occlusion_lp_cutoff * wall_to_player_ratio),
+						mini(occlusion_min_lp_cutoff, occlusion_lp_cutoff), occlusion_lp_cutoff)
 
 		return _cutoff
 

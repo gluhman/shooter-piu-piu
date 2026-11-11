@@ -1,6 +1,7 @@
 extends "res://addons/spatial_audio_3d/spatial_audio_3d.gd"
 
 const CONCRETE_VARIANTS := preload("res://game/audio/footsteps.gd").STEPS
+const REMOTE_HEARING_DISTANCE := 50.0
 const STEPS := {
 	"concrete": preload("res://assets/match_audio/step_concrete.wav"),
 	"metal": preload("res://assets/match_audio/step_metal.wav"),
@@ -38,8 +39,15 @@ func _ready() -> void:
 	attenuation_filter_db = -16.0
 	panning_strength = 1.25
 	if use_acoustics:
+		unit_size = 11.0
+		max_distance = REMOTE_HEARING_DISTANCE
+		max_db = -6.0
+		attenuation_filter_db = -6.0
+		panning_strength = 1.5
 		reverb_enabled = false
 		collision_mask = 2
+		occlusion_lp_cutoff = 4200
+		occlusion_min_lp_cutoff = 1600
 		occlusion_fadetime = 0.0
 		super._ready()
 	reset()

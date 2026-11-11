@@ -4,6 +4,7 @@ const Classic := preload("res://game/combat/classic_weapons.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const SpatialAudio := preload("res://addons/spatial_audio_3d/spatial_audio_3d.gd")
 const SHOT_HEARING_DISTANCE := 125.0
+const SHOT_DISTANCE_LOSS_DB := 16.0
 
 const SURFACES := {
 	"metal": [Color(1.0, 0.61, 0.22), Color(0.38, 0.42, 0.44), 11, 0.0],
@@ -15,6 +16,7 @@ const SURFACES := {
 const FLASH_SIZE := {"deagle": 0.21, "shotgun": 0.32, "ak47": 0.26, "m249": 0.27, "m14": 0.29, "m1": 0.32, "launcher": 0.38}
 const MARK_SIZE := {"deagle": 0.12, "shotgun": 0.07, "ak47": 0.105, "m249": 0.095, "m14": 0.11, "m1": 0.115, "m700": 0.125}
 const SHOT_SOUNDS := {
+	"ak47": preload("res://assets/ak47/fire.wav"),
 	"m249": preload("res://assets/arsenal/m249_fire.wav"),
 	"m14": preload("res://assets/arsenal/m14_fire.wav"),
 	"m1": preload("res://assets/arsenal/m1_fire.wav"),
@@ -92,6 +94,8 @@ func prepare_acoustics() -> void:
 			voice.attenuation_filter_db = 0.0
 			voice.collision_mask = 2
 			voice.occlusion_lp_cutoff = 4700 if bus == &"Gunfire" else 5500
+			if bus == &"Gunfire":
+				voice.occlusion_min_lp_cutoff = 1800
 			voice.occlusion_fadetime = 0.0
 			voice.reverb_enabled = bus == &"Explosions" and index < 2
 			voice.reflection_count = 2
@@ -181,7 +185,7 @@ func muzzle(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio
 
 
 static func shot_sound(profile: String) -> AudioStream:
-	if Classic.SHOT_COUNTS.has(profile):
+	if profile != "ak47" and Classic.SHOT_COUNTS.has(profile):
 		return Classic.shot_sound(profile)
 	return SHOT_SOUNDS[profile]
 
@@ -193,8 +197,14 @@ func _play_spatial_shot(profile: String, at: Vector3) -> void:
 
 func play_combat_sound(clip: AudioStream, at: Vector3, gain: float, reach: float, bus: StringName) -> void:
 	var camera := get_viewport().get_camera_3d()
-	if not camera or not _combat_voices.has(bus) or camera.global_position.distance_squared_to(at) > reach * reach:
+	if not camera or not _combat_voices.has(bus):
 		return
+	var distance := camera.global_position.distance_to(at)
+	if reach <= 0.0 or distance > reach:
+		return
+	var is_gunfire := bus == &"Gunfire"
+	# Apply gunfire falloff at emission so crossing the hearing limit cannot cut off a shot.
+	var level := gain - SHOT_DISTANCE_LOSS_DB * distance / reach if is_gunfire else gain
 	var voices: Array = _combat_voices[bus]
 	var start := _voice_cursor[bus]
 	var now := Time.get_ticks_msec()
@@ -208,13 +218,13 @@ func play_combat_sound(clip: AudioStream, at: Vector3, gain: float, reach: float
 		voice.global_position = at + Vector3.UP * 0.10
 		for player in [voice.soundsource.soundplayer_active, voice.soundsource.soundplayer_standby]:
 			player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
-			player.max_db = gain
-			player.max_distance = reach
-		var travel_time := camera.global_position.distance_to(at) / 340.0
+			player.max_db = level
+			player.max_distance = 0.0 if is_gunfire else reach
+		var travel_time := distance / float(voice.speed_of_sound)
 		var pitch := randf_range(0.97, 1.03)
 		var tail := 0.35 if bus == &"Explosions" else 0.08
 		voice.set_meta(&"busy_until", now + ceili((clip.get_length() / pitch + travel_time + tail) * 1000.0))
-		voice.play_one_shot(clip, gain, pitch)
+		voice.play_one_shot(clip, level, pitch)
 		return
 
 
