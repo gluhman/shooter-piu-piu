@@ -86,7 +86,7 @@ func _play_spatial_shot(profile: String, at: Vector3) -> void:
 	sound.play()
 
 
-func impact(at: Vector3, normal: Vector3, surface: String, profile: String) -> void:
+func impact(at: Vector3, normal: Vector3, surface: String, profile: String, leave_mark: bool = true) -> void:
 	var data: Array = SURFACES.get(surface, SURFACES["concrete"])
 	var position := at + normal * 0.012
 	var amount: int = data[2]
@@ -101,7 +101,8 @@ func impact(at: Vector3, normal: Vector3, surface: String, profile: String) -> v
 		_burst(position, normal, data[0], amount, 0.22 if metal else 0.42,
 			9.0 if metal else 4.0, 55.0, 0.018 * strength, Vector3.DOWN * 12.0,
 			"spark" if metal else "chip", float(data[3]))
-		_mark(at, normal, surface, float(MARK_SIZE[profile]))
+		if leave_mark:
+			_mark(at, normal, surface, float(MARK_SIZE[profile]))
 	else:
 		_burst(position, normal, data[0], amount, 0.24, 3.6, 46.0, 0.015,
 			Vector3.DOWN * 9.8, "chip")

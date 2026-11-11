@@ -100,6 +100,7 @@ func _reload_main_menu() -> void:
 @rpc("authority", "reliable")
 func net_restart() -> void:
 	$Ballistics.reset_round()
+	$Map.clear_bullet_holes()
 	$HUD.reset_round()
 	$Loot.reset_round()
 	for player in get_tree().get_nodes_in_group("player"):
@@ -307,6 +308,7 @@ func net_ready() -> void:
 	_ready_peers.append(id)
 	$Bot0.send_status_to(id)
 	$Loot.send_state(id)
+	$Map.send_bullet_holes(id)
 	for player in get_tree().get_nodes_in_group("player"):
 		player.send_status_to(id)
 	net_score_snapshot.rpc_id(id, $HUD.score_snapshot())

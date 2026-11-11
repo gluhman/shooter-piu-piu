@@ -1,5 +1,14 @@
 extends Node3D
 
+const BULLET_HOLE_SHADER := preload("res://bullet_holes.gdshader")
+const HOLES_PER_PANEL := 32
+
+class PerforatedCover:
+	var body: StaticBody3D
+	var points := PackedVector4Array()
+	var axes := PackedVector3Array()
+	var materials: Array[ShaderMaterial] = []
+
 const GRASS := preload("res://assets/arena_props/grass.glb")
 const SHRUBS := preload("res://assets/arena_props/shrubs.glb")
 
@@ -59,6 +68,7 @@ const PATROL_ROUTES := [
 	],
 ]
 
+var _perforated: Array[PerforatedCover] = []
 var _occupied: Array[Rect2] = []
 var _cover: Array[Cover] = []
 var _passages: Array[Transform3D] = []
@@ -153,18 +163,23 @@ func _add_container(center: Vector3, size_x: float, size_z: float, color: Color,
 	var material := _container_mat(color)
 	var t := PANEL_THICKNESS
 	var half := size * 0.5
+	var along_x := size_x >= size_z
+	var door_panel: StaticBody3D
 	for side in [-1.0, 1.0]:
 		var x_wall := Vector3(side * (half.x - t * 0.5), 0, 0)
-		_add_steel_panel(center + x_wall.rotated(Vector3.UP, yaw),
+		var side_panel := _add_steel_panel(center + x_wall.rotated(Vector3.UP, yaw),
 			Vector3(t, size.y, size.z), material, yaw_deg)
+		if along_x and side > 0.0:
+			door_panel = side_panel
 		var z_wall := Vector3(0, 0, side * (half.z - t * 0.5))
-		_add_steel_panel(center + z_wall.rotated(Vector3.UP, yaw),
+		var end_panel := _add_steel_panel(center + z_wall.rotated(Vector3.UP, yaw),
 			Vector3(size.x - t * 2, size.y, t), material, yaw_deg)
+		if not along_x and side > 0.0:
+			door_panel = end_panel
 		_add_steel_panel(center + Vector3.UP * side * (half.y - t * 0.5),
 			Vector3(size.x - t * 2, t, size.z - t * 2), material, yaw_deg)
 	var door := MeshInstance3D.new()
 	var door_mesh := BoxMesh.new()
-	var along_x := size_x >= size_z
 	if along_x:
 		door_mesh.size = Vector3(0.08, size.y * 0.78, size.z * 0.8)
 		door.position = Vector3(size.x * 0.5 + 0.01, 0.0, 0.0)
@@ -173,9 +188,8 @@ func _add_container(center: Vector3, size_x: float, size_z: float, color: Color,
 		door.position = Vector3(0.0, 0.0, size.z * 0.5 + 0.01)
 	door_mesh.material = _container_mat(color.darkened(0.28))
 	door.mesh = door_mesh
-	door.position = center + door.position.rotated(Vector3.UP, yaw)
-	door.rotation.y = yaw
-	add_child(door)
+	door.position = door_panel.to_local(center + door.position.rotated(Vector3.UP, yaw))
+	door_panel.add_child(door)
 
 
 func _add_crate(center: Vector3) -> void:
@@ -183,6 +197,7 @@ func _add_crate(center: Vector3) -> void:
 	var size := Vector3(1.15, 1.1, 1.15)
 	var box := _add_box(center, size, _wood_mat, 0.0, "wood")
 	box.set_meta(&"ballistic_size", size)
+	_register_perforated_cover(box)
 
 
 func _footprint(center: Vector2, size: Vector2) -> Rect2:
@@ -394,7 +409,85 @@ func _add_plants(scene: PackedScene, transforms: Array[Transform3D], rng: Random
 func _add_steel_panel(center: Vector3, size: Vector3, material: Material, yaw: float) -> StaticBody3D:
 	var panel := _add_box(center, size, material, yaw, "metal")
 	panel.set_meta(&"ballistic_size", size)
+	_register_perforated_cover(panel)
 	return panel
+
+
+func _register_perforated_cover(body: StaticBody3D) -> void:
+	var cover := PerforatedCover.new()
+	cover.body = body
+	body.set_meta(&"bullet_cover_id", _perforated.size())
+	_perforated.append(cover)
+
+
+func add_bullet_hole(id: int, entry: Vector3, axis: Vector3, profile: String) -> void:
+	if id < 0 or id >= _perforated.size():
+		return
+	var cover := _perforated[id]
+	var wood: bool = cover.body.get_meta(&"impact_surface") == "wood"
+	var radius := 0.036 if wood else 0.027
+	if profile == "deagle":
+		radius *= 0.85
+	if cover.points.size() == HOLES_PER_PANEL:
+		cover.points.remove_at(0)
+		cover.axes.remove_at(0)
+	cover.points.append(Vector4(entry.x, entry.y, entry.z, radius))
+	cover.axes.append(axis)
+	_apply_bullet_holes(cover)
+
+
+func clear_bullet_holes() -> void:
+	for cover in _perforated:
+		if cover.points.is_empty():
+			continue
+		for mesh: MeshInstance3D in cover.body.find_children("*", "MeshInstance3D", false, false):
+			mesh.material_override = null
+		cover.points.clear()
+		cover.axes.clear()
+		cover.materials.clear()
+
+
+func send_bullet_holes(peer: int) -> void:
+	for id in _perforated.size():
+		var cover := _perforated[id]
+		if not cover.points.is_empty():
+			net_bullet_holes.rpc_id(peer, id, cover.points, cover.axes)
+
+
+@rpc("authority", "reliable")
+func net_bullet_holes(id: int, points: PackedVector4Array, axes: PackedVector3Array) -> void:
+	var cover := _perforated[id]
+	cover.points = points
+	cover.axes = axes
+	_apply_bullet_holes(cover)
+
+
+func _apply_bullet_holes(cover: PerforatedCover) -> void:
+	if cover.materials.is_empty():
+		for mesh: MeshInstance3D in cover.body.find_children("*", "MeshInstance3D", false, false):
+			var source := mesh.mesh.surface_get_material(0) as StandardMaterial3D
+			var material := ShaderMaterial.new()
+			material.shader = BULLET_HOLE_SHADER
+			material.set_shader_parameter("color_texture", source.albedo_texture)
+			material.set_shader_parameter("normal_texture", source.normal_texture)
+			material.set_shader_parameter("roughness_texture", source.roughness_texture)
+			material.set_shader_parameter("metallic_texture", source.metallic_texture)
+			material.set_shader_parameter("ao_texture", source.ao_texture)
+			material.set_shader_parameter("tint", source.albedo_color)
+			material.set_shader_parameter("texture_scale", source.uv1_scale)
+			material.set_shader_parameter("blend_sharpness", source.uv1_triplanar_sharpness)
+			material.set_shader_parameter("metalness", source.metallic)
+			material.set_shader_parameter("normal_strength", source.normal_scale)
+			mesh.material_override = material
+			cover.materials.append(material)
+	var points := cover.points.duplicate()
+	var axes := cover.axes.duplicate()
+	points.resize(HOLES_PER_PANEL)
+	axes.resize(HOLES_PER_PANEL)
+	for material in cover.materials:
+		material.set_shader_parameter("hole_count", cover.points.size())
+		material.set_shader_parameter("hole_points", points)
+		material.set_shader_parameter("hole_axes", axes)
 
 
 func _add_box(center: Vector3, size: Vector3, material: Material, yaw_deg: float = 0.0, surface: String = "concrete") -> StaticBody3D:

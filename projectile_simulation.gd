@@ -278,16 +278,21 @@ func _continue(id: int, projectile: Projectile, hit: Dictionary, direction: Vect
 	projectile.previous = projectile.position
 	projectile.velocity = path.velocity
 	_start_tracer(projectile)
+	var cover_id := -1
+	if path.through:
+		cover_id = hit.collider.get_meta(&"bullet_cover_id", -1)
+		if cover_id >= 0:
+			get_parent().get_node("Map").add_bullet_hole(cover_id, entry, direction, projectile.profile)
 	_redirect_effects(entry, normal, path.surface, projectile.profile, path.position, path.through)
 	for peer in get_parent().match_peers():
 		net_redirect.rpc_id(peer, id, projectile.profile, projectile.shooter, entry, normal, path.surface,
-			path.position, path.velocity, projectile.reach - projectile.distance, path.through)
+			path.position, path.velocity, projectile.reach - projectile.distance, path.through, cover_id)
 
 
 func _redirect_effects(entry: Vector3, normal: Vector3, surface: String, profile: String, exit: Vector3, through: bool) -> void:
-	_effects.impact(entry, normal, surface, profile)
+	_effects.impact(entry, normal, surface, profile, not through)
 	if through:
-		_effects.impact(exit, -normal, surface, profile)
+		_effects.impact(exit, -normal, surface, profile, false)
 
 
 func _impact(id: int, hit: Dictionary, direction: Vector3, profile: String, shooter: int,
@@ -332,8 +337,10 @@ func net_impact(id: int, at: Vector3, normal: Vector3, surface: String, profile:
 
 @rpc("authority", "reliable")
 func net_redirect(id: int, profile: String, shooter: int, entry: Vector3, normal: Vector3, surface: String,
-		exit: Vector3, velocity: Vector3, reach: float, through: bool) -> void:
+		exit: Vector3, velocity: Vector3, reach: float, through: bool, cover_id: int) -> void:
 	_end_remote_segment(id, entry)
+	if through and cover_id >= 0:
+		get_parent().get_node("Map").add_bullet_hole(cover_id, entry, (exit - entry).normalized(), profile)
 	_redirect_effects(entry, normal, surface, profile, exit, through)
 	if reach > 0.0:
 		var source := get_parent().combatant(shooter) as CollisionObject3D
