@@ -26,12 +26,14 @@ func show_select() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _picked or not (event is InputEventKey) or not event.pressed or event.echo:
+	if not visible or _picked or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	if event.physical_keycode == KEY_1:
 		_choose("deagle")
 	elif event.physical_keycode == KEY_2:
 		_choose("shotgun")
+	elif event.physical_keycode == KEY_3:
+		_choose("ak47")
 
 
 func _build() -> void:
@@ -57,7 +59,7 @@ func _build() -> void:
 	column.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "На появление — одно из двух"
+	subtitle.text = "На появление — одно из трёх"
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.add_theme_font_size_override("font_size", 16)
 	subtitle.add_theme_color_override("font_color", Color(0.78, 0.76, 0.7))
@@ -77,6 +79,12 @@ func _build() -> void:
 		"2   ДРОБОВИК",
 		"Помповый\nРежим стрельбы: картечь\n14×8 урона · 6 патронов",
 		Color(0.48, 0.62, 0.78)
+	))
+	row.add_child(_card(
+		"ak47",
+		"3   AK-47",
+		"Автомат\nУдерживай ЛКМ для стрельбы\n24 урона · 30 патронов",
+		Color(0.55, 0.70, 0.42)
 	))
 
 

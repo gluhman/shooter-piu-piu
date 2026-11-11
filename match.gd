@@ -120,7 +120,6 @@ func _welcome(id: int) -> void:
 	if not has_node("1"):
 		return
 	net_spawn.rpc_id(id, 1)
-	get_node("1").send_weapon_to(id)
 	net_spawn.rpc(id)
 	$HUD.hide_host_ip()
 
@@ -131,6 +130,8 @@ func net_ready() -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	_show_sync(id)
+	# Player RPCs can reach this peer once its synchronizer makes the player visible.
+	get_node("1").send_weapon_to(id)
 
 
 func _show_sync(id: int) -> void:

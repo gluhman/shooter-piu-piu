@@ -1,0 +1,41 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/ak47/ak47.fbx" id="1_model"]
+[ext_resource type="Texture2D" path="res://assets/ak47/albedo.png" id="2_albedo"]
+[ext_resource type="Texture2D" path="res://assets/ak47/normal.png" id="3_normal"]
+[ext_resource type="Texture2D" path="res://assets/ak47/rmao.png" id="4_rmao"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rifle"]
+albedo_texture = ExtResource("2_albedo")
+metallic = 1.0
+metallic_texture = ExtResource("4_rmao")
+metallic_texture_channel = 1
+roughness_texture = ExtResource("4_rmao")
+roughness_texture_channel = 0
+normal_enabled = true
+normal_texture = ExtResource("3_normal")
+ao_enabled = true
+ao_texture = ExtResource("4_rmao")
+ao_texture_channel = 2
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_brass"]
+albedo_color = Color(0.55, 0.36, 0.13, 1)
+metallic = 0.8
+roughness = 0.45
+
+[node name="AK47" type="Node3D"]
+
+[node name="Model" parent="." instance=ExtResource("1_model")]
+transform = Transform3D(-0.88, 0, 0, 0, 0.88, 0, 0, 0, -0.88, 0, 0, 0.008)
+
+[node name="FRAME_LOD0_001" parent="Model/Skeleton/Skeleton3D" index="0"]
+surface_material_override/0 = SubResource("StandardMaterial3D_rifle")
+surface_material_override/1 = SubResource("StandardMaterial3D_brass")
+
+[node name="FRAME_LOD0" parent="Model" index="1"]
+surface_material_override/0 = SubResource("StandardMaterial3D_rifle")
+
+[node name="Muzzle" type="Marker3D" parent="."]
+position = Vector3(0, 0.0842, -0.635)
+
+[editable path="Model"]

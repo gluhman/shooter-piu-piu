@@ -5,6 +5,7 @@ const SPRINT_SPEED := 7.4
 const JUMP_VELOCITY := 4.6
 const MOUSE_SENS := 0.0022
 const MAX_HEALTH := 100
+const AK47_MODEL := preload("res://assets/ak47/ak47.tscn")
 
 signal health_changed(current: int, maximum: int)
 signal respawned
@@ -319,6 +320,11 @@ func _set_puppet_weapon(id: String) -> void:
 		holder.rotation = Vector3(0.15, -PI / 2.0, 0.5)
 		holder.position = Vector3(0.02, 0.06, 0.04)
 		holder.scale = Vector3(0.5, 0.5, 0.5)
+	elif id == "ak47":
+		var gun := AK47_MODEL.instantiate() as Node3D
+		_gun_attach.add_child(gun)
+		# Align the rifle's grip and forward axis with the avatar's pistol pose.
+		gun.rotation = Vector3(1.05, -2.65, 3.09)
 	else:
 		var packed: PackedScene = load("res://models/pistol.glb")
 		var gun := packed.instantiate() as Node3D

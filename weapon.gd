@@ -1,5 +1,9 @@
 extends Node3D
 
+const AK47_MODEL := preload("res://assets/ak47/ak47.tscn")
+const AK47_SHOT := preload("res://assets/ak47/fire.wav")
+const AK47_RELOAD := preload("res://assets/ak47/reload.wav")
+
 const WEAPONS := {
 	"deagle": {
 		"name": "DESERT EAGLE",
@@ -43,6 +47,28 @@ const WEAPONS := {
 		"falloff_start": 5.0,
 		"falloff_end": 18.0,
 	},
+	"ak47": {
+		"name": "AK-47",
+		"mode": "автоматический",
+		"automatic": true,
+		"mag": 30,
+		"reserve": 90,
+		"reload": 1.75,
+		"cooldown": 0.11,
+		"pellets": 1,
+		"spread": 0.85,
+		"range": 75.0,
+		"recoil": 0.9,
+		"recoil_yaw": 0.28,
+		"kick": 0.035,
+		"mark": 0.05,
+		"tracer": Color(1.0, 0.8, 0.36),
+		"tracer_size": 0.008,
+		"damage": 24,
+		"damage_min": 14,
+		"falloff_start": 15.0,
+		"falloff_end": 50.0,
+	},
 }
 
 var _weapon_id := ""
@@ -71,6 +97,7 @@ var _shell_player: AudioStreamPlayer
 var _reload_player: AudioStreamPlayer
 var _world_shot: AudioStreamPlayer3D
 var _world_shell: AudioStreamPlayer3D
+var _world_reload: AudioStreamPlayer3D
 var _last_net_msec := 0
 var _shot_deagle: AudioStream
 var _shotgun_shot: AudioStream
@@ -88,11 +115,16 @@ var _marks: Array[Node3D] = []
 
 func _ready() -> void:
 	_shot_player = _make_player()
+	_shot_player.max_polyphony = 5
 	_shell_player = _make_player()
 	_reload_player = _make_player()
 	_world_shot = _make_world_player()
+	_world_shot.max_polyphony = 5
 	_world_shell = _make_world_player()
 	_world_shell.volume_db = -4.0
+	_world_reload = _make_world_player()
+	_world_reload.stream = AK47_RELOAD
+	_world_reload.volume_db = -8.0
 	_shot_deagle = _make_shot(true)
 	_dry = _make_dry()
 	_shotgun_shot = load("res://drob/выстрел.mp3") as AudioStream
@@ -143,7 +175,8 @@ func _process(delta: float) -> void:
 		return
 
 	var shooting := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	if shooting and not _trigger_held:
+	var repeat := bool(_stats.get("automatic", false)) and (_mag > 0 or _reserve > 0)
+	if shooting and (not _trigger_held or repeat):
 		_try_fire()
 	_trigger_held = shooting
 
@@ -180,11 +213,10 @@ func _shoot() -> void:
 	_kick_pos = Vector3(randf_range(-0.008, 0.008), randf_range(0.0, 0.012), float(_stats["kick"]))
 	_kick_rot = -float(_stats["recoil"]) * 1.4
 	_player.add_recoil(float(_stats["recoil"]), randf_range(-float(_stats["recoil_yaw"]), float(_stats["recoil_yaw"])))
+	var volume := -5.0 if _weapon_id == "ak47" else 0.0
+	_play_on(_shot_player, _shot_stream(_weapon_id), volume, true)
 	if _weapon_id == "shotgun":
-		_play_on(_shot_player, _shotgun_shot, 0.0, true)
 		_shell_wait = 0.38
-	else:
-		_play_on(_shot_player, _shot_deagle, 0.0, true)
 	if not Net.active:
 		return
 	var ends: PackedVector3Array = result["ends"]
@@ -299,14 +331,26 @@ func net_visual(weapon_name: String, muzzle: Vector3, ends: PackedVector3Array, 
 
 
 func _play_world_shot(weapon_name: String) -> void:
-	var stream: AudioStream = _shotgun_shot if weapon_name == "shotgun" else _shot_deagle
+	var stream := _shot_stream(weapon_name)
 	if _world_shot == null or stream == null:
 		return
-	_world_shot.stream = stream
+	if _world_shot.stream != stream:
+		_world_shot.stream = stream
+	_world_shot.volume_db = -5.0 if weapon_name == "ak47" else 0.0
 	_world_shot.pitch_scale = randf_range(0.97, 1.03)
 	_world_shot.play()
 	if weapon_name == "shotgun":
 		get_tree().create_timer(0.38).timeout.connect(_play_world_shell)
+
+
+func _shot_stream(weapon_name: String) -> AudioStream:
+	match weapon_name:
+		"ak47":
+			return AK47_SHOT
+		"shotgun":
+			return _shotgun_shot
+		_:
+			return _shot_deagle
 
 
 func _play_world_shell() -> void:
@@ -367,8 +411,18 @@ func _start_reload() -> void:
 		if length > 0.2:
 			_reload_time = length
 		_play_on(_reload_player, _shotgun_reload, -1.0, false)
+	elif _weapon_id == "ak47":
+		_play_on(_reload_player, AK47_RELOAD, -3.0, false)
+		if Net.active:
+			net_ak47_reload.rpc()
 	_reload_left = _reload_time
 	_update_hud()
+
+
+@rpc("authority", "reliable")
+func net_ak47_reload() -> void:
+	if _player.weapon_id == "ak47" and _player.control_enabled:
+		_world_reload.play()
 
 
 func _finish_reload() -> void:
@@ -421,11 +475,13 @@ func _build_viewmodel(weapon_id: String) -> void:
 	if weapon_id == "deagle":
 		# Pistol model points the muzzle along +Z. The camera looks down -Z.
 		model.rotation.y = PI
-	else:
+	elif weapon_id == "shotgun":
 		# Shotgun OBJ lies along X, muzzle toward -X, up is +Y.
 		_apply_shotgun_material(model)
 		model.rotation.y = -PI / 2.0
 		_scale_longest_axis(model, 0.92)
+	elif weapon_id == "ak47":
+		model.rotation.y = 0.07
 	_seat_model(model, weapon_id)
 	_muzzle = _marker(_muzzle_point(model, weapon_id))
 	_flash = OmniLight3D.new()
@@ -437,6 +493,8 @@ func _build_viewmodel(weapon_id: String) -> void:
 
 
 func _make_model(weapon_id: String) -> Node3D:
+	if weapon_id == "ak47":
+		return AK47_MODEL.instantiate() as Node3D
 	var path := "res://models/pistol.glb" if weapon_id == "deagle" else "res://drob/Shotgun.obj"
 	var resource: Resource = load(path)
 	if resource is PackedScene:
@@ -476,6 +534,10 @@ func _seat_model(model: Node3D, weapon_id: String) -> void:
 	var target_back := -0.25 if weapon_id == "deagle" else -0.08
 	var target_bottom := -0.22 if weapon_id == "deagle" else -0.2
 	var target_x := 0.18 if weapon_id == "deagle" else 0.12
+	if weapon_id == "ak47":
+		target_back = -0.3
+		target_bottom = -0.34
+		target_x = 0.22
 	model.position += Vector3(
 		target_x - bounds.get_center().x,
 		target_bottom - bounds.position.y,
@@ -484,6 +546,8 @@ func _seat_model(model: Node3D, weapon_id: String) -> void:
 
 
 func _muzzle_point(model: Node3D, weapon_id: String) -> Vector3:
+	if weapon_id == "ak47":
+		return model.transform * (model.get_node("Muzzle") as Marker3D).position
 	if weapon_id != "shotgun":
 		var bounds := _view_bounds(model)
 		return Vector3(
@@ -635,7 +699,8 @@ func _make_world_player() -> AudioStreamPlayer3D:
 func _play_on(player: AudioStreamPlayer, stream: AudioStream, volume_db: float, vary_pitch: bool) -> void:
 	if stream == null:
 		return
-	player.stream = stream
+	if player.stream != stream:
+		player.stream = stream
 	player.volume_db = volume_db
 	player.pitch_scale = randf_range(0.97, 1.03) if vary_pitch else 1.0
 	player.play()
