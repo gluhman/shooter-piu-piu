@@ -39,7 +39,6 @@ var _bar_root: Node3D
 var _flash_mat: StandardMaterial3D
 var _flash_left := 0.0
 var _flash_on := false
-var _gunshot: AudioStreamPlayer3D
 var _muzzle: Marker3D
 
 @onready var _ballistics := get_node("../Ballistics")
@@ -51,7 +50,6 @@ func _ready() -> void:
 	add_to_group("bot")
 	_build_body()
 	_build_health_bar()
-	_build_gunshot()
 	_remote_prev = global_position
 	set_physics_process(false)
 
@@ -160,8 +158,7 @@ func _shoot_at(player: Node) -> void:
 
 func _play_shot_fx() -> void:
 	if _muzzle:
-		_ballistics.muzzle_effect("deagle", _muzzle.global_transform, velocity)
-	_play_gunshot()
+		_ballistics.muzzle_effect("deagle", _muzzle.global_transform, velocity, true)
 	if _clip != "Jog_Fwd":
 		_clip = ""
 		_play_clip("Pistol_Shoot")
@@ -482,20 +479,3 @@ func _face_bar() -> void:
 		return
 	_bar_root.look_at(camera.global_position, Vector3.UP)
 	_bar_root.rotate_y(PI)
-
-
-func _build_gunshot() -> void:
-	_gunshot = AudioStreamPlayer3D.new()
-	_gunshot.stream = preload("res://assets/weapon_audio/deagle_fire.wav")
-	_gunshot.volume_db = -3.0
-	_gunshot.unit_size = 7.0
-	_gunshot.max_distance = 46.0
-	_gunshot.position = Vector3(0.0, 1.4, 0.0)
-	add_child(_gunshot)
-
-
-func _play_gunshot() -> void:
-	if _gunshot == null:
-		return
-	_gunshot.pitch_scale = randf_range(0.96, 1.04)
-	_gunshot.play()

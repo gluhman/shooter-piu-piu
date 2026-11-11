@@ -9,6 +9,11 @@ const SURFACES := {
 }
 const FLASH_SIZE := {"deagle": 0.21, "shotgun": 0.32, "ak47": 0.26}
 const MARK_SIZE := {"deagle": 0.065, "shotgun": 0.035, "ak47": 0.055}
+const SHOT_SOUNDS := {
+	"deagle": preload("res://assets/weapon_audio/deagle_fire.wav"),
+	"shotgun": preload("res://assets/weapon_audio/shotgun_fire.wav"),
+	"ak47": preload("res://assets/ak47/fire.wav"),
+}
 
 var _soft: Texture2D
 var _flare: Texture2D
@@ -30,9 +35,11 @@ func clear() -> void:
 	_marks.clear()
 
 
-func muzzle(profile: String, barrel: Transform3D, motion: Vector3) -> void:
+func muzzle(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio: bool) -> void:
 	var forward := -barrel.basis.z.normalized()
 	var position := barrel.origin
+	if spatial_audio:
+		_play_spatial_shot(profile, position)
 	var size: float = FLASH_SIZE[profile]
 	var flash := MeshInstance3D.new()
 	flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -59,6 +66,24 @@ func muzzle(profile: String, barrel: Transform3D, motion: Vector3) -> void:
 	var drift := (forward * 1.6 + motion * 0.22 + Vector3.UP * 0.4).normalized()
 	_burst(position + forward * size * 0.33, drift, Color(0.60, 0.60, 0.56, 0.12), 4,
 		0.34, 1.7 + motion.length() * 0.15, 24.0, size * 0.29, Vector3.UP * 0.9, "smoke")
+
+
+func _play_spatial_shot(profile: String, at: Vector3) -> void:
+	# Keep each report at the point where it was fired, even if the shooter moves.
+	var sound := AudioStreamPlayer3D.new()
+	sound.stream = SHOT_SOUNDS[profile]
+	sound.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+	sound.unit_size = 4.0
+	sound.max_distance = 56.0
+	sound.volume_db = -5.0 if profile == "ak47" else 0.0
+	sound.max_db = sound.volume_db - 5.0
+	sound.attenuation_filter_db = -12.0
+	sound.panning_strength = 1.5
+	sound.pitch_scale = randf_range(0.97, 1.03)
+	add_child(sound)
+	sound.global_position = at
+	sound.finished.connect(sound.queue_free)
+	sound.play()
 
 
 func impact(at: Vector3, normal: Vector3, surface: String, profile: String) -> void:

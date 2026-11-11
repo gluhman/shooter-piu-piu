@@ -43,8 +43,12 @@ func reset_round() -> void:
 	_effects.clear()
 
 
-func muzzle_effect(profile: String, barrel: Transform3D, motion: Vector3) -> void:
-	_effects.muzzle(profile, barrel, motion)
+func shot_sound(profile: String) -> AudioStream:
+	return Effects.SHOT_SOUNDS[profile]
+
+
+func muzzle_effect(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio: bool) -> void:
+	_effects.muzzle(profile, barrel, motion, spatial_audio)
 
 
 func queue_shot(profile: String, stats: Dictionary, source: CollisionObject3D, shooter: int,

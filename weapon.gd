@@ -1,11 +1,8 @@
 extends Node3D
 
 const AK47_MODEL := preload("res://assets/ak47/ak47.tscn")
-const AK47_SHOT := preload("res://assets/ak47/fire.wav")
 const AK47_RELOAD := preload("res://assets/ak47/reload.wav")
-const DEAGLE_SHOT := preload("res://assets/weapon_audio/deagle_fire.wav")
 const DEAGLE_SLIDE := preload("res://assets/weapon_audio/deagle_slide.wav")
-const SHOTGUN_SHOT := preload("res://assets/weapon_audio/shotgun_fire.wav")
 const SHOTGUN_PUMP := preload("res://assets/weapon_audio/shotgun_pump.wav")
 const SHELL_START := 0.28
 const SHELL_INTERVAL := 0.60
@@ -118,7 +115,6 @@ var _barrel_length := 0.0
 var _shot_player: AudioStreamPlayer
 var _pump_player: AudioStreamPlayer
 var _reload_player: AudioStreamPlayer
-var _world_shot: AudioStreamPlayer3D
 var _world_pump: AudioStreamPlayer3D
 var _world_reload: AudioStreamPlayer3D
 var _last_net_msec := 0
@@ -138,8 +134,6 @@ func _ready() -> void:
 	_shot_player.max_polyphony = 5
 	_pump_player = _make_player()
 	_reload_player = _make_player()
-	_world_shot = _make_world_player()
-	_world_shot.max_polyphony = 5
 	_world_pump = _make_world_player()
 	_world_pump.volume_db = -4.0
 	_world_reload = _make_world_player()
@@ -175,7 +169,6 @@ func equip(weapon_id: String) -> void:
 
 func restart_round() -> void:
 	_last_net_msec = 0
-	_world_shot.stop()
 	_world_pump.stop()
 	if _active:
 		equip(_weapon_id)
@@ -273,12 +266,12 @@ func _shoot() -> void:
 			net_visual.rpc(_weapon_id)
 	else:
 		net_fire.rpc_id(1, _weapon_id, -barrel.basis.z)
-	_ballistics.muzzle_effect(_weapon_id, barrel, _player.shot_motion())
+	_ballistics.muzzle_effect(_weapon_id, barrel, _player.shot_motion(), false)
 	_kick_pos = Vector3(randf_range(-0.008, 0.008), randf_range(0.0, 0.012), float(_stats["kick"]))
 	_kick_rot = -float(_stats["recoil"]) * 1.4
 	_player.add_recoil(float(_stats["recoil"]), randf_range(-float(_stats["recoil_yaw"]), float(_stats["recoil_yaw"])))
 	var volume := -5.0 if _weapon_id == "ak47" else 0.0
-	_play_on(_shot_player, _shot_stream(_weapon_id), volume, true)
+	_play_on(_shot_player, _ballistics.shot_sound(_weapon_id), volume, true)
 	if _weapon_id == "shotgun":
 		_pump_wait = 0.38
 
@@ -320,8 +313,9 @@ func net_visual(weapon_name: String) -> void:
 
 
 func _play_remote_shot(weapon_name: String) -> void:
-	_ballistics.muzzle_effect(weapon_name, _muzzle.global_transform, _player.shot_motion())
-	_play_world_shot(weapon_name)
+	_ballistics.muzzle_effect(weapon_name, _muzzle.global_transform, _player.shot_motion(), true)
+	if weapon_name == "shotgun":
+		get_tree().create_timer(0.38).timeout.connect(_play_world_pump)
 	_recoil_remote(weapon_name)
 
 
@@ -329,29 +323,6 @@ func _recoil_remote(weapon_name: String) -> void:
 	var stats: Dictionary = WEAPONS[weapon_name]
 	_kick_pos = Vector3(0, 0.008, float(stats["kick"]))
 	_kick_rot = -float(stats["recoil"]) * 1.4
-
-
-func _play_world_shot(weapon_name: String) -> void:
-	var stream := _shot_stream(weapon_name)
-	if _world_shot == null or stream == null:
-		return
-	if _world_shot.stream != stream:
-		_world_shot.stream = stream
-	_world_shot.volume_db = -5.0 if weapon_name == "ak47" else 0.0
-	_world_shot.pitch_scale = randf_range(0.97, 1.03)
-	_world_shot.play()
-	if weapon_name == "shotgun":
-		get_tree().create_timer(0.38).timeout.connect(_play_world_pump)
-
-
-func _shot_stream(weapon_name: String) -> AudioStream:
-	match weapon_name:
-		"ak47":
-			return AK47_SHOT
-		"shotgun":
-			return SHOTGUN_SHOT
-		_:
-			return DEAGLE_SHOT
 
 
 func _play_world_pump() -> void:
