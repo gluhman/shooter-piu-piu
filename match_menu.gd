@@ -156,10 +156,15 @@ func _show_settings(tab: int) -> void:
 	_label(_panel, "Настройки", 32)
 	var tabs := TabContainer.new()
 	_panel.add_child(tabs)
+	var controls_scroll := ScrollContainer.new()
+	controls_scroll.name = "Управление"
+	controls_scroll.custom_minimum_size.y = 470.0
+	controls_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	tabs.add_child(controls_scroll)
 	var controls := VBoxContainer.new()
-	controls.name = "Управление"
+	controls.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	controls.add_theme_constant_override("separation", 5)
-	tabs.add_child(controls)
+	controls_scroll.add_child(controls)
 	_build_controls(controls)
 	var graphics := VBoxContainer.new()
 	graphics.name = "Графика"

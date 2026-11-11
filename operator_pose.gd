@@ -12,6 +12,7 @@ var left_wrist: Marker3D
 var planar_velocity := Vector3.ZERO
 var grounded := true
 var support_grip := 0.0
+var stance_offset := Vector3.ZERO
 
 var _right_arm: PackedInt32Array
 var _left_arm: PackedInt32Array
@@ -25,6 +26,7 @@ var _walk_phase := 0.0
 var _walk_blend := 0.0
 var _jump_blend := 0.0
 var _head := -1
+var _hips := -1
 var _right_reach: float
 var _left_reach: float
 var aim_pitch := 0.0
@@ -41,6 +43,7 @@ func _ready() -> void:
 	_right_foot = skeleton.get_bone_global_rest(_right_leg[2])
 	_left_foot = skeleton.get_bone_global_rest(_left_leg[2])
 	_head = skeleton.find_bone(&"mixamorig_Head_06")
+	_hips = skeleton.find_bone(&"mixamorig_Hips_01")
 	_right_reach = _arm_reach(skeleton, _right_arm)
 	_left_reach = _arm_reach(skeleton, _left_arm)
 
@@ -49,6 +52,8 @@ func weapon_reach_correction() -> Vector3:
 	var skeleton := get_skeleton()
 	var right_shoulder := skeleton.to_global(skeleton.get_bone_global_rest(_right_arm[0]).origin)
 	var left_shoulder := skeleton.to_global(skeleton.get_bone_global_rest(_left_arm[0]).origin)
+	right_shoulder += actor.global_basis * stance_offset
+	left_shoulder += actor.global_basis * stance_offset
 	var correction := Vector3.ZERO
 	# Project both targets back within reach, preserving the spacing of the weapon's grips.
 	for _pass_index in 3:
@@ -71,6 +76,10 @@ func _reach_offset(wrist: Vector3, shoulder: Vector3, reach: float) -> Vector3:
 
 func _process_modification_with_delta(delta: float) -> void:
 	var skeleton := get_skeleton()
+	if not stance_offset.is_zero_approx():
+		var hips := skeleton.get_bone_global_pose(_hips)
+		hips.origin += skeleton.global_basis.inverse() * (actor.global_basis * stance_offset)
+		skeleton.set_bone_global_pose(_hips, hips)
 	var speed := planar_velocity.length()
 	var moving := grounded and speed > 0.15
 	_walk_phase = fmod(_walk_phase + speed * delta * 3.2, TAU)
@@ -131,7 +140,7 @@ func _pose_fingers(skeleton: Skeleton3D, wrist: int, chains: Array[PackedInt32Ar
 
 
 func _step_leg(skeleton: Skeleton3D, chain: PackedInt32Array, rest: Transform3D, stride: Vector3, phase: float) -> void:
-	if _walk_blend <= 0.001 and _jump_blend <= 0.001:
+	if _walk_blend <= 0.001 and _jump_blend <= 0.001 and stance_offset.is_zero_approx():
 		return
 	var forward := -actor.global_basis.z
 	var lift := maxf(0.0, sin(phase)) * 0.15 * _walk_blend + 0.10 * _jump_blend
@@ -143,7 +152,7 @@ func _step_leg(skeleton: Skeleton3D, chain: PackedInt32Array, rest: Transform3D,
 
 
 func _pose_arm(skeleton: Skeleton3D, chain: PackedInt32Array, wrist: Marker3D, side: float) -> void:
-	var pole := skeleton.to_local(actor.to_global(Vector3(side * 0.35, 1.15, 0.15)))
+	var pole := skeleton.to_local(actor.to_global(Vector3(side * 0.35, 1.15, 0.15) + stance_offset))
 	var goal := skeleton.global_transform.affine_inverse() * wrist.global_transform
 	goal.basis = goal.basis.orthonormalized()
 	_solve(skeleton, chain, goal, pole, true)

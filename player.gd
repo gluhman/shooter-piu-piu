@@ -2,6 +2,11 @@ extends CharacterBody3D
 
 const WALK_SPEED := 5.0
 const SPRINT_SPEED := 7.4
+const CROUCH_SPEED := 2.6
+const AIM_SPEED := 3.2
+const STANDING_HEIGHT := 1.7
+const CROUCH_HEIGHT := 1.22
+const CROUCH_DROP := STANDING_HEIGHT - CROUCH_HEIGHT
 const JUMP_VELOCITY := 4.6
 const MOUSE_SENS := 0.0022
 const MAX_HEALTH := 100
@@ -29,6 +34,14 @@ var control_enabled := false
 var health := MAX_HEALTH
 var weapon_id := ""
 
+var crouched := false
+var aiming := false
+
+var _crouch_blend := 0.0
+var _capsule_height := STANDING_HEIGHT
+var _standing_capsule: CapsuleShape3D
+var _pouch_rest: Vector3
+
 var _jump_held := false
 var _recoil_pitch := 0.0
 var _dead := false
@@ -45,12 +58,16 @@ var _bar_fill: MeshInstance3D
 var _bar_mat: StandardMaterial3D
 var _prev_pos := Vector3.ZERO
 var _visual_velocity := Vector3.ZERO
+var _visual_vertical := 0.0
 
 @onready var _camera: Camera3D = $Camera3D
+@onready var _collision: CollisionShape3D = $CollisionShape3D
 
 
 func _ready() -> void:
 	add_to_group("player")
+	_standing_capsule = _collision.shape as CapsuleShape3D
+	_collision.shape = _standing_capsule.duplicate()
 	_prev_pos = global_position
 	if get_multiplayer_authority() == 1:
 		rotation.y = deg_to_rad(-40.0)
@@ -117,6 +134,12 @@ func reload_pouch_position() -> Vector3:
 	return _pouch.global_position
 
 
+func shot_motion() -> Vector3:
+	if _is_local():
+		return velocity
+	return (_visual_velocity + Vector3.UP * _visual_vertical).limit_length(SPRINT_SPEED + JUMP_VELOCITY)
+
+
 func visual_speed() -> float:
 	return _visual_velocity.length()
 
@@ -157,6 +180,7 @@ func _commit(killer_id: int) -> void:
 	if health > 0 or _dead:
 		return
 	_dead = true
+	aiming = false
 	control_enabled = false
 	$Camera3D/Weapon.cancel_reload()
 	$Camera3D/Weapon.visible = false
@@ -197,9 +221,15 @@ func _apply_respawn() -> void:
 	rotation.y = deg_to_rad(-40.0) if peer == 1 else deg_to_rad(140.0)
 	health = MAX_HEALTH
 	_dead = false
+	crouched = false
+	aiming = false
+	_crouch_blend = 0.0
+	_update_capsule()
 	_hurt_lock = 1.0
 	control_enabled = weapon_id != ""
 	_prev_pos = global_position
+	_visual_velocity = Vector3.ZERO
+	_visual_vertical = 0.0
 	if _is_local():
 		_camera.rotation.x = 0.0
 		respawned.emit()
@@ -246,7 +276,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			get_viewport().set_input_as_handled()
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var sensitivity := MOUSE_SENS * GameSettings.sensitivity
+		var sensitivity := MOUSE_SENS * GameSettings.sensitivity * lerpf(1.0, 0.55, $Camera3D/Weapon.aim_blend())
 		var pitch_sign := 1.0 if GameSettings.invert_y else -1.0
 		rotate_y(-event.relative.x * sensitivity)
 		_camera.rotate_x(event.relative.y * sensitivity * pitch_sign)
@@ -259,9 +289,14 @@ func accepts_gameplay_input() -> bool:
 
 func _physics_process(delta: float) -> void:
 	if not _is_local():
+		_update_capsule()
 		PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, global_transform)
 		return
-	if not accepts_gameplay_input():
+	var accepts_input := accepts_gameplay_input()
+	aiming = accepts_input and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and GameSettings.aim_pressed()
+	if accepts_input:
+		_update_crouch(Input.is_action_pressed(&"crouch"))
+	if not accepts_input:
 		velocity.x = 0.0
 		velocity.z = 0.0
 		if not is_on_floor():
@@ -275,12 +310,18 @@ func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		vertical += get_gravity().y * delta
 	var jump_held := Input.is_action_pressed(&"jump")
-	if jump_held and not _jump_held and is_on_floor():
+	if jump_held and not _jump_held and is_on_floor() and not crouched:
 		vertical = JUMP_VELOCITY
 	_jump_held = jump_held
 
 	var wish := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
-	var speed := SPRINT_SPEED if Input.is_action_pressed(&"sprint") else WALK_SPEED
+	var speed := WALK_SPEED
+	if crouched:
+		speed = CROUCH_SPEED
+	elif aiming:
+		speed = AIM_SPEED
+	elif Input.is_action_pressed(&"sprint"):
+		speed = SPRINT_SPEED
 	var direction := (global_transform.basis * Vector3(wish.x, 0.0, wish.y))
 	if direction.length_squared() > 0.001:
 		direction = direction.normalized()
@@ -291,6 +332,30 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0.0, speed * 8.0 * delta)
 	velocity.y = vertical
 	move_and_slide()
+
+
+func _update_crouch(wants_crouch: bool) -> void:
+	if wants_crouch == crouched:
+		return
+	if not wants_crouch:
+		var query := PhysicsShapeQueryParameters3D.new()
+		query.shape = _standing_capsule
+		query.transform = Transform3D(Basis.IDENTITY, global_position + Vector3.UP * (STANDING_HEIGHT * 0.5 + 0.018))
+		query.collision_mask = collision_mask
+		query.exclude = [get_rid()]
+		if not get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty():
+			return
+	crouched = wants_crouch
+	_update_capsule()
+
+
+func _update_capsule() -> void:
+	var height := CROUCH_HEIGHT if crouched else STANDING_HEIGHT
+	if _capsule_height == height:
+		return
+	_capsule_height = height
+	(_collision.shape as CapsuleShape3D).height = height
+	_collision.position.y = height * 0.5
 
 
 func _build_operator() -> void:
@@ -314,7 +379,8 @@ func _build_operator() -> void:
 	_head_pivot = to_local(_skeleton.to_global(_skeleton.get_bone_global_rest(head).origin))
 	_camera.position = _eye_rest
 	_pouch = Marker3D.new()
-	_pouch.position = Vector3(-0.115, 1.31, -0.19)
+	_pouch_rest = Vector3(-0.115, 1.31, -0.19)
+	_pouch.position = _pouch_rest
 	add_child(_pouch)
 
 	_avatar.find_child("Object_111", true, false).hide()
@@ -352,13 +418,20 @@ func _update_operator(delta: float) -> void:
 	var step := global_position - _prev_pos
 	_prev_pos = global_position
 	var vertical_speed := step.y / maxf(delta, 0.001)
+	_visual_vertical = lerpf(_visual_vertical, vertical_speed, minf(1.0, delta * 12.0))
 	step.y = 0.0
 	var instant := step / maxf(delta, 0.001)
 	_visual_velocity = _visual_velocity.lerp(instant, minf(1.0, delta * 12.0))
 	_pose.planar_velocity = _visual_velocity
 	_pose.grounded = is_on_floor() if _is_local() else absf(vertical_speed) < 0.8
 	_pose.aim_pitch = clampf(_camera.rotation.x, -0.78, 0.78)
-	_camera.position = _head_pivot + (_eye_rest - _head_pivot).rotated(Vector3.RIGHT, _pose.aim_pitch)
+	_crouch_blend = move_toward(_crouch_blend, float(crouched), delta * 7.5)
+	var stance := Vector3(0.0, -CROUCH_DROP, 0.05) * smoothstep(0.0, 1.0, _crouch_blend)
+	_pose.stance_offset = stance
+	_camera.position = _head_pivot + (_eye_rest - _head_pivot).rotated(Vector3.RIGHT, _pose.aim_pitch) + stance
+	_pouch.position = _pouch_rest + stance
+	if _bar_root:
+		_bar_root.position.y = 1.98 + stance.y
 
 
 func _build_bar() -> void:

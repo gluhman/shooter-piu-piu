@@ -9,7 +9,10 @@ const ACTIONS := {
 	&"move_back": ["Назад", KEY_S],
 	&"move_left": ["Влево", KEY_A],
 	&"move_right": ["Вправо", KEY_D],
-	&"sprint": ["Бег", KEY_SHIFT],
+	&"sprint": ["Бег", KEY_ALT],
+	&"crouch": ["Присесть", KEY_SHIFT],
+	&"aim_sights": ["Прицеливание", -MOUSE_BUTTON_RIGHT],
+	&"aim_sights_alt": ["Прицеливание (доп.)", KEY_CTRL],
 	&"jump": ["Прыжок", KEY_SPACE],
 	&"fire": ["Выстрел", -MOUSE_BUTTON_LEFT],
 	&"reload_weapon": ["Перезарядка", KEY_R],
@@ -40,6 +43,8 @@ func _ready() -> void:
 	for action in ACTIONS:
 		InputMap.add_action(action)
 		var code := int(config.get_value("bindings", action, ACTIONS[action][1]))
+		if action == &"sprint" and code == KEY_SHIFT and not config.has_section_key("bindings", "crouch"):
+			code = KEY_ALT
 		_set_binding(action, code if _valid_code(code) else int(ACTIONS[action][1]))
 	apply_graphics()
 
@@ -67,6 +72,8 @@ func _set_binding(action: StringName, code: int) -> void:
 	if code > 0:
 		var key := InputEventKey.new()
 		key.physical_keycode = code
+		if _left_modifier(action, code):
+			key.location = KEY_LOCATION_LEFT
 		InputMap.action_add_event(action, key)
 	else:
 		var mouse := InputEventMouseButton.new()
@@ -74,8 +81,22 @@ func _set_binding(action: StringName, code: int) -> void:
 		InputMap.action_add_event(action, mouse)
 
 
+func _left_modifier(action: StringName, code: int) -> bool:
+	return (action == &"crouch" and code == KEY_SHIFT) or (action == &"aim_sights_alt" and code == KEY_CTRL)
+
+
+func aim_pressed() -> bool:
+	return Input.is_action_pressed(&"aim_sights") or Input.is_action_pressed(&"aim_sights_alt")
+
+
+func uses_left_mouse_to_fire() -> bool:
+	return _bindings[&"fire"] == -MOUSE_BUTTON_LEFT
+
+
 func binding_label(action: StringName) -> String:
 	var code: int = _bindings[action]
+	if _left_modifier(action, code):
+		return "Левый " + OS.get_keycode_string(code)
 	match code:
 		-MOUSE_BUTTON_LEFT:
 			return "ЛКМ"

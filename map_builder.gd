@@ -39,10 +39,10 @@ func _load_textures() -> void:
 
 func _build() -> void:
 	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(36.0, 0.5, 36.0), _floor_mat)
-	_add_box(Vector3(0.0, 2.75, -17.25), Vector3(35.0, 5.5, 0.5), _wall_mat)
-	_add_box(Vector3(0.0, 2.75, 17.25), Vector3(35.0, 5.5, 0.5), _wall_mat)
-	_add_box(Vector3(17.25, 2.75, 0.0), Vector3(0.5, 5.5, 35.0), _wall_mat)
-	_add_box(Vector3(-17.25, 2.75, 0.0), Vector3(0.5, 5.5, 35.0), _wall_mat)
+	_add_box(Vector3(0.0, 2.75, -17.25), Vector3(35.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
+	_add_box(Vector3(0.0, 2.75, 17.25), Vector3(35.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
+	_add_box(Vector3(17.25, 2.75, 0.0), Vector3(0.5, 5.5, 35.0), _wall_mat, 0.0, "brick")
+	_add_box(Vector3(-17.25, 2.75, 0.0), Vector3(0.5, 5.5, 35.0), _wall_mat, 0.0, "brick")
 
 	_add_container(Vector3(-12.2, 1.295, -1.0), CONTAINER_WIDTH, LENGTH_40, COLOR_BLUE)
 	_add_container(Vector3(-12.2, 3.885, -4.0), CONTAINER_WIDTH, LENGTH_20, COLOR_RED)
@@ -66,7 +66,7 @@ func _build() -> void:
 
 func _add_container(center: Vector3, size_x: float, size_z: float, color: Color, yaw_deg: float = 0.0) -> void:
 	var size := Vector3(size_x, CONTAINER_HEIGHT, size_z)
-	var body := _add_box(center, size, _container_mat(color), yaw_deg)
+	var body := _add_box(center, size, _container_mat(color), yaw_deg, "metal")
 	var door := MeshInstance3D.new()
 	var door_mesh := BoxMesh.new()
 	var along_x := size_x >= size_z
@@ -82,11 +82,12 @@ func _add_container(center: Vector3, size_x: float, size_z: float, color: Color,
 
 
 func _add_crate(center: Vector3) -> void:
-	_add_box(center, Vector3(1.15, 1.1, 1.15), _wood_mat)
+	_add_box(center, Vector3(1.15, 1.1, 1.15), _wood_mat, 0.0, "wood")
 
 
-func _add_box(center: Vector3, size: Vector3, material: Material, yaw_deg: float = 0.0) -> StaticBody3D:
+func _add_box(center: Vector3, size: Vector3, material: Material, yaw_deg: float = 0.0, surface: String = "concrete") -> StaticBody3D:
 	var body := StaticBody3D.new()
+	body.set_meta(&"impact_surface", surface)
 	body.position = center
 	body.rotation.y = deg_to_rad(yaw_deg)
 	var mesh_instance := MeshInstance3D.new()

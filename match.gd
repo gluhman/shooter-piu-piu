@@ -51,6 +51,7 @@ func leave_round() -> void:
 
 @rpc("authority", "call_local", "reliable")
 func net_restart() -> void:
+	$Ballistics.reset_round()
 	$HUD.reset_round()
 	for player in get_tree().get_nodes_in_group("player"):
 		player.restart_round()
@@ -125,6 +126,8 @@ func _add_player_sync(player: Node, peer_id: int) -> void:
 	config.add_property(NodePath(".:position"))
 	config.add_property(NodePath(".:rotation"))
 	config.add_property(NodePath("Camera3D:rotation"))
+	config.add_property(NodePath(".:crouched"))
+	config.add_property(NodePath(".:aiming"))
 	sync.replication_config = config
 	sync.replication_interval = 0.0
 	sync.public_visibility = false

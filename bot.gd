@@ -4,6 +4,8 @@ const MAX_HEALTH := 100
 const MOVE_SPEED := 3.3
 const SHOOT_DAMAGE := 14
 const SHOOT_RANGE := 26.0
+const SHOT_STATS := {"range": SHOOT_RANGE, "damage": SHOOT_DAMAGE, "damage_min": SHOOT_DAMAGE,
+	"falloff_start": 0.0, "falloff_end": SHOOT_RANGE}
 const PREFER_DISTANCE := 7.0
 const SPAWN_POSITION := Vector3(12.0, 0.2, -12.0)
 
@@ -38,6 +40,9 @@ var _flash_mat: StandardMaterial3D
 var _flash_left := 0.0
 var _flash_on := false
 var _gunshot: AudioStreamPlayer3D
+var _muzzle: Marker3D
+
+@onready var _ballistics := get_node("../Ballistics")
 var _remote_prev := Vector3.ZERO
 var _remote_slide := 0.0
 
@@ -136,26 +141,27 @@ func _has_line_of_sight(player: Node) -> bool:
 
 
 func _shoot_at(player: Node) -> void:
-	var from := global_position + Vector3(0.0, 1.4, 0.0)
-	var aim: Vector3 = (player.global_position + Vector3(0.0, 1.15, 0.0) - from).normalized()
+	if not _muzzle:
+		return
+	var muzzle := _muzzle.global_transform
+	var aim: Vector3 = (player.global_position + Vector3(0.0, 1.15, 0.0) - muzzle.origin).normalized()
 	var spread := deg_to_rad(randf_range(3.5, 8.0))
 	if randf() < 0.22:
 		spread = deg_to_rad(randf_range(11.0, 18.0))
 	var basis := Basis.looking_at(aim)
 	var cone := tan(spread)
 	var direction := (basis * Vector3(randf_range(-cone, cone), randf_range(-cone, cone), -1.0).normalized()).normalized()
-	var end := from + direction * SHOOT_RANGE
-	var query := PhysicsRayQueryParameters3D.create(from, end)
-	query.exclude = [get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if not hit.is_empty():
-		end = hit["position"]
-		if hit["collider"] == player:
-			player.take_damage(SHOOT_DAMAGE)
-	_tracer(from, end)
+	_ballistics.queue_shot("deagle", SHOT_STATS, self, 0, muzzle, 0.15,
+		PackedVector3Array([direction]), velocity)
+	_play_shot_fx()
+	if Net.active and multiplayer.is_server() and not multiplayer.get_peers().is_empty():
+		net_shot_fx.rpc()
+
+
+func _play_shot_fx() -> void:
+	if _muzzle:
+		_ballistics.muzzle_effect("deagle", _muzzle.global_transform, velocity)
 	_play_gunshot()
-	if Net.active and multiplayer.is_server():
-		net_shot_fx.rpc(from, end)
 	if _clip != "Jog_Fwd":
 		_clip = ""
 		_play_clip("Pistol_Shoot")
@@ -288,6 +294,10 @@ func _attach_pistol() -> void:
 	gun.rotation = Vector3(-0.35, PI, -PI / 2.0)
 	gun.position = Vector3(0.0, 0.1, 0.02)
 	gun.scale = Vector3(0.9, 0.9, 0.9)
+	_muzzle = Marker3D.new()
+	_muzzle.position = Vector3(0.0, 0.1575, 0.112)
+	_muzzle.rotation.y = PI
+	gun.add_child(_muzzle)
 
 
 func _setup_anims() -> void:
@@ -448,9 +458,8 @@ func _ensure_sync() -> void:
 
 
 @rpc("authority", "call_remote", "unreliable")
-func net_shot_fx(from: Vector3, to: Vector3) -> void:
-	_tracer(from, to)
-	_play_gunshot()
+func net_shot_fx() -> void:
+	_play_shot_fx()
 
 
 func _follow_remote(delta: float) -> void:
@@ -475,29 +484,10 @@ func _face_bar() -> void:
 	_bar_root.rotate_y(PI)
 
 
-func _tracer(from: Vector3, to: Vector3) -> void:
-	var length := from.distance_to(to)
-	if length < 0.05:
-		return
-	var mesh_instance := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(0.012, 0.012, length)
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color(1.0, 0.35, 0.2)
-	mesh.material = material
-	mesh_instance.mesh = mesh
-	mesh_instance.top_level = true
-	get_tree().current_scene.add_child(mesh_instance)
-	mesh_instance.global_position = (from + to) * 0.5
-	mesh_instance.look_at(to, Vector3.UP)
-	get_tree().create_timer(0.06).timeout.connect(mesh_instance.queue_free)
-
-
 func _build_gunshot() -> void:
 	_gunshot = AudioStreamPlayer3D.new()
-	_gunshot.stream = _make_shot()
-	_gunshot.volume_db = 1.0
+	_gunshot.stream = preload("res://assets/weapon_audio/deagle_fire.wav")
+	_gunshot.volume_db = -3.0
 	_gunshot.unit_size = 7.0
 	_gunshot.max_distance = 46.0
 	_gunshot.position = Vector3(0.0, 1.4, 0.0)
@@ -509,25 +499,3 @@ func _play_gunshot() -> void:
 		return
 	_gunshot.pitch_scale = randf_range(0.96, 1.04)
 	_gunshot.play()
-
-
-func _make_shot() -> AudioStreamWAV:
-	var rate := 22050
-	var count := int(rate * 0.16)
-	var data := PackedByteArray()
-	data.resize(count * 2)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 7
-	for i in count:
-		var t := float(i) / float(rate)
-		var envelope := exp(-t * 24.0)
-		var noise := rng.randf_range(-1.0, 1.0)
-		var body := sin(TAU * 150.0 * t)
-		var sample := (noise * 0.72 + body * 0.28) * envelope
-		data.encode_s16(i * 2, int(clampf(sample, -1.0, 1.0) * 32000.0))
-	var stream := AudioStreamWAV.new()
-	stream.format = AudioStreamWAV.FORMAT_16_BITS
-	stream.mix_rate = rate
-	stream.stereo = false
-	stream.data = data
-	return stream

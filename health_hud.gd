@@ -54,6 +54,11 @@ func _on_health(current: int, maximum: int) -> void:
 		_flash.color = Color(0.7, 0.05, 0.04, 0.32)
 
 
+func confirm_projectile_hit() -> void:
+	if is_instance_valid(_player):
+		_player.get_node("Camera3D/Weapon").confirm_projectile_hit()
+
+
 func on_frag(killer_id: int, victim_id: int) -> void:
 	if killer_id != victim_id:
 		_round_scores[killer_id] = _score_for(killer_id) + Vector2i(1, 0)
@@ -110,8 +115,9 @@ func _refresh_score() -> void:
 
 
 func _update_hint() -> void:
-	$Hint.text = "%s — выстрел    %s — перезарядка    Tab — счёт    Esc — меню" % [
-		GameSettings.binding_label(&"fire"), GameSettings.binding_label(&"reload_weapon")
+	$Hint.text = "%s — выстрел    %s — прицел    %s — присесть    %s — перезарядка    Tab — счёт    Esc — меню" % [
+		GameSettings.binding_label(&"fire"), GameSettings.binding_label(&"aim_sights"),
+		GameSettings.binding_label(&"crouch"), GameSettings.binding_label(&"reload_weapon"),
 	]
 
 

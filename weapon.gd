@@ -11,6 +11,7 @@ const SHELL_START := 0.28
 const SHELL_INTERVAL := 0.60
 const SHELL_FINISH := 0.20
 const SHELL_IN_HAND := Vector3(-0.024, 0.126, 0.052)
+const HIP_FOV := 110.0
 
 const WEAPONS := {
 	"deagle": {
@@ -22,13 +23,12 @@ const WEAPONS := {
 		"cooldown": 0.28,
 		"pellets": 1,
 		"spread": 0.2,
+		"aim_spread": 0.08,
+		"aim_fov": 72.0,
 		"range": 90.0,
 		"recoil": 1.7,
 		"recoil_yaw": 0.35,
 		"kick": 0.045,
-		"mark": 0.085,
-		"tracer": Color(1.0, 0.84, 0.4),
-		"tracer_size": 0.012,
 		"damage": 52,
 		"damage_min": 34,
 		"falloff_start": 16.0,
@@ -43,13 +43,12 @@ const WEAPONS := {
 		"cooldown": 0.82,
 		"pellets": 8,
 		"spread": 5.4,
+		"aim_spread": 5.1,
+		"aim_fov": 76.0,
 		"range": 34.0,
 		"recoil": 3.3,
 		"recoil_yaw": 0.85,
 		"kick": 0.09,
-		"mark": 0.032,
-		"tracer": Color(1.0, 0.7, 0.32),
-		"tracer_size": 0.007,
 		"damage": 14,
 		"damage_min": 3,
 		"falloff_start": 5.0,
@@ -65,13 +64,12 @@ const WEAPONS := {
 		"cooldown": 0.11,
 		"pellets": 1,
 		"spread": 0.85,
+		"aim_spread": 0.27,
+		"aim_fov": 68.0,
 		"range": 75.0,
 		"recoil": 0.9,
 		"recoil_yaw": 0.28,
 		"kick": 0.035,
-		"mark": 0.05,
-		"tracer": Color(1.0, 0.8, 0.36),
-		"tracer_size": 0.008,
 		"damage": 24,
 		"damage_min": 14,
 		"falloff_start": 15.0,
@@ -89,13 +87,17 @@ var _reload_time := 1.0
 var _reloading := false
 var _active := false
 var _trigger_held := false
+var _fire_requested := false
+var _control_click_held := false
 var _reload_held := false
 var _kick_pos := Vector3.ZERO
 var _kick_rot := 0.0
 var _bob_t := 0.0
-var _flash_left := 0.0
 var _pump_wait := 0.0
 var _rest_pos := Vector3.ZERO
+var _aim_amount := 0.0
+var _aim_pose: Transform3D
+var _aim_eye_relief := 0.0
 var _reload_units := 0
 var _shells_inserted := 0
 var _right_wrist: Marker3D
@@ -113,7 +115,6 @@ var _loading_port: Vector3
 var _view: Node3D
 var _muzzle: Marker3D
 var _barrel_length := 0.0
-var _flash: OmniLight3D
 var _shot_player: AudioStreamPlayer
 var _pump_player: AudioStreamPlayer
 var _reload_player: AudioStreamPlayer
@@ -123,10 +124,10 @@ var _world_reload: AudioStreamPlayer3D
 var _last_net_msec := 0
 var _shell_insert: AudioStream
 var _dry: AudioStream
-var _marks: Array[Node3D] = []
 
 @onready var _camera: Camera3D = get_parent()
 @onready var _player = get_parent().get_parent()
+@onready var _ballistics := get_node("../../../Ballistics")
 @onready var _ammo: Label = get_node("../../../HUD/Ammo")
 @onready var _cross: ColorRect = get_node("../../../HUD/Crosshair")
 @onready var _cross_v: ColorRect = get_node("../../../HUD/CrosshairV")
@@ -164,6 +165,8 @@ func equip(weapon_id: String) -> void:
 	_pump_wait = 0.0
 	_active = true
 	_trigger_held = false
+	_fire_requested = false
+	_control_click_held = false
 	_build_viewmodel(weapon_id)
 	if _player._is_local():
 		_update_hud()
@@ -174,26 +177,47 @@ func restart_round() -> void:
 	_last_net_msec = 0
 	_world_shot.stop()
 	_world_pump.stop()
-	_flash_left = 0.0
-	for mark in _marks:
-		if is_instance_valid(mark):
-			mark.queue_free()
-	_marks.clear()
 	if _active:
 		equip(_weapon_id)
+
+
+func _input(event: InputEvent) -> void:
+	if not _active or not _player._is_local():
+		return
+	var mouse := event as InputEventMouseButton
+	var control_click := OS.has_feature("macos") and mouse != null and mouse.button_index == MOUSE_BUTTON_RIGHT
+	if control_click and not mouse.pressed and not (mouse.button_mask & MOUSE_BUTTON_MASK_LEFT):
+		_control_click_held = false
+	if event.is_action_released(&"fire"):
+		_trigger_held = false
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or not _player.accepts_gameplay_input():
+		return
+	# Godot labels macOS Ctrl+left-click as right-click, but keeps the physical button mask.
+	if control_click and mouse.pressed and mouse.ctrl_pressed and (mouse.button_mask & MOUSE_BUTTON_MASK_LEFT):
+		if GameSettings.uses_left_mouse_to_fire() and not _control_click_held:
+			_control_click_held = true
+			_fire_requested = true
+		return
+	if event.is_action_pressed(&"fire"):
+		_trigger_held = true
+		_fire_requested = true
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		_trigger_held = false
+		_control_click_held = false
+		_fire_requested = false
 
 
 func _process(delta: float) -> void:
 	if not _active:
 		return
 	_cooldown = maxf(_cooldown - delta, 0.0)
-	_flash_left = maxf(_flash_left - delta, 0.0)
 	if _pump_wait > 0.0:
 		_pump_wait = maxf(_pump_wait - delta, 0.0)
 		if _pump_wait == 0.0:
 			_play_pump()
-	if _flash:
-		_flash.light_energy = 5.0 if _flash_left > 0.0 else 0.0
 	if _reloading:
 		_reload_left = maxf(0.0, _reload_left - delta)
 		if _weapon_id == "shotgun":
@@ -207,15 +231,18 @@ func _process(delta: float) -> void:
 	if not _player._is_local():
 		return
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or not _player.accepts_gameplay_input():
-		_trigger_held = Input.is_action_pressed(&"fire")
+		_trigger_held = false
+		_control_click_held = false
+		_fire_requested = false
 		_reload_held = Input.is_action_pressed(&"reload_weapon")
 		return
 
-	var shooting := Input.is_action_pressed(&"fire")
+	_update_crosshair()
+	var shooting := _trigger_held or _control_click_held
 	var repeat := bool(_stats.get("automatic", false)) and (_mag > 0 or _reserve > 0)
-	if shooting and (not _trigger_held or repeat):
+	if _fire_requested or (shooting and repeat):
 		_try_fire()
-	_trigger_held = shooting
+	_fire_requested = false
 
 	var reload_key := Input.is_action_pressed(&"reload_weapon")
 	if reload_key and not _reload_held:
@@ -239,13 +266,14 @@ func _try_fire() -> void:
 
 
 func _shoot() -> void:
-	var from := _camera.global_position
-	var dirs := PackedVector3Array()
-	for _pellet in int(_stats["pellets"]):
-		dirs.append(_ray_direction(float(_stats["spread"])))
-	var result := _cast_all(_weapon_id, from, dirs, _authoritative())
-	_show_shot(result["muzzle"], result, true)
-	_flash_left = 0.05
+	var barrel := _muzzle.global_transform
+	if not Net.active or multiplayer.is_server():
+		_queue_projectiles(barrel)
+		if Net.active and not multiplayer.get_peers().is_empty():
+			net_visual.rpc(_weapon_id)
+	else:
+		net_fire.rpc_id(1, _weapon_id, -barrel.basis.z)
+	_ballistics.muzzle_effect(_weapon_id, barrel, _player.shot_motion())
 	_kick_pos = Vector3(randf_range(-0.008, 0.008), randf_range(0.0, 0.012), float(_stats["kick"]))
 	_kick_rot = -float(_stats["recoil"]) * 1.4
 	_player.add_recoil(float(_stats["recoil"]), randf_range(-float(_stats["recoil_yaw"]), float(_stats["recoil_yaw"])))
@@ -253,128 +281,46 @@ func _shoot() -> void:
 	_play_on(_shot_player, _shot_stream(_weapon_id), volume, true)
 	if _weapon_id == "shotgun":
 		_pump_wait = 0.38
-	if not Net.active:
-		return
-	var ends: PackedVector3Array = result["ends"]
-	var kinds: PackedInt32Array = result["kinds"]
-	var normals: PackedVector3Array = result["normals"]
-	var net_muzzle: Vector3 = result["muzzle"]
-	if multiplayer.is_server():
-		net_visual.rpc(_weapon_id, net_muzzle, ends, kinds, normals)
-	else:
-		net_fire.rpc(_weapon_id, from, dirs)
 
 
-func _authoritative() -> bool:
-	return not Net.active or multiplayer.is_server()
-
-
-func _cast_all(weapon_name: String, eye: Vector3, dirs: PackedVector3Array, apply_damage: bool) -> Dictionary:
-	var stats: Dictionary = WEAPONS[weapon_name]
-	var space := _camera.get_world_3d().direct_space_state
-	var muzzle := _muzzle.global_position
-	var barrel_forward := -_muzzle.global_basis.z
-	var breech := muzzle - barrel_forward * _barrel_length
-	var obstruction := _ray_hit(space, breech, muzzle)
-	var ends := PackedVector3Array()
-	var kinds := PackedInt32Array()
-	var normals := PackedVector3Array()
-	var reach := float(stats["range"])
-	for index in mini(dirs.size(), int(stats["pellets"])):
-		var direction := dirs[index]
-		if not direction.is_finite() or direction.length_squared() < 0.001:
-			continue
-		direction = direction.normalized()
-		var end := muzzle + direction * reach
-		var hit := obstruction
-		if hit.is_empty():
-			# Find the point under the crosshair, then test the path from the actual barrel.
-			var sight_end := eye + direction * reach
-			var sight_hit := _ray_hit(space, eye, sight_end)
-			var aim: Vector3 = sight_hit.get("position", sight_end)
-			var barrel_to_aim := aim - muzzle
-			if barrel_to_aim.dot(direction) > 0.02:
-				var distance := minf(reach, barrel_to_aim.length() + 0.015)
-				end = muzzle + barrel_to_aim.normalized() * distance
-			hit = _ray_hit(space, muzzle, end)
-		var kind := 2
-		var normal := Vector3.ZERO
-		if not hit.is_empty():
-			end = hit["position"]
-			if _damage_body(hit["collider"], muzzle.distance_to(end), apply_damage, stats):
-				kind = 1
-			else:
-				kind = 0
-				normal = hit["normal"]
-				if normal.is_zero_approx():
-					normal = -barrel_forward
-		ends.append(end)
-		kinds.append(kind)
-		normals.append(normal)
-	return {"ends": ends, "kinds": kinds, "normals": normals, "muzzle": muzzle}
-
-
-func _ray_hit(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3) -> Dictionary:
-	var query := PhysicsRayQueryParameters3D.create(from, to)
-	query.exclude = [_player.get_rid()]
-	query.hit_from_inside = true
-	return space.intersect_ray(query)
-
-
-func _show_shot(muzzle: Vector3, result: Dictionary, local_view: bool) -> void:
-	var ends: PackedVector3Array = result["ends"]
-	var kinds: PackedInt32Array = result["kinds"]
-	var normals: PackedVector3Array = result["normals"]
-	var any_hit := false
-	for index in ends.size():
-		if _muzzle == null or (ends[index] - muzzle).dot(-_muzzle.global_basis.z) > 0.0:
-			_spawn_tracer(muzzle, ends[index])
-		if kinds[index] == 2:
-			continue
-		any_hit = true
-		if kinds[index] == 1:
-			_spawn_blood(ends[index])
-		else:
-			_spawn_impact(ends[index], normals[index])
-	if any_hit and local_view:
-		_flash_crosshair()
+func _queue_projectiles(barrel: Transform3D) -> void:
+	var directions := PackedVector3Array()
+	var spread := lerpf(float(_stats["spread"]), float(_stats["aim_spread"]), aim_blend())
+	var cone := tan(deg_to_rad(spread))
+	for _pellet in int(_stats["pellets"]):
+		var offset := Vector2.from_angle(randf() * TAU) * sqrt(randf()) * cone
+		directions.append((barrel.basis * Vector3(offset.x, offset.y, -1.0)).normalized())
+	_ballistics.queue_shot(_weapon_id, _stats, _player, get_multiplayer_authority(), barrel,
+		_barrel_length, directions, _player.shot_motion())
 
 
 @rpc("authority", "reliable")
-func net_fire(weapon_name: String, from: Vector3, dirs: PackedVector3Array) -> void:
-	if not multiplayer.is_server() or weapon_name != _weapon_id or _muzzle == null:
+func net_fire(weapon_name: String, bore: Vector3) -> void:
+	if not multiplayer.is_server() or weapon_name != _weapon_id or _muzzle == null or not _player.control_enabled:
+		return
+	if not bore.is_finite() or not is_equal_approx(bore.length_squared(), 1.0):
 		return
 	var now := Time.get_ticks_msec()
-	var wait := int(float(WEAPONS[weapon_name]["cooldown"]) * 750.0)
+	var wait := int(float(_stats["cooldown"]) * 750.0)
 	if now - _last_net_msec < wait:
 		return
 	_last_net_msec = now
-	var origin := _camera.global_position
-	if not from.is_finite() or from.distance_to(origin) > 3.0:
-		from = origin
-	var result := _cast_all(weapon_name, from, dirs, true)
-	_stats = WEAPONS[weapon_name]
-	_show_shot(result["muzzle"], result, false)
-	_play_world_shot(weapon_name)
-	_recoil_remote(weapon_name)
-	var shooter := get_multiplayer_authority()
-	var ends: PackedVector3Array = result["ends"]
-	var kinds: PackedInt32Array = result["kinds"]
-	var normals: PackedVector3Array = result["normals"]
-	var muzzle: Vector3 = result["muzzle"]
-	for peer_id in multiplayer.get_peers():
-		if peer_id == shooter:
-			continue
-		net_visual.rpc_id(peer_id, weapon_name, muzzle, ends, kinds, normals)
+	var barrel := _muzzle.global_transform
+	# Keep the host's muzzle position and use the firing client's orientation within normal aim limits.
+	if bore.dot(-_camera.global_basis.z) >= cos(deg_to_rad(40.0)):
+		barrel.basis = Basis.looking_at(bore, _camera.global_basis.y)
+	_queue_projectiles(barrel)
+	_play_remote_shot(weapon_name)
 
 
 @rpc("authority", "reliable")
-func net_visual(weapon_name: String, muzzle: Vector3, ends: PackedVector3Array, kinds: PackedInt32Array, normals: PackedVector3Array) -> void:
-	if not WEAPONS.has(weapon_name):
-		return
-	_stats = WEAPONS[weapon_name]
-	var visual_muzzle := _muzzle.global_position if weapon_name == _weapon_id and _muzzle else muzzle
-	_show_shot(visual_muzzle, {"ends": ends, "kinds": kinds, "normals": normals}, false)
+func net_visual(weapon_name: String) -> void:
+	if weapon_name == _weapon_id and _muzzle:
+		_play_remote_shot(weapon_name)
+
+
+func _play_remote_shot(weapon_name: String) -> void:
+	_ballistics.muzzle_effect(weapon_name, _muzzle.global_transform, _player.shot_motion())
 	_play_world_shot(weapon_name)
 	_recoil_remote(weapon_name)
 
@@ -412,46 +358,6 @@ func _play_world_pump() -> void:
 	_world_pump.stream = SHOTGUN_PUMP
 	_world_pump.pitch_scale = randf_range(0.97, 1.03)
 	_world_pump.play()
-
-
-func _damage_body(collider: Object, distance: float, apply_damage: bool, stats: Dictionary) -> bool:
-	var node: Node = collider as Node
-	while node:
-		if node.has_method("take_damage") and (node.is_in_group("player") or node.is_in_group("bot")):
-			if apply_damage:
-				node.take_damage(_damage_at(distance, stats), _player.get_multiplayer_authority())
-			return true
-		node = node.get_parent()
-	return false
-
-
-func _damage_at(distance: float, stats: Dictionary) -> int:
-	var close := float(stats["damage"])
-	var far := float(stats["damage_min"])
-	var start := float(stats["falloff_start"])
-	var finish := float(stats["falloff_end"])
-	if distance <= start:
-		return int(close)
-	if distance >= finish:
-		return int(far)
-	var blend := (distance - start) / (finish - start)
-	return int(round(lerpf(close, far, blend)))
-
-
-func _spawn_blood(at: Vector3) -> void:
-	var spark := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.05
-	sphere.height = 0.1
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color(0.75, 0.08, 0.06)
-	sphere.material = material
-	spark.mesh = sphere
-	spark.top_level = true
-	add_child(spark)
-	spark.global_position = at
-	get_tree().create_timer(0.12).timeout.connect(spark.queue_free)
 
 
 func _start_reload() -> void:
@@ -534,34 +440,53 @@ func cancel_reload() -> void:
 		_update_hud()
 
 
-func _ray_direction(spread_deg: float) -> Vector3:
-	var forward := -_camera.global_transform.basis.z
-	if spread_deg <= 0.01:
-		return forward
-	var basis := Basis.looking_at(forward)
-	var cone := tan(deg_to_rad(spread_deg))
-	return (basis * Vector3(randf_range(-cone, cone), randf_range(-cone, cone), -1.0).normalized()).normalized()
+func _update_crosshair() -> void:
+	var impact: Vector3 = _ballistics.predict_impact(_weapon_id, _muzzle.global_transform, _barrel_length,
+		float(_stats["range"]), _player.shot_motion(), _player.get_rid())
+	var alpha := 0.0
+	if not _camera.is_position_behind(impact):
+		var screen := _camera.unproject_position(impact)
+		_cross.position = screen - _cross.size * 0.5
+		_cross_v.position = screen - _cross_v.size * 0.5
+		alpha = lerpf(1.0, 0.45, aim_blend())
+	_cross.modulate.a = alpha
+	_cross_v.modulate.a = alpha
+
+
+func aim_blend() -> float:
+	return smoothstep(0.0, 1.0, _aim_amount)
 
 
 func _apply_view(delta: float) -> void:
 	if _view == null:
 		return
+	var wants_aim: bool = _player.aiming and _player.control_enabled and not _reloading
+	_aim_amount = move_toward(_aim_amount, float(wants_aim), delta * 6.0)
+	var blend := aim_blend()
+	if _player._is_local():
+		_camera.fov = lerpf(HIP_FOV, float(_stats["aim_fov"]), blend)
 	var speed: float = _player.visual_speed()
 	_bob_t += delta * speed * 1.7
 	var sway := minf(speed / 5.0, 1.0)
 	var bob := Vector3(sin(_bob_t * 2.0) * 0.008, absf(cos(_bob_t * 2.0)) * 0.01, 0.0) * sway
 	var progress := 1.0 - _reload_left / _reload_time if _reloading else 0.0
 	var reload_pose := smoothstep(0.0, 0.17, progress) * (1.0 - smoothstep(0.82, 1.0, progress))
-	# The eye can look farther up and down than the character can shoulder the weapon.
-	var aim_offset := clampf(_camera.rotation.x, -0.78, 0.78) - _camera.rotation.x
+	# Limit the pitch of the reload pose while the support hand reaches for the pouch.
+	var aim_offset := (clampf(_camera.rotation.x, -0.78, 0.78) - _camera.rotation.x) * reload_pose
 	var pitch := Basis(Vector3.RIGHT, aim_offset)
 	var reload_roll := -0.56 if _weapon_id == "shotgun" else -0.40
-	_view.position = pitch * (_rest_pos + bob + _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose)
-	_view.basis = pitch * Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose, 0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
+	var hip_position := pitch * (_rest_pos + bob + _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose)
+	var hip_basis := pitch * Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose, 0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
+	_view.position = hip_position.lerp(_aim_pose.origin + Vector3.BACK * _kick_pos.z, blend)
+	_view.basis = hip_basis.slerp(_aim_pose.basis, blend)
 	_pose_reload(progress)
-	var correction: Vector3 = _player.weapon_reach_correction()
+	var correction: Vector3 = _camera.global_basis.inverse() * _player.weapon_reach_correction()
 	if correction.length_squared() > 0.000001:
-		_view.global_position += correction
+		# At full aim, reach correction can move the gun along the sight line.
+		correction.x *= 1.0 - blend
+		correction.y *= 1.0 - blend
+		correction.z = lerpf(correction.z, minf(correction.z, _aim_eye_relief - 0.12 - _kick_pos.z), blend)
+		_view.position += correction
 		if _reloading:
 			_pose_reload(progress)
 
@@ -609,6 +534,7 @@ func _build_viewmodel(weapon_id: String) -> void:
 			_rest_pos = Vector3(0.125, -0.219, -0.109)
 			_barrel_length = 0.48
 	model.position = -grip
+	_set_aim_pose(model, weapon_id)
 	_support_rest = support - grip
 	_support_basis = _hand_basis(left_fingers, left_palm)
 
@@ -622,16 +548,40 @@ func _build_viewmodel(weapon_id: String) -> void:
 
 	_muzzle = _marker(_muzzle_point(model, weapon_id))
 	_muzzle.name = "Muzzle"
-	if weapon_id == "ak47":
-		_muzzle.rotation.y = model.rotation.y
-	_flash = OmniLight3D.new()
-	_flash.light_color = Color(1, 0.78, 0.4)
-	_flash.omni_range = 2.2
-	_flash.light_energy = 0.0
-	_flash.shadow_enabled = false
-	_muzzle.add_child(_flash)
+	var bore := Vector3.FORWARD
+	if weapon_id == "deagle":
+		bore = Vector3.BACK
+	elif weapon_id == "shotgun":
+		bore = Vector3.LEFT
+	_muzzle.basis = Basis.looking_at((model.basis * bore).normalized())
 	_prepare_reload(model)
 	_apply_view(0.0)
+
+
+func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
+	var rear: Vector3
+	var front: Vector3
+	match weapon_id:
+		"ak47":
+			rear = Vector3(0.0, 0.128, -0.104)
+			front = Vector3(0.0, 0.127, -0.586)
+			_aim_eye_relief = 0.28
+		"shotgun":
+			# This model has a bead and a receiver rib, so the rear line clears the rib.
+			rear = Vector3(2.201, 3.51, 0.0)
+			front = Vector3(-8.725, 3.389, -0.005)
+			_aim_eye_relief = 0.33
+		_:
+			rear = Vector3(0.0, 0.2205, -0.066)
+			front = Vector3(0.0, 0.2185, 0.076)
+			_aim_eye_relief = 0.42
+	var rear_sight := _marker(model.transform * rear)
+	rear_sight.name = "RearSight"
+	var front_sight := _marker(model.transform * front)
+	front_sight.name = "FrontSight"
+	var line := (front_sight.position - rear_sight.position).normalized()
+	var basis := Basis.looking_at(line).inverse()
+	_aim_pose = Transform3D(basis, Vector3.FORWARD * _aim_eye_relief - basis * rear_sight.position)
 
 
 func _hand_basis(fingers: Vector3, palm: Vector3) -> Basis:
@@ -843,68 +793,11 @@ func _marker(at: Vector3) -> Marker3D:
 	return marker
 
 
-func _spawn_tracer(from: Vector3, to: Vector3) -> void:
-	var length := from.distance_to(to)
-	if length < 0.05:
-		return
-	var mesh_instance := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	var thickness := float(_stats["tracer_size"])
-	mesh.size = Vector3(thickness, thickness, length)
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = _stats["tracer"]
-	mesh.material = material
-	mesh_instance.mesh = mesh
-	mesh_instance.top_level = true
-	add_child(mesh_instance)
-	mesh_instance.global_position = (from + to) * 0.5
-	mesh_instance.look_at(to, Vector3.UP)
-	get_tree().create_timer(0.045).timeout.connect(mesh_instance.queue_free)
-
-
-func _spawn_impact(at: Vector3, normal: Vector3) -> void:
-	var mark := MeshInstance3D.new()
-	var mesh := QuadMesh.new()
-	var mark_size := float(_stats["mark"])
-	mesh.size = Vector2(mark_size, mark_size)
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.05, 0.045, 0.04)
-	material.roughness = 1.0
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mesh.material = material
-	mark.mesh = mesh
-	mark.top_level = true
-	add_child(mark)
-	mark.global_position = at + normal * 0.02
-	var up := Vector3.RIGHT if absf(normal.dot(Vector3.UP)) > 0.85 else Vector3.UP
-	mark.look_at(at - normal, up)
-	_marks.append(mark)
-	if _marks.size() > 36:
-		var old: Node3D = _marks.pop_front()
-		if is_instance_valid(old):
-			old.queue_free()
-
-	var spark := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = mark_size * 0.35
-	sphere.height = mark_size * 0.7
-	var spark_mat := StandardMaterial3D.new()
-	spark_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	spark_mat.albedo_color = Color(1, 0.75, 0.35)
-	sphere.material = spark_mat
-	spark.mesh = sphere
-	spark.top_level = true
-	add_child(spark)
-	spark.global_position = at + normal * 0.03
-	get_tree().create_timer(0.06).timeout.connect(spark.queue_free)
-
-
-func _flash_crosshair() -> void:
+func confirm_projectile_hit() -> void:
 	var hit_color := Color(1, 0.45, 0.2, 0.95)
 	_cross.color = hit_color
 	_cross_v.color = hit_color
-	get_tree().create_timer(0.06).timeout.connect(_reset_crosshair)
+	get_tree().create_timer(0.09, false).timeout.connect(_reset_crosshair)
 
 
 func _reset_crosshair() -> void:
