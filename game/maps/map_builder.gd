@@ -191,16 +191,51 @@ func _build_test_range(width: float) -> Array[Transform3D]:
 		_add_box(Vector3(side * (_half_extent + 0.25), 2.75, 0.0), Vector3(0.5, 5.5, width), _wall_mat, 0.0, "brick")
 	_add_box(Vector3(0.0, 2.75, -_half_extent - 0.25), Vector3(width + 1.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
 	_add_box(Vector3(0.0, 2.75, _half_extent + 0.25), Vector3(width + 1.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
-	var spawn := Vector3(0.0, 0.2, _half_extent - 3.0)
-	_initial_spawns.append(spawn)
-	respawn_points.append(spawn)
-	for lane in [-0.25, 0.0, 0.25]:
-		for fraction in [0.42, 0.0, -0.42]:
-			var target := Vector3(lane * width, 1.35, fraction * width)
-			_add_wood_cover(target, Vector3(1.4, 2.3, 0.12), _wood_mat, 0.32)
-			respawn_points.append(Vector3(target.x, 0.2, target.z + 2.0))
+	var target_mat := _world_mat("planks", Color(0.95, 0.48, 0.14), 0.0, 0.7, 1.0, true)
+	var steel_mat := _container_mat(Color(0.22, 0.32, 0.46))
+	var spawn_positions := [
+		Vector3(0.0, 0.2, 29.0), Vector3(-25.0, 0.2, 25.0), Vector3(25.0, 0.2, 25.0),
+		Vector3(-25.0, 0.2, -25.0), Vector3(25.0, 0.2, -25.0), Vector3(-16.0, 0.2, 29.0),
+		Vector3(16.0, 0.2, 29.0), Vector3(-29.0, 0.2, 8.0), Vector3(29.0, 0.2, 8.0),
+		Vector3(-29.0, 0.2, -10.0), Vector3(29.0, 0.2, -10.0),
+	]
+	for spawn: Vector3 in spawn_positions:
+		_initial_spawns.append(spawn)
+		respawn_points.append(spawn)
+
+	# Three lanes expose short, medium and long-range accuracy without placing targets in one line.
+	for lane_x: float in [-12.0, 0.0, 12.0]:
+		for target_z: float in [18.0, 3.0, -17.0]:
+			var target := Vector3(lane_x, 1.35, target_z)
+			_add_wood_cover(target, Vector3(1.5, 2.4, 0.14), target_mat, 0.32)
+			_add_box(Vector3(lane_x, 1.35, target_z - 1.1), Vector3(2.4, 2.8, 0.32), steel_mat, 0.0, "metal")
+
+	# Left side: wood and steel panels for projectile penetration and ricochet checks.
+	for target_z: float in [12.0, 2.0, -8.0]:
+		_add_wood_cover(Vector3(-25.0, 1.35, target_z), Vector3(3.2, 2.5, 0.18), _wood_mat, 0.32)
+		_add_steel_panel(Vector3(-25.0, 1.35, target_z - 1.0), Vector3(3.2, 2.5, 0.18), steel_mat, 0.0)
+
+	# Right side: a traversal and cover course for sprint, crouch, jump, smoke and grenade practice.
+	for course in [Vector3(24.0, 0.45, 17.0), Vector3(19.0, 0.75, 10.0), Vector3(24.0, 1.05, 3.0)]:
+		_add_box(course, Vector3(4.6, course.y * 2.0, 2.8), _wood_mat, 0.0, "wood")
+	_add_wood_cover(Vector3(20.0, 1.1, -6.0), Vector3(7.0, 2.2, 1.0), _wood_mat, 0.32)
+	_add_wood_cover(Vector3(27.0, 1.1, -14.0), Vector3(1.0, 2.2, 7.0), _wood_mat, 0.32)
+	_add_box(Vector3(20.0, 1.75, -16.0), Vector3(7.0, 0.25, 4.0), steel_mat, 0.0, "metal")
+	_add_box(Vector3(16.7, 0.9, -16.0), Vector3(0.25, 1.8, 4.0), steel_mat, 0.0, "metal")
+	_add_box(Vector3(23.3, 0.9, -16.0), Vector3(0.25, 1.8, 4.0), steel_mat, 0.0, "metal")
+
+	# North side remains open for grenade trajectories and optional bot fights.
+	_add_steel_panel(Vector3(0.0, 1.5, -27.0), Vector3(20.0, 3.0, 0.3), steel_mat, 0.0)
+	_add_wood_cover(Vector3(-8.0, 1.0, -22.0), Vector3(3.0, 2.0, 1.0), _wood_mat, 0.32)
+	_add_wood_cover(Vector3(8.0, 1.0, -22.0), Vector3(3.0, 2.0, 1.0), _wood_mat, 0.32)
+
+	var supplies: Array[Transform3D] = [
+		Transform3D(Basis.IDENTITY, Vector3(-5.0, 0.0, 25.0)),
+		Transform3D(Basis.IDENTITY, Vector3(5.0, 0.0, 25.0)),
+		Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, -22.0)),
+	]
 	_patrol.assign(respawn_points)
-	return []
+	return supplies
 
 
 func _build_small_yard(map_id: int) -> void:

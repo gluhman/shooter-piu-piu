@@ -20,12 +20,12 @@ const Balance := preload("res://game/combat/combat_balance.gd")
 const POSE_INTERVAL: float = 1.0 / Balance.NETWORK.snapshot_hz
 const ARENA_WEATHER := {
 	0: {"hour": 13.0, "wind": Vector2(25, 1.0)},
-	1: {"hour": 9.5, "wind": Vector2(-65, 0.75)},
-	2: {"hour": 16.0, "wind": Vector2(120, 1.2)},
-	MAP.VILLAGE_ID: {"hour": 15.5, "wind": Vector2(-35, 0.9)},
+	1: {"hour": 11.5, "wind": Vector2(-65, 0.75)},
+	2: {"hour": 14.0, "wind": Vector2(120, 1.2)},
+	MAP.VILLAGE_ID: {"hour": 13.0, "wind": Vector2(-35, 0.9)},
 	MAP.DUST2_ID: {"hour": 14.0, "wind": Vector2(-105, 2.0)},
-	MAP.WORKSHOP_ID: {"hour": 15.0, "wind": Vector2(60, 0.8)},
-	MAP.TEST_RANGE_ID: {"hour": 12.0, "wind": Vector2(0, 0.2)},
+	MAP.WORKSHOP_ID: {"hour": 13.5, "wind": Vector2(60, 0.8)},
+	MAP.TEST_RANGE_ID: {"hour": 13.0, "wind": Vector2(0, 0.2)},
 }
 const MIN_RESPAWN_DISTANCE := 12.0
 const DIFFICULTY_NAMES := ["Легко", "Обычно", "Сложно"]
@@ -228,6 +228,10 @@ func arena_width() -> float:
 	if is_instance_valid(_breakwater):
 		return _breakwater.get_arena_bounds().size.x
 	return MAP.SIZE_WIDTHS[map_size]
+
+
+func _selected_map_size(arena: int, size: int) -> int:
+	return MAP.DEFAULT_SIZE if arena == MAP.TEST_RANGE_ID else clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 
 
 func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
@@ -472,7 +476,7 @@ func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limit
 	_set_limits(limits)
 	weapon_set = weapons
 	map_id = arena
-	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
+	map_size = _selected_map_size(arena, size)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	_solo_bot_count = clampi(bot_count, 0, MAX_BOTS)
 	_reserve_bot_slots(_solo_bot_count)
@@ -538,7 +542,7 @@ func _apply_room_rules(weapons: int, arena: int, limits: Vector2i, difficulty: i
 	team_deathmatch = teams
 	weapon_set = clampi(weapons, 0, WEAPON_SET_NAMES.size() - 1)
 	map_id = clampi(arena, 0, MAP_NAMES.size() - 1)
-	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
+	map_size = _selected_map_size(map_id, size)
 	_set_limits(limits)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	lan_bot_count = clampi(bot_count, 0, MAX_BOTS)
@@ -620,7 +624,7 @@ func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: 
 		team_deathmatch = teams
 		weapon_set = weapons
 		map_id = arena
-		map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
+		map_size = _selected_map_size(arena, size)
 		player_slots = roster
 		_set_limits(limits)
 		bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
@@ -674,7 +678,7 @@ func _begin_network_match(weapons: int, arena: int, layout_seed: int, limits: Ve
 	var token := _load_token
 	weapon_set = weapons
 	map_id = arena
-	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
+	map_size = _selected_map_size(arena, size)
 	_set_limits(limits)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	lan_bot_count = bot_count
