@@ -1,0 +1,154 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://levels/breakwater/art/materials/painted_metal_010_color.jpg" id="painted_metal_010_color"]
+[ext_resource type="Texture2D" path="res://levels/breakwater/art/materials/painted_metal_010_normal.jpg" id="painted_metal_010_normal"]
+[ext_resource type="Texture2D" path="res://levels/breakwater/art/materials/painted_metal_010_orm.jpg" id="painted_metal_010_orm"]
+[ext_resource type="Texture2D" path="res://levels/breakwater/art/materials/rusty_metal_sheet_color.jpg" id="rusty_metal_sheet_color"]
+[ext_resource type="Texture2D" path="res://levels/breakwater/art/materials/rusty_metal_sheet_normal.jpg" id="rusty_metal_sheet_normal"]
+[ext_resource type="Texture2D" path="res://levels/breakwater/art/materials/rusty_metal_sheet_orm.jpg" id="rusty_metal_sheet_orm"]
+
+[sub_resource type="ORMMaterial3D" id="cabinet_paint"]
+albedo_color = Color(0.59, 0.39, 0.27, 1)
+albedo_texture = ExtResource("painted_metal_010_color")
+orm_texture = ExtResource("painted_metal_010_orm")
+normal_enabled = true
+normal_scale = 0.28
+normal_texture = ExtResource("painted_metal_010_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(2.1, 2.1, 2.1)
+texture_filter = 5
+
+[sub_resource type="ORMMaterial3D" id="cabinet_frame"]
+albedo_color = Color(0.46, 0.5, 0.48, 1)
+albedo_texture = ExtResource("rusty_metal_sheet_color")
+orm_texture = ExtResource("rusty_metal_sheet_orm")
+normal_enabled = true
+normal_scale = 0.3
+normal_texture = ExtResource("rusty_metal_sheet_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(2.42, 2.42, 2.42)
+texture_filter = 5
+
+[sub_resource type="StandardMaterial3D" id="louvers"]
+albedo_color = Color(0.085, 0.104, 0.107, 1)
+metallic = 0.21
+roughness = 0.74
+
+[sub_resource type="BoxMesh" id="box_0p963x0p957x0p958"]
+size = Vector3(0.963, 0.957, 0.958)
+
+[sub_resource type="BoxMesh" id="box_0p059x0p986x0p046"]
+size = Vector3(0.059, 0.986, 0.046)
+
+[sub_resource type="BoxMesh" id="box_0p452x0p814x0p021"]
+size = Vector3(0.452, 0.814, 0.021)
+
+[sub_resource type="BoxMesh" id="box_0p996x0p063x0p999"]
+size = Vector3(0.996, 0.063, 0.999)
+
+[sub_resource type="BoxMesh" id="box_0p012x0p815x0p003"]
+size = Vector3(0.012, 0.815, 0.003)
+
+[sub_resource type="BoxMesh" id="box_0p296x0p01x0p004"]
+size = Vector3(0.296, 0.01, 0.004)
+
+[sub_resource type="BoxMesh" id="box_0p022x0p148x0p012"]
+size = Vector3(0.022, 0.148, 0.012)
+
+[node name="EquipmentCabinet" type="Node3D"]
+
+[node name="Housing" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0, 0)
+mesh = SubResource("box_0p963x0p957x0p958")
+material_override = SubResource("cabinet_paint")
+
+[node name="Corner0" type="MeshInstance3D" parent="."]
+position = Vector3(-0.468, 0, 0.476)
+mesh = SubResource("box_0p059x0p986x0p046")
+material_override = SubResource("cabinet_frame")
+
+[node name="Door0" type="MeshInstance3D" parent="."]
+position = Vector3(-0.234, 0.025, 0.487)
+mesh = SubResource("box_0p452x0p814x0p021")
+material_override = SubResource("cabinet_paint")
+
+[node name="Corner1" type="MeshInstance3D" parent="."]
+position = Vector3(0.468, 0, 0.476)
+mesh = SubResource("box_0p059x0p986x0p046")
+material_override = SubResource("cabinet_frame")
+
+[node name="Door1" type="MeshInstance3D" parent="."]
+position = Vector3(0.234, 0.025, 0.487)
+mesh = SubResource("box_0p452x0p814x0p021")
+material_override = SubResource("cabinet_paint")
+
+[node name="Rail0" type="MeshInstance3D" parent="."]
+position = Vector3(0, -0.467, 0)
+mesh = SubResource("box_0p996x0p063x0p999")
+material_override = SubResource("cabinet_frame")
+
+[node name="Rail1" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.467, 0)
+mesh = SubResource("box_0p996x0p063x0p999")
+material_override = SubResource("cabinet_frame")
+
+[node name="DoorSeal" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.02, 0.499)
+mesh = SubResource("box_0p012x0p815x0p003")
+material_override = SubResource("louvers")
+cast_shadow = 0
+
+[node name="AirSlot0" type="MeshInstance3D" parent="."]
+position = Vector3(0.225, 0.18, 0.499)
+mesh = SubResource("box_0p296x0p01x0p004")
+material_override = SubResource("louvers")
+cast_shadow = 0
+
+[node name="AirSlot1" type="MeshInstance3D" parent="."]
+position = Vector3(0.225, 0.208, 0.499)
+mesh = SubResource("box_0p296x0p01x0p004")
+material_override = SubResource("louvers")
+cast_shadow = 0
+
+[node name="AirSlot2" type="MeshInstance3D" parent="."]
+position = Vector3(0.225, 0.236, 0.499)
+mesh = SubResource("box_0p296x0p01x0p004")
+material_override = SubResource("louvers")
+cast_shadow = 0
+
+[node name="AirSlot3" type="MeshInstance3D" parent="."]
+position = Vector3(0.225, 0.264, 0.499)
+mesh = SubResource("box_0p296x0p01x0p004")
+material_override = SubResource("louvers")
+cast_shadow = 0
+
+[node name="AirSlot4" type="MeshInstance3D" parent="."]
+position = Vector3(0.225, 0.292, 0.499)
+mesh = SubResource("box_0p296x0p01x0p004")
+material_override = SubResource("louvers")
+cast_shadow = 0
+
+[node name="AirSlot5" type="MeshInstance3D" parent="."]
+position = Vector3(0.225, 0.32, 0.499)
+mesh = SubResource("box_0p296x0p01x0p004")
+material_override = SubResource("louvers")
+cast_shadow = 0
+
+[node name="Handle" type="MeshInstance3D" parent="."]
+position = Vector3(-0.061, 0.001, 0.493)
+mesh = SubResource("box_0p022x0p148x0p012")
+material_override = SubResource("cabinet_frame")
+
+[node name="EquipmentTag" type="Label3D" parent="."]
+position = Vector3(-0.222, 0.2, 0.5)
+rotation = Vector3(0, 0, 0)
+text = "AUX POWER"
+font_size = 38
+pixel_size = 0.0013
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0

@@ -31,6 +31,7 @@ const DEFAULT_SIZE := 2
 const VILLAGE_ID := 3
 const DUST2_ID := 4
 const WORKSHOP_ID := 5
+const BREAKWATER_ID := 6
 
 class Cover:
 	var center: Vector2
@@ -43,7 +44,7 @@ const COLOR_GREEN := Color(0.28, 0.52, 0.34)
 const COLOR_ORANGE := Color(0.95, 0.48, 0.14)
 const COLOR_GREY := Color(0.72, 0.74, 0.72)
 
-const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3"]
+const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9"]
 
 const PATROL_ROUTES := [
 	[
@@ -199,23 +200,42 @@ func _build_small_yard(map_id: int) -> void:
 			_add_crate(Vector3(-3.2, 0.55, 5.1))
 
 
-func minimap_outline() -> Array[PackedVector2Array]:
+func minimap_outline(bounds: Rect2 = Rect2()) -> Array[PackedVector2Array]:
 	var outline: Array[PackedVector2Array] = []
-	for body in get_children():
-		if not body is StaticBody3D:
+	var limited := bounds.has_area()
+	var bodies := find_children("*", "StaticBody3D", limited, false)
+	var to_map := global_transform.affine_inverse()
+	var clip := PackedVector2Array([bounds.position, Vector2(bounds.end.x, bounds.position.y),
+		bounds.end, Vector2(bounds.position.x, bounds.end.y)])
+	for body: StaticBody3D in bodies:
+		if body.collision_layer == 0:
 			continue
 		for collider in body.get_children():
-			if not collider is CollisionShape3D or not collider.shape is BoxShape3D:
+			if not collider is CollisionShape3D or collider.disabled:
 				continue
-			var transform: Transform3D = body.transform * collider.transform
-			var half: Vector3 = collider.shape.size * 0.5
-			if transform.origin.y + half.y <= 0.65 or transform.origin.y - half.y >= 1.4:
-				continue
+			var transform: Transform3D = to_map * collider.global_transform
 			var polygon := PackedVector2Array()
-			for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
-				var point := transform * Vector3(corner.x * half.x, 0.0, corner.y * half.z)
-				polygon.append(Vector2(point.x, point.z))
-			outline.append(polygon)
+			if collider.shape is BoxShape3D:
+				var half: Vector3 = collider.shape.size * 0.5
+				if transform.origin.y + half.y <= 0.65 or transform.origin.y - half.y >= 1.4:
+					continue
+				for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+					var point := transform * Vector3(corner.x * half.x, 0.0, corner.y * half.z)
+					polygon.append(Vector2(point.x, point.z))
+			elif limited and collider.shape is CylinderShape3D:
+				var half_height: float = collider.shape.height * 0.5
+				if transform.origin.y + half_height <= 0.65 or transform.origin.y - half_height >= 1.4:
+					continue
+				for index in 16:
+					var edge := Vector2.from_angle(index * TAU / 16.0) * float(collider.shape.radius)
+					var point := transform * Vector3(edge.x, 0.0, edge.y)
+					polygon.append(Vector2(point.x, point.z))
+			if polygon.is_empty():
+				continue
+			if limited:
+				outline.append_array(Geometry2D.intersect_polygons(polygon, clip))
+			else:
+				outline.append(polygon)
 	return outline
 
 

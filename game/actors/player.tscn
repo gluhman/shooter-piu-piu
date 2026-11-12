@@ -3,9 +3,7 @@
 [ext_resource type="Script" path="res://game/actors/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://game/combat/weapon.gd" id="2_weapon"]
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
-radius = 0.35
-height = 1.7
+[ext_resource type="Shape3D" path="res://game/actors/player_capsule.tres" id="3_capsule"]
 
 [node name="Player" type="CharacterBody3D"]
 floor_snap_length = 0.2
@@ -13,7 +11,7 @@ script = ExtResource("1_player")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 position = Vector3(0, 0.85, 0)
-shape = SubResource("CapsuleShape3D_player")
+shape = ExtResource("3_capsule")
 
 [node name="Camera3D" type="Camera3D" parent="."]
 position = Vector3(0, 1.65, -0.07)

@@ -78,8 +78,8 @@ func detach_local() -> void:
 	hide_host_ip()
 
 
-func set_minimap_layout(map: Node3D, width: float) -> void:
-	_minimap.set_layout(map, width)
+func set_minimap_layout(map: Node3D, width: float, bounds: Rect2 = Rect2()) -> void:
+	_minimap.set_layout(map, width, bounds)
 
 
 func record_minimap_shot(shooter: int, position: Vector3) -> void:

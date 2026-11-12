@@ -36,10 +36,10 @@ func _ready() -> void:
 	set_process(false)
 
 
-func set_layout(map: Node3D, width: float) -> void:
+func set_layout(map: Node3D, width: float, bounds: Rect2 = Rect2()) -> void:
 	_map = map
 	_width = width
-	_outline = map.minimap_outline()
+	_outline = map.minimap_outline(bounds)
 	clear_shots()
 	_layout.queue_redraw()
 

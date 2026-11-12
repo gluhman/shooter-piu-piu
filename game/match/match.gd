@@ -9,6 +9,10 @@ const WEAPON_SCRIPT := preload("res://game/combat/weapon.gd")
 const BOT_SCRIPT := preload("res://game/actors/bot.gd")
 const MAP := preload("res://game/maps/map_builder.gd")
 const MAP_NAMES := MAP.MAP_NAMES
+const BREAKWATER_SCENE := preload("res://levels/breakwater/breakwater_arena.tscn")
+const BREAKWATER := preload("res://levels/breakwater/scripts/arena_controller.gd")
+const PLAYER_CAPSULE := preload("res://game/actors/player_capsule.tres")
+const BREAKWATER_SPAWN_RETRY := 0.25
 const WEAPON_SET_NAMES := ["Любое", "Дробовик и пистолет", "Всё, кроме дробовика"]
 const TIME_LIMITS := [0, 60, 180, 300, 600, 900, 1200, 1800, 3600]
 const KILL_LIMITS := [0, 1, 5, 10, 15, 20, 30, 50, 100]
@@ -34,7 +38,7 @@ var _server_clock_offset := 0.0
 var _server_clock_synced := false
 var team_deathmatch := false
 var _team_score := Vector2i.ZERO
-var _team_bot_slots := PackedInt32Array()
+var _bot_slots := PackedInt32Array()
 var map_id := 0
 var map_size := MAP.DEFAULT_SIZE
 var weapon_set := 0
@@ -67,6 +71,10 @@ var _status_time := 0.0
 var _had_player := false
 var _room_password := ""
 var _owner_token := ""
+var _breakwater: BREAKWATER
+var _spawn_retry_left := 0.0
+
+@onready var _base_environment: Environment = $WorldEnvironment.environment
 
 
 var _round_overview: Node3D
@@ -101,6 +109,12 @@ func _ready() -> void:
 
 
 func _apply_graphics() -> void:
+	if is_instance_valid(_breakwater):
+		_breakwater.get_node("Sun").shadow_enabled = GameSettings.shadows
+		_breakwater.get_node("WorldEnvironment").environment.ssao_enabled = GameSettings.ambient_occlusion
+		for light in get_tree().get_nodes_in_group(&"breakwater_shadow_lights"):
+			light.shadow_enabled = GameSettings.shadows
+		return
 	$WorldEnvironment/SunLight.shadow_enabled = GameSettings.shadows
 	$WorldEnvironment/SunLight.directional_shadow_max_distance = GameSettings.shadow_distance
 	$WorldEnvironment/SunLight.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS \
@@ -205,10 +219,14 @@ func combatant(id: int) -> Node:
 
 
 func arena_width() -> float:
+	if is_instance_valid(_breakwater):
+		return _breakwater.get_arena_bounds().size.x
 	return MAP.SIZE_WIDTHS[map_size]
 
 
 func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
+	if is_instance_valid(_breakwater):
+		return _choose_breakwater_spawn(actor.slot, actor, previous)
 	var enemies: Array[Node3D] = []
 	for group in [&"player", &"bot"]:
 		for fighter in get_tree().get_nodes_in_group(group):
@@ -249,6 +267,22 @@ func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
 	return best
 
 
+func _choose_breakwater_spawn(slot: int, actor: CharacterBody3D = null,
+		previous: Vector3 = Vector3.INF) -> Vector3:
+	var occupied: Array[Node3D] = []
+	var enemies: Array[Node3D] = []
+	for fighter in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
+		if fighter == actor or fighter.get_parent() != self or fighter.health <= 0:
+			continue
+		occupied.append(fighter)
+		if fighter.control_enabled and (not team_deathmatch or fighter.team_id() != slot % 2):
+			enemies.append(fighter)
+	var team := ("a" if slot % 2 == 0 else "b") if team_deathmatch else "ffa"
+	var excluded := actor.get_rid() if actor else RID()
+	return _breakwater.select_spawn(team, PLAYER_CAPSULE, 1.65, enemies, occupied, excluded,
+		Balance.WORLD_MASK, Balance.WORLD_AND_CAPSULES, previous)
+
+
 func can_restart() -> bool:
 	if not _started or Net.dedicated:
 		return false
@@ -275,6 +309,10 @@ func start_next_map(arena: int) -> void:
 		return
 	if not round_finished():
 		return
+	await _start_round_on_map(arena)
+
+
+func _start_round_on_map(arena: int) -> void:
 	if Net.active:
 		_map_revision += 1
 		for peer in _ready_peers:
@@ -317,6 +355,11 @@ func _clear_match_map() -> void:
 	$Grenades.reset_round()
 	$Loot.clear_map()
 	$Map.clear_map()
+	if is_instance_valid(_breakwater):
+		_breakwater = null
+		$WorldEnvironment.environment = _base_environment
+		$WorldEnvironment/SunLight.show()
+		$WorldEnvironment/MoonLight.show()
 	if is_instance_valid(_navigation_region):
 		remove_child(_navigation_region)
 		_navigation_region.queue_free()
@@ -325,6 +368,7 @@ func _clear_match_map() -> void:
 	_final_rows = []
 	_pose_time = 0.0
 	_cloud_time = 0.0
+	_spawn_retry_left = 0.0
 
 
 func restart_round() -> void:
@@ -334,6 +378,10 @@ func restart_round() -> void:
 		net_request_restart.rpc_id(1)
 		return
 	if not _started or not (Net.solo or (Net.active and multiplayer.is_server())):
+		return
+	if map_id == MAP.BREAKWATER_ID:
+		if not is_loading():
+			await _start_round_on_map(map_id)
 		return
 	for peer in _ready_peers:
 		net_restart.rpc_id(peer)
@@ -403,10 +451,11 @@ func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limit
 	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	_solo_bot_count = clampi(bot_count, 1, MAX_BOTS)
-	_reserve_team_bot_slots(_solo_bot_count)
+	_reserve_bot_slots(_solo_bot_count)
 	await _load_arena(randi(), _solo_bot_count, bot_difficulty)
 	_started = true
-	_spawn_player(1, 0)
+	if map_id != MAP.BREAKWATER_ID:
+		_spawn_player(1, 0)
 	await _finish_loading()
 
 
@@ -447,13 +496,13 @@ func start_host_match() -> void:
 		if peer > 1:
 			net_wait_for_arena.rpc_id(peer)
 	_layout_seed = randi()
-	_reserve_team_bot_slots(lan_bot_count)
+	_reserve_bot_slots(lan_bot_count)
 	await _begin_network_match(weapon_set, map_id, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, map_size)
 	if token != _load_token or _reloading or not Net.active:
 		return
 	for peer in player_slots:
 		if peer > 1:
-			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size, team_deathmatch, _team_bot_slots)
+			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size, team_deathmatch, _bot_slots)
 	if not Net.dedicated and player_slots.count(0) == Net.MAX_PLAYERS - 1:
 		$HUD.show_host_ip(Net.lan_addresses())
 	if Net.dedicated:
@@ -464,7 +513,7 @@ func start_host_match() -> void:
 func _apply_room_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
 	team_deathmatch = teams
 	weapon_set = clampi(weapons, 0, WEAPON_SET_NAMES.size() - 1)
-	map_id = clampi(arena, 0, mini(MAP_NAMES.size(), ARENA_HOURS.size()) - 1)
+	map_id = clampi(arena, 0, MAP_NAMES.size() - 1)
 	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 	_set_limits(limits)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
@@ -586,7 +635,7 @@ func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: 
 		return
 	player_slots = roster
 	team_deathmatch = teams
-	_team_bot_slots = bot_slots
+	_bot_slots = bot_slots
 	_show_loading()
 	await _begin_network_match(weapons, arena, layout_seed, limits, difficulty, bot_count, size)
 	if not _reloading and Net.active:
@@ -609,9 +658,10 @@ func _begin_network_match(weapons: int, arena: int, layout_seed: int, limits: Ve
 	if not _load_current(token):
 		return
 	_started = true
-	for slot in player_slots.size():
-		if player_slots[slot] != 0:
-			_spawn_player(player_slots[slot], slot)
+	if map_id != MAP.BREAKWATER_ID:
+		for slot in player_slots.size():
+			if player_slots[slot] != 0:
+				_spawn_player(player_slots[slot], slot)
 	await _finish_loading()
 
 
@@ -639,7 +689,8 @@ func _load_arena(layout_seed: int, bot_count: int, difficulty: int, token: int =
 	await _loading_stage("Подгружаем текстуры…")
 	if token >= 0 and not _load_current(token):
 		return
-	await $Map.preload_textures(map_id)
+	if map_id != MAP.BREAKWATER_ID:
+		await $Map.preload_textures(map_id)
 	if token >= 0 and not _load_current(token):
 		return
 	await _loading_stage("Собираем карту…")
@@ -652,7 +703,8 @@ func _load_arena(layout_seed: int, bot_count: int, difficulty: int, token: int =
 	if token >= 0 and not _load_current(token):
 		return
 	await _loading_stage("Готовим бойцов…")
-	await _spawn_bots(bot_count, difficulty, token)
+	if map_id != MAP.BREAKWATER_ID:
+		await _spawn_bots(bot_count, difficulty, token)
 	while _navigation_pending and not _reloading and (token < 0 or _load_current(token)):
 		await get_tree().process_frame
 
@@ -677,9 +729,12 @@ func _finish_loading() -> void:
 	_loading = false
 	GameSettings.set_match_audio_enabled(true)
 	_reset_clock()
-	$HUD/Lobby.hide_lobby()
-	_play_ambience()
-	$HUD/WeaponSelect.show_select()
+	if map_id == MAP.BREAKWATER_ID and not combatant(Net.local_id()):
+		$HUD/Lobby.set_loading_stage("Ожидаем безопасную точку появления…")
+	else:
+		$HUD/Lobby.hide_lobby()
+		_play_ambience()
+		$HUD/WeaponSelect.show_select()
 
 
 func _play_ambience() -> void:
@@ -691,17 +746,28 @@ func _play_ambience() -> void:
 
 
 func _build_arena(layout_seed: int) -> void:
-	$WorldEnvironment.current_time = ARENA_HOURS[map_id]
-	var wind: Vector2 = ARENA_WIND[map_id]
-	$WorldEnvironment.wind_direction = deg_to_rad(wind.x)
-	$WorldEnvironment.wind_speed = wind.y
+	if map_id == MAP.BREAKWATER_ID:
+		$WorldEnvironment.environment = null
+		$WorldEnvironment/SunLight.hide()
+		$WorldEnvironment/MoonLight.hide()
+		_breakwater = BREAKWATER_SCENE.instantiate()
+		$Map.add_child(_breakwater)
+		_breakwater.apply_layout(map_size)
+		$Loot.build_crates(_breakwater.get_supply_placements())
+	else:
+		$WorldEnvironment.current_time = ARENA_HOURS[map_id]
+		var wind: Vector2 = ARENA_WIND[map_id]
+		$WorldEnvironment.wind_direction = deg_to_rad(wind.x)
+		$WorldEnvironment.wind_speed = wind.y
+		$Loot.build_crates($Map.build(map_id, layout_seed, arena_width()))
 	_apply_graphics()
-	$Loot.build_crates($Map.build(map_id, layout_seed, arena_width()))
 	if not Net.dedicated:
-		$HUD.set_minimap_layout($Map, arena_width())
+		var bounds := _breakwater.get_arena_bounds() if is_instance_valid(_breakwater) else Rect2()
+		$HUD.set_minimap_layout($Map, maxf(arena_width(), bounds.size.y), bounds)
 	if not Net.active or multiplayer.is_server():
 		var mesh := NavigationMesh.new()
 		mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+		mesh.geometry_collision_mask = Balance.WORLD_MASK
 		var village := map_id == MAP.VILLAGE_ID
 		mesh.cell_size = 0.25 if village else 0.20
 		mesh.cell_height = 0.1
@@ -710,7 +776,11 @@ func _build_arena(layout_seed: int) -> void:
 		mesh.agent_max_climb = 0.1
 		mesh.filter_walkable_low_height_spans = true
 		var width := arena_width()
-		if map_id == MAP.DUST2_ID:
+		if is_instance_valid(_breakwater):
+			var bounds := _breakwater.get_arena_bounds()
+			mesh.filter_baking_aabb = AABB(Vector3(bounds.position.x, -0.5, bounds.position.y),
+				Vector3(bounds.size.x, 4.5, bounds.size.y))
+		elif map_id == MAP.DUST2_ID:
 			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -3.0, -width * 0.5), Vector3(width, 7.5, width))
 		else:
 			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -0.5, -width * 0.5), Vector3(width, 2.8, width))
@@ -762,7 +832,7 @@ func net_clock(seconds: int) -> void:
 	_display_seconds = seconds
 	var limit: int = TIME_LIMITS[time_option]
 	$HUD.show_round_status(seconds, limit > 0, KILL_LIMITS[kill_option])
-	if limit > 0:
+	if limit > 0 and map_id != MAP.BREAKWATER_ID:
 		var elapsed := clampi(limit - seconds, 0, limit)
 		var sky_hour := float(ARENA_HOURS[map_id]) + float(elapsed - elapsed % 15) / 1500.0
 		if not is_equal_approx($WorldEnvironment.current_time, sky_hour):
@@ -827,9 +897,9 @@ func _on_host_lost() -> void:
 		_finish_round("Хост отключился")
 
 
-func _reserve_team_bot_slots(count: int) -> void:
-	_team_bot_slots.clear()
-	if not team_deathmatch:
+func _reserve_bot_slots(count: int) -> void:
+	_bot_slots.clear()
+	if not team_deathmatch and map_id != MAP.BREAKWATER_ID:
 		return
 	var open_slots: Array[PackedInt32Array] = [PackedInt32Array(), PackedInt32Array()]
 	var team_sizes := Vector2i.ZERO
@@ -843,37 +913,48 @@ func _reserve_team_bot_slots(count: int) -> void:
 		var team := 0 if team_sizes.x <= team_sizes.y else 1
 		if open_slots[team].is_empty():
 			team = 1 - team
-		_team_bot_slots.append(open_slots[team][0])
+		_bot_slots.append(open_slots[team][0])
 		open_slots[team].remove_at(0)
 		team_sizes[team] += 1
 
 
 func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
 	if team_deathmatch:
-		count = _team_bot_slots.size()
+		count = _bot_slots.size()
 	for index in count:
 		if token >= 0 and not _load_current(token):
 			return
-		if team_deathmatch and player_slots[_team_bot_slots[index]] != 0:
+		if team_deathmatch and player_slots[_bot_slots[index]] != 0:
 			continue
-		var bot := PLAYER_SCENE.instantiate()
-		bot.set_script(BOT_SCRIPT)
-		bot.name = "Bot%d" % index
-		bot.combatant_id = -index
-		if team_deathmatch:
-			bot.slot = _team_bot_slots[index]
+		var slot := _bot_slots[index] if team_deathmatch else 0
 		var team_start := team_deathmatch and map_id == MAP.WORKSHOP_ID and arena_width() >= 40.0
-		var spawn_index: int = bot.slot if team_start else Net.MAX_PLAYERS + index
-		bot.position = $Map.initial_spawn(spawn_index)
-		bot.spawn_position = bot.position
-		bot.patrol_route = $Map.patrol_route()
-		bot.difficulty = difficulty
-		bot.floor_snap_length = 0.2
-		add_child(bot)
+		var spawn_index := slot if team_start else Net.MAX_PLAYERS + index
+		var bot := _add_bot(index, slot, difficulty, $Map.initial_spawn(spawn_index))
 		if not Net.active or multiplayer.is_server():
 			bot.equip(random_weapon())
 		if index % 2 == 1 and index + 1 < count:
 			await get_tree().process_frame
+
+
+func _add_bot(index: int, slot: int, difficulty: int, at: Vector3) -> Node:
+	var bot := PLAYER_SCENE.instantiate()
+	bot.set_script(BOT_SCRIPT)
+	bot.name = "Bot%d" % index
+	bot.combatant_id = -index
+	bot.slot = slot
+	bot.position = at
+	bot.spawn_position = at
+	if is_instance_valid(_breakwater):
+		var route: Array[Vector3] = []
+		for marker in _breakwater.get_spawn_candidates():
+			route.append(_breakwater.spawn_feet(marker))
+		bot.patrol_route = route
+	else:
+		bot.patrol_route = $Map.patrol_route()
+	bot.difficulty = difficulty
+	bot.floor_snap_length = 0.2
+	add_child(bot)
+	return bot
 
 
 func same_team(first: int, second: int) -> bool:
@@ -943,9 +1024,9 @@ func net_frag(killer_id: int, victim_id: int) -> void:
 	$HUD.on_frag(killer_id, victim_id)
 
 
-func _spawn_player(peer_id: int, slot: int) -> void:
+func _spawn_player(peer_id: int, slot: int, at: Vector3 = Vector3.INF) -> void:
 	if team_deathmatch:
-		var index := _team_bot_slots.find(slot)
+		var index := _bot_slots.find(slot)
 		var bot := get_node_or_null("Bot%d" % index) if index >= 0 else null
 		if bot:
 			$HUD.remove_score(bot.combatant_id)
@@ -955,7 +1036,7 @@ func _spawn_player(peer_id: int, slot: int) -> void:
 	player.name = str(peer_id)
 	player.slot = slot
 	player.set_multiplayer_authority(peer_id, true)
-	player.spawn_position = $Map.initial_spawn(slot)
+	player.spawn_position = at if at.is_finite() else $Map.initial_spawn(slot)
 	player.position = player.spawn_position
 	add_child(player)
 	if not Net.active or player.is_multiplayer_authority():
@@ -969,6 +1050,44 @@ func _spawn_player(peer_id: int, slot: int) -> void:
 	$HUD.refresh_score()
 
 
+func _spawn_breakwater_fighters() -> void:
+	# Process players before bots. Unarmed players reserve a capsule but cannot threaten a spawn.
+	for slot in player_slots.size():
+		var id := player_slots[slot]
+		if id == 0 or combatant(id) or (id != 1 and not _ready_peers.has(id)):
+			continue
+		var at := _choose_breakwater_spawn(slot)
+		if at.is_finite():
+			_spawn_player(id, slot, at)
+			_send_breakwater_spawn(id, slot, at)
+	var new_bots: Array[Node] = []
+	for index in _bot_slots.size():
+		var slot := _bot_slots[index]
+		if slot < 0 or player_slots[slot] != 0 or combatant(-index):
+			continue
+		var at := _choose_breakwater_spawn(slot)
+		if at.is_finite():
+			new_bots.append(_add_bot(index, slot, bot_difficulty, at))
+			_send_breakwater_spawn(-index, slot, at)
+	for bot in new_bots:
+		bot.equip(random_weapon())
+
+
+func _send_breakwater_spawn(id: int, slot: int, at: Vector3) -> void:
+	for peer in _ready_peers:
+		net_breakwater_spawn.rpc_id(peer, _map_revision, id, slot, at)
+
+
+@rpc("authority", "reliable")
+func net_breakwater_spawn(revision: int, id: int, slot: int, at: Vector3) -> void:
+	if revision != _map_revision or not is_instance_valid(_breakwater) or combatant(id):
+		return
+	if id > 0:
+		_spawn_player(id, slot, at)
+	else:
+		_add_bot(-id, slot, bot_difficulty, at)
+
+
 func _physics_process(delta: float) -> void:
 	if Net.match_server:
 		_status_time += delta
@@ -977,7 +1096,12 @@ func _physics_process(delta: float) -> void:
 			_write_room_status()
 	if not _started or _loading or round_finished():
 		return
-	if not Net.dedicated:
+	if is_instance_valid(_breakwater) and (not Net.active or multiplayer.is_server()):
+		_spawn_retry_left -= delta
+		if _spawn_retry_left <= 0.0:
+			_spawn_retry_left = BREAKWATER_SPAWN_RETRY
+			_spawn_breakwater_fighters()
+	if not Net.dedicated and map_id != MAP.BREAKWATER_ID:
 		_cloud_time += delta
 		if _cloud_time >= 0.2:
 			$WorldEnvironment/SkyDome.process_tick(_cloud_time)
@@ -1173,7 +1297,7 @@ func _welcome(id: int) -> void:
 		print("Подключился игрок %d. В комнате %d." % [id, _connected_players()])
 	if _started:
 		_send_slot(slot, id, id)
-		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size, team_deathmatch, _team_bot_slots)
+		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size, team_deathmatch, _bot_slots)
 	else:
 		_send_room_state()
 
@@ -1186,6 +1310,9 @@ func net_ready(revision: int) -> void:
 	# Gameplay RPCs can target this guest once it has built the match scene.
 	_ready_peers.append(id)
 	net_display_names.rpc_id(id, _display_names)
+	if is_instance_valid(_breakwater):
+		for actor in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
+			net_breakwater_spawn.rpc_id(id, _map_revision, actor.score_id(), actor.slot, actor.global_position)
 	for bot in get_tree().get_nodes_in_group("bot"):
 		bot.send_status_to(id)
 	$Map.send_bullet_holes(id)
@@ -1316,9 +1443,21 @@ func _set_slot(slot: int, id: int) -> void:
 	if not _started:
 		return
 	if previous != 0:
-		var player := get_node(str(previous))
-		remove_child(player)
-		player.queue_free()
-		$HUD.remove_score(previous)
-	if id != 0:
+		var player := get_node_or_null(str(previous))
+		if player:
+			remove_child(player)
+			player.queue_free()
+			$HUD.remove_score(previous)
+	if id == 0:
+		return
+	if is_instance_valid(_breakwater):
+		var index := _bot_slots.find(slot)
+		if index >= 0:
+			_bot_slots[index] = -1
+			var bot := combatant(-index)
+			if bot:
+				remove_child(bot)
+				bot.queue_free()
+				$HUD.remove_score(-index)
+	else:
 		_spawn_player(id, slot)

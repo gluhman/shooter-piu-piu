@@ -848,8 +848,12 @@ func _request_respawn() -> void:
 	_respawn_timer = null
 	if get_parent().round_finished():
 		return
-	var id := _next_respawn_weapon()
 	var at: Vector3 = get_parent().choose_respawn(self, _last_spawn_position)
+	if not at.is_finite():
+		_respawn_timer = get_tree().create_timer(0.25, false, true)
+		_respawn_timer.timeout.connect(_request_respawn)
+		return
+	var id := _next_respawn_weapon()
 	var revision := _spawn_revision + 1
 	for peer in get_parent().match_peers():
 		net_respawn.rpc_id(peer, id, at, revision)

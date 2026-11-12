@@ -58,6 +58,11 @@ fi
 
 build_dir="$project_dir/.shooter-build"
 output="$project_dir/Shooter.app"
+local_template="$(dirname "$project_dir")/macos-4.7.2.stable.zip"
+if [[ -r "$local_template" ]]; then
+    output="$(dirname "$project_dir")/Builds/Shooter.app"
+fi
+mkdir -p "$(dirname "$output")"
 backup="$build_dir/previous.app"
 mkdir "$build_dir" || fail "Не удалось создать $build_dir. Проверь, идёт ли другая сборка."
 
@@ -78,6 +83,11 @@ snapshot="$build_dir/project"
 mkdir "$snapshot"
 rsync -a "$project_dir/assets" "$project_dir/game" "$project_dir/project.godot" \
     "$project_dir/default_bus_layout.tres" "$project_dir/export_presets.cfg" "$snapshot/"
+rsync -a "$project_dir/levels" "$snapshot/"
+if [[ -r "$local_template" ]]; then
+    ln -s "$local_template" "$build_dir/$(basename "$local_template")"
+    sed -i '' '1,/^\[preset\.1\]$/s|^custom_template/release=""$|custom_template/release="res://../macos-4.7.2.stable.zip"|' "$snapshot/export_presets.cfg"
+fi
 mkdir "$snapshot/addons"
 for addon in sky_3d spatial_audio_3d hit_reactions_lite pyrolux_fx godot_mcp_toolkit \
     phantom_camera; do

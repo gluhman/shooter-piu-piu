@@ -283,6 +283,7 @@ func refresh_room() -> void:
 		_kill_limit.select(game.kill_option)
 		_difficulty.select(game.bot_difficulty)
 		_lan_bots.select(game.lan_bot_count)
+	_refresh_map_size_labels()
 	var local := Net.local_id()
 	var connected_count: int = Net.MAX_PLAYERS - game.player_slots.count(0)
 	_roster_title.text = "Игроки  %d / %d" % [connected_count, Net.MAX_PLAYERS]
@@ -444,15 +445,13 @@ func _show_room(screen: Screen) -> void:
 
 	var game := _match()
 	_map = _options(game.MAP_NAMES, game.map_id)
-	var size_labels: Array = []
-	for index in game.MAP.SIZE_WIDTHS.size():
-		var width: float = game.MAP.SIZE_WIDTHS[index]
-		size_labels.append("%s · %d × %d м" % [game.MAP.SIZE_NAMES[index], width, width])
-	_map_size = _options(size_labels, game.map_size)
+	_map_size = _options(game.MAP.SIZE_NAMES, game.map_size)
 	_first_action = _map
 	_weapons = _options(game.WEAPON_SET_NAMES, game.weapon_set)
 	UI.row(rules, "Карта", _map)
 	UI.row(rules, "Размер карты", _map_size)
+	_map.item_selected.connect(func(_index: int) -> void: _refresh_map_size_labels())
+	_refresh_map_size_labels()
 	UI.row(rules, "Набор оружия", _weapons)
 	_mode = _options(["Каждый за себя", "Командный бой 5 на 5"], int(game.team_deathmatch))
 	UI.row(rules, "Режим", _mode)
@@ -595,6 +594,18 @@ func _save_display_name() -> void:
 		return
 	_match().set_local_display_name(_display_name.text)
 	_display_name.text = Net.display_name
+
+
+func _refresh_map_size_labels() -> void:
+	var game := _match()
+	for index in _map_size.item_count:
+		var label: String = game.MAP.SIZE_NAMES[index]
+		if _map.selected == game.MAP.BREAKWATER_ID:
+			var dimensions: Vector2 = game.BREAKWATER.SIZE_BOUNDS[index].size
+			_map_size.set_item_text(index, "%s · %.1f × %.1f м" % [label, dimensions.x, dimensions.y])
+		else:
+			var width: float = game.MAP.SIZE_WIDTHS[index]
+			_map_size.set_item_text(index, "%s · %d × %d м" % [label, width, width])
 
 
 func _on_rules_changed(_index: int) -> void:
