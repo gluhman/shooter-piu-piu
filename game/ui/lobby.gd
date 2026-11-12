@@ -468,7 +468,7 @@ func _show_room(screen: Screen) -> void:
 
 	if solo:
 		var bots := SpinBox.new()
-		bots.min_value = 1
+		bots.min_value = 0
 		bots.max_value = 10
 		bots.step = 1
 		bots.custom_minimum_size.x = 92

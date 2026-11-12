@@ -32,6 +32,7 @@ const VILLAGE_ID := 3
 const DUST2_ID := 4
 const WORKSHOP_ID := 5
 const BREAKWATER_ID := 6
+const TEST_RANGE_ID := 7
 
 class Cover:
 	var center: Vector2
@@ -44,7 +45,7 @@ const COLOR_GREEN := Color(0.28, 0.52, 0.34)
 const COLOR_ORANGE := Color(0.95, 0.48, 0.14)
 const COLOR_GREY := Color(0.72, 0.74, 0.72)
 
-const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9"]
+const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон"]
 
 const PATROL_ROUTES := [
 	[
@@ -143,6 +144,8 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 		var supplies := dust2.build(width)
 		_patrol = dust2.patrol_route()
 		return supplies
+	if map_id == TEST_RANGE_ID:
+		return _build_test_range(width)
 
 	_build_spawn_ring(_half_extent - (2.25 if width == 70.0 else 1.35))
 	var spacing := 2.8 if width == 20.0 else 5.6
@@ -179,6 +182,25 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	else:
 		_patrol.assign(respawn_points)
 	return crates
+
+
+func _build_test_range(width: float) -> Array[Transform3D]:
+	_load_textures()
+	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(width + 2.0, 0.5, width + 2.0), _floor_mat)
+	for side in [-1.0, 1.0]:
+		_add_box(Vector3(side * (_half_extent + 0.25), 2.75, 0.0), Vector3(0.5, 5.5, width), _wall_mat, 0.0, "brick")
+	_add_box(Vector3(0.0, 2.75, -_half_extent - 0.25), Vector3(width + 1.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
+	_add_box(Vector3(0.0, 2.75, _half_extent + 0.25), Vector3(width + 1.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
+	var spawn := Vector3(0.0, 0.2, _half_extent - 3.0)
+	_initial_spawns.append(spawn)
+	respawn_points.append(spawn)
+	for lane in [-0.25, 0.0, 0.25]:
+		for fraction in [0.42, 0.0, -0.42]:
+			var target := Vector3(lane * width, 1.35, fraction * width)
+			_add_wood_cover(target, Vector3(1.4, 2.3, 0.12), _wood_mat, 0.32)
+			respawn_points.append(Vector3(target.x, 0.2, target.z + 2.0))
+	_patrol.assign(respawn_points)
+	return []
 
 
 func _build_small_yard(map_id: int) -> void:

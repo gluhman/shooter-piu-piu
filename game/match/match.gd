@@ -18,9 +18,9 @@ const TIME_LIMITS := [0, 60, 180, 300, 600, 900, 1200, 1800, 3600]
 const KILL_LIMITS := [0, 1, 5, 10, 15, 20, 30, 50, 100]
 const Balance := preload("res://game/combat/combat_balance.gd")
 const POSE_INTERVAL: float = 1.0 / Balance.NETWORK.snapshot_hz
-const ARENA_HOURS := [13.0, 9.5, 16.0, 15.5, 14.0, 15.0]
+const ARENA_HOURS := [13.0, 9.5, 16.0, 15.5, 14.0, 15.0, 12.0]
 const ARENA_WIND := [Vector2(25, 1.0), Vector2(-65, 0.75), Vector2(120, 1.2),
-	Vector2(-35, 0.9), Vector2(-105, 2.0), Vector2(60, 0.8)]
+	Vector2(-35, 0.9), Vector2(-105, 2.0), Vector2(60, 0.8), Vector2(0, 0.2)]
 const MIN_RESPAWN_DISTANCE := 12.0
 const DIFFICULTY_NAMES := ["Легко", "Обычно", "Сложно"]
 const WEAPON_SETS := [
@@ -339,7 +339,7 @@ func _start_round_on_map(arena: int) -> void:
 		map_id = arena
 		await start_host_match()
 	else:
-		var bot_count := _solo_bot_count if Net.solo else maxi(1, lan_bot_count)
+	var bot_count := _solo_bot_count if Net.solo else lan_bot_count
 		_clear_match_map()
 		await start_solo(bot_count, bot_difficulty, weapon_set, arena, Vector2i(time_option, kill_option), map_size, team_deathmatch)
 
@@ -468,7 +468,7 @@ func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limit
 	map_id = arena
 	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
-	_solo_bot_count = clampi(bot_count, 1, MAX_BOTS)
+	_solo_bot_count = clampi(bot_count, 0, MAX_BOTS)
 	_reserve_bot_slots(_solo_bot_count)
 	await _load_arena(randi(), _solo_bot_count, bot_difficulty)
 	_started = true

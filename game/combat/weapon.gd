@@ -4,6 +4,7 @@ const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
 const Classic := preload("res://game/combat/classic_weapons.gd")
 const WeaponHud := preload("res://game/ui/weapon_hud.gd")
 const Balance := preload("res://game/combat/combat_balance.gd")
+const MAP := preload("res://game/maps/map_builder.gd")
 const DEAGLE_MODEL := preload("res://assets/weapon_models/pistol.glb")
 const SHOTGUN_MESH := preload("res://assets/shotgun/Shotgun.obj")
 const SHOTGUN_DIFFUSE := preload("res://assets/shotgun/Sg_Diffuse.png")
@@ -227,6 +228,11 @@ func ammo_counts() -> Vector2i:
 
 func reserve_space() -> int:
 	return _player.ammo_capacity(_weapon_id) - _reserve if _active else 0
+
+
+func _has_infinite_reserve() -> bool:
+	var match := _player.get_parent()
+	return is_instance_valid(match) and match.map_id == MAP.TEST_RANGE_ID
 
 
 func add_reserve(amount: int) -> int:
@@ -751,7 +757,8 @@ func _insert_loaded_shells() -> void:
 	_shells_inserted = inserted
 	if _player._is_local() or _player._server_rules():
 		_mag += count
-		_reserve -= count
+		if not _has_infinite_reserve():
+			_reserve -= count
 	var insert_sound: AudioStream = Classic.reload_sound("lever") if _weapon_id == "lever" else _shell_insert
 	if _player._is_local():
 		_play_on(_reload_player, insert_sound, -5.0, true)
@@ -764,7 +771,8 @@ func _insert_loaded_shells() -> void:
 func _finish_reload() -> void:
 	if (_player._is_local() or _player._server_rules()) and not _loads_one_round():
 		_mag += _reload_units
-		_reserve -= _reload_units
+		if not _has_infinite_reserve():
+			_reserve -= _reload_units
 	_reloading = false
 	_reload_sound_delay = 0.0
 	_reset_reload_pose()
