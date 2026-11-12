@@ -73,8 +73,25 @@ func grenade_effect(at: Vector3, flash: bool, radius: float, launcher: bool) -> 
 	_effects.grenade_burst(at, flash, radius, launcher)
 
 
-func play_explosion_sound(clip: AudioStream, at: Vector3, gain: float, reach: float) -> void:
-	_effects.play_combat_sound(clip, at, gain, reach, &"Explosions")
+func report_glass_shatter(at: Vector3, normal: Vector3) -> void:
+	# Keep the existing impact format so older clients can still play the effect.
+	_report_impact(at, normal, "glass", "ak47", 0, false, 1.0, false, false)
+
+
+func shatter_glass(hit: Dictionary) -> bool:
+	var collider := hit.get("collider") as Node
+	if not collider or not collider.has_meta(&"village_glass"):
+		return false
+	var normal: Vector3 = hit.normal
+	if normal.is_zero_approx():
+		normal = (collider as Node3D).global_basis.z
+	collider.get_parent().shatter(collider.get_meta(&"village_glass"), hit.position, normal)
+	return true
+
+
+func play_explosion_sound(clip: AudioStream, at: Vector3, gain: float, reach: float,
+		occlusion_floor_hz: int = 120) -> void:
+	_effects.play_combat_sound(clip, at, gain, reach, &"Explosions", occlusion_floor_hz)
 
 
 func muzzle_effect(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio: bool) -> void:
@@ -437,14 +454,14 @@ func _ray(space: PhysicsDirectSpaceState3D, query: PhysicsRayQueryParameters3D, 
 
 
 func _impact(hit: Dictionary, direction: Vector3, shot: Dictionary, distance: float, damage_scale: float, force: float) -> void:
+	if shatter_glass(hit):
+		return
 	var collider := hit.collider as Node
 	var surface: String = collider.get_meta(&"impact_surface", "concrete") if collider else "concrete"
 	var damage := Balance.ranged_damage(shot.stats, distance) * damage_scale
 	var damaged := false
 	var headshot := false
 	var at: Vector3 = hit.position
-	if collider and collider.has_meta(&"village_glass"):
-		collider.get_parent().shatter(collider.get_meta(&"village_glass"))
 	if collider and collider.has_meta(&"hit_zone"):
 		var victim := collider.get_parent().get_parent()
 		var before: float = victim.health
@@ -455,7 +472,7 @@ func _impact(hit: Dictionary, direction: Vector3, shot: Dictionary, distance: fl
 		damaged = victim.health < before
 		headshot = damaged and zone == "head"
 	var normal: Vector3 = hit.normal if not hit.normal.is_zero_approx() else -direction
-	_report_impact(at, normal, surface, shot.profile, shot.shooter, damaged, force, headshot, surface != "glass")
+	_report_impact(at, normal, surface, shot.profile, shot.shooter, damaged, force, headshot)
 
 
 func _report_impact(at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int,

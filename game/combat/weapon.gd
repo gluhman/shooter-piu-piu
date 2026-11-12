@@ -386,7 +386,7 @@ func _physics_process(delta: float) -> void:
 		return
 	var origin: Vector3 = _player.current_shot_transform(_camera.global_transform).origin
 	var hit: Dictionary = _ballistics.combat_ray(_player, origin, origin + bore * float(_stats.range))
-	if hit.is_empty() or not hit.collider.has_meta(&"hit_zone"):
+	if hit.is_empty() or _ballistics.shatter_glass(hit) or not hit.collider.has_meta(&"hit_zone"):
 		return
 	var victim: Node3D = hit.collider.get_parent().get_parent()
 	var previous_health: float = victim.health

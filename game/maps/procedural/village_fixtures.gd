@@ -171,7 +171,8 @@ func _toggle_door(id: int) -> void:
 		if not get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty():
 			return
 	_apply_door(door, not door.opened)
-	_send_change(false, id, door.opened)
+	for peer in _match.match_peers():
+		net_fixture.rpc_id(peer, _match._map_revision, false, id, door.opened)
 
 
 func open_door_on_path(from: Vector3, next: Vector3) -> void:
@@ -200,22 +201,44 @@ func window_jump_speed(feet: Vector3, direction: Vector3, actor_height: float) -
 	return 0.0
 
 
-func shatter(id: int) -> void:
+func shatter(id: int, at: Vector3, normal: Vector3) -> void:
 	if (multiplayer.has_multiplayer_peer() and not multiplayer.is_server()) or _windows[id].broken:
 		return
 	_break_window(_windows[id])
-	_send_change(true, id, true)
+	for peer in _match.match_peers():
+		net_fixture.rpc_id(peer, _match._map_revision, true, id, true)
+	_match.get_node("Ballistics").report_glass_shatter(at, normal)
+
+
+func shatter_near(at: Vector3, radius: float, space: PhysicsDirectSpaceState3D) -> void:
+	var query := PhysicsRayQueryParameters3D.create(at, at, Balance.WORLD_MASK)
+	for id in _windows.size():
+		var window := _windows[id]
+		if window.broken:
+			continue
+		var pane := window.pane
+		var local := pane.to_local(at)
+		var half_width := window.width * 0.5 - 0.035
+		var half_height := window.height * 0.5 - 0.035
+		var target := pane.to_global(Vector3(clampf(local.x, -half_width, half_width),
+			clampf(local.y, -half_height, half_height), 0.0))
+		# At an oblique angle the jamb can block the nearest edge and expose the center.
+		for sample: Vector3 in [target, pane.global_position]:
+			if at.distance_squared_to(sample) > radius * radius:
+				continue
+			query.to = sample
+			var hit := space.intersect_ray(query) if not at.is_equal_approx(sample) else {}
+			if not hit.is_empty() and hit.collider != pane:
+				continue
+			var normal := pane.global_basis.z * (-1.0 if local.z < 0.0 else 1.0)
+			shatter(id, sample, normal)
+			break
 
 
 func _break_window(window: WindowPane) -> void:
 	window.broken = true
 	window.pane.collision_layer = 0
 	window.pane.hide()
-
-
-func _send_change(glass: bool, id: int, state: bool) -> void:
-	for peer in _match.match_peers():
-		net_fixture.rpc_id(peer, _match._map_revision, glass, id, state)
 
 
 func reset_round() -> void:

@@ -218,6 +218,47 @@ func _check_fixtures(arena: Node3D) -> void:
 	_check("Round restart restores the pane and closes the designated house doors",
 		not window.broken and pane.visible and not fixtures._doors[5].opened)
 
+	actor.position = sill * Vector3(0, -0.66, 0.76)
+	actor.velocity = Vector3.ZERO
+	_face(actor, through)
+	actor._apply_equip("knife")
+	await physics_frame
+	actor.gun._try_fire()
+	await create_timer(float(BALANCE.MELEE.windup_s) + 0.15).timeout
+	_check("A knife swing shatters an intact window", window.broken)
+	fixtures.reset_round()
+	await physics_frame
+
+	var grenades := arena.get_node("Grenades")
+	var flight_id: int = grenades._next_id
+	grenades._launch("frag", actor, from, through * float(BALANCE.GRENADES.shared.throw_speed_m_s), 1.0, 0)
+	for frame in 9:
+		await physics_frame
+	_check("A thrown grenade shatters and passes through the window",
+		window.broken and grenades._flights.has(flight_id)
+		and (sill.affine_inverse() * grenades._flights[flight_id].at).z < -0.1)
+	grenades.reset_round()
+	fixtures.reset_round()
+	await physics_frame
+
+	var protected_window = fixtures._windows[3]
+	grenades._launch("frag", actor, from, Vector3.ZERO, 0.0, 0)
+	for frame in 3:
+		await physics_frame
+	_check("A nearby grenade blast shatters exposed glass and leaves a farther window intact",
+		window.broken and not protected_window.broken)
+	grenades.reset_round()
+	fixtures.reset_round()
+	await physics_frame
+
+	var oblique_blast := pane.to_global(Vector3(1.8, 0.0, 0.6))
+	grenades._launch("frag", actor, oblique_blast, Vector3.ZERO, 0.0, 0)
+	for frame in 3:
+		await physics_frame
+	_check("A blast at an oblique angle breaks glass visible past the jamb", window.broken)
+	grenades.reset_round()
+	fixtures.reset_round()
+
 
 func _face(actor: CharacterBody3D, direction: Vector3) -> void:
 	actor.rotation.y = atan2(-direction.x, -direction.z)
