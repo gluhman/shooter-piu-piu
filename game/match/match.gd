@@ -225,16 +225,22 @@ func arena_width() -> float:
 
 
 func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
-	var candidates := $Map.respawn_points
+	var candidates: PackedVector3Array = $Map.respawn_points
 	if is_instance_valid(_breakwater):
-		candidates = PackedVector3Array()
-		var team := ("a" if actor.slot % 2 == 0 else "b") if team_deathmatch else "ffa"
-		for marker in _breakwater.get_spawn_candidates(team):
-			candidates.append(_breakwater.spawn_feet(marker))
-	return _choose_safe_spawn(actor, previous, candidates)
+		candidates = _breakwater_spawn_candidates(actor.slot)
+	return _choose_safe_spawn(actor, actor.slot, previous, candidates)
 
 
-func _choose_safe_spawn(actor: Node3D, previous: Vector3, candidates: PackedVector3Array) -> Vector3:
+func _breakwater_spawn_candidates(slot: int) -> PackedVector3Array:
+	var candidates := PackedVector3Array()
+	var team := ("a" if slot % 2 == 0 else "b") if team_deathmatch else "ffa"
+	for marker in _breakwater.get_spawn_candidates(team):
+		candidates.append(_breakwater.spawn_feet(marker))
+	return candidates
+
+
+func _choose_safe_spawn(actor: Node3D, slot: int, previous: Vector3,
+		candidates: PackedVector3Array) -> Vector3:
 	var enemies: Array[Node3D] = []
 	var occupied: Array[Node3D] = []
 	for group in [&"player", &"bot"]:
@@ -242,7 +248,10 @@ func _choose_safe_spawn(actor: Node3D, previous: Vector3, candidates: PackedVect
 			if fighter == actor or fighter.health <= 0:
 				continue
 			occupied.append(fighter)
-			if not same_team(actor.score_id(), fighter.score_id()):
+			var ally := actor != null and same_team(actor.score_id(), fighter.score_id())
+			if actor == null and team_deathmatch:
+				ally = fighter.team_id() == slot % 2
+			if fighter.control_enabled and not ally:
 				enemies.append(fighter)
 	var space := get_world_3d().direct_space_state
 	var ray := PhysicsRayQueryParameters3D.new()
@@ -250,7 +259,8 @@ func _choose_safe_spawn(actor: Node3D, previous: Vector3, candidates: PackedVect
 	var overlap := PhysicsShapeQueryParameters3D.new()
 	overlap.shape = PLAYER_CAPSULE
 	overlap.collision_mask = Balance.WORLD_AND_CAPSULES
-	overlap.exclude = [actor.get_rid()]
+	if actor != null:
+		overlap.exclude = [actor.get_rid()]
 	var best := previous
 	var best_score := -INF
 	var visibility_radius := maxf(64.0, arena_width() * 0.65)
@@ -1064,7 +1074,7 @@ func _spawn_breakwater_fighters() -> void:
 		var id := player_slots[slot]
 		if id == 0 or combatant(id) or (id != 1 and not _ready_peers.has(id)):
 			continue
-		var at := _choose_breakwater_spawn(slot)
+		var at := _choose_safe_spawn(null, slot, Vector3.INF, _breakwater_spawn_candidates(slot))
 		if at.is_finite():
 			_spawn_player(id, slot, at)
 			_send_breakwater_spawn(id, slot, at)
@@ -1073,7 +1083,7 @@ func _spawn_breakwater_fighters() -> void:
 		var slot := _bot_slots[index]
 		if slot < 0 or player_slots[slot] != 0 or combatant(-index):
 			continue
-		var at := _choose_breakwater_spawn(slot)
+		var at := _choose_safe_spawn(null, slot, Vector3.INF, _breakwater_spawn_candidates(slot))
 		if at.is_finite():
 			new_bots.append(_add_bot(index, slot, bot_difficulty, at))
 			_send_breakwater_spawn(-index, slot, at)
