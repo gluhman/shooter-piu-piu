@@ -443,6 +443,8 @@ func _impact(hit: Dictionary, direction: Vector3, shot: Dictionary, distance: fl
 	var damaged := false
 	var headshot := false
 	var at: Vector3 = hit.position
+	if collider and collider.has_meta(&"village_glass"):
+		collider.get_parent().shatter(collider.get_meta(&"village_glass"))
 	if collider and collider.has_meta(&"hit_zone"):
 		var victim := collider.get_parent().get_parent()
 		var before: float = victim.health
@@ -453,7 +455,7 @@ func _impact(hit: Dictionary, direction: Vector3, shot: Dictionary, distance: fl
 		damaged = victim.health < before
 		headshot = damaged and zone == "head"
 	var normal: Vector3 = hit.normal if not hit.normal.is_zero_approx() else -direction
-	_report_impact(at, normal, surface, shot.profile, shot.shooter, damaged, force, headshot)
+	_report_impact(at, normal, surface, shot.profile, shot.shooter, damaged, force, headshot, surface != "glass")
 
 
 func _report_impact(at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int,

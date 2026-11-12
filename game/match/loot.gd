@@ -27,6 +27,7 @@ var _clock := 0.0
 var _armor_respawns: Array[Dictionary] = []
 var _prompt_wait := 0.0
 var _auto_pickup_wait := 0.0
+var _hover_door := -1
 var _hover := Vector2i(-1, -1)
 
 @onready var _match := get_parent()
@@ -82,6 +83,7 @@ func reset_round() -> void:
 		_set_open(index, false, false)
 	_requests.clear()
 	_hover = Vector2i(-1, -1)
+	_hover_door = -1
 	_hud.show_loot_prompt("")
 
 
@@ -155,7 +157,14 @@ func _drop_offset(at: Vector3, offset: Vector3, ignored: Array[RID]) -> Vector3:
 
 
 func interact(actor: Node) -> void:
-	if _hover.x < 0 or not actor.accepts_gameplay_input():
+	if not actor.accepts_gameplay_input():
+		return
+	if _hover_door >= 0:
+		var fixtures := _match.get_node_or_null("Map/VillageFixtures")
+		if fixtures:
+			fixtures.request_door(actor, _hover_door)
+			return
+	if _hover.x < 0:
 		return
 	if Net.active and not multiplayer.is_server():
 		net_interact.rpc_id(1, _hover)
@@ -251,6 +260,7 @@ func _pick_up_nearby() -> void:
 func _update_prompt() -> void:
 	var actor: Node = _match.combatant(Net.local_id())
 	_hover = Vector2i(-1, -1)
+	_hover_door = -1
 	var prompt := ""
 	if actor and actor.accepts_gameplay_input():
 		var best := INF
@@ -273,6 +283,11 @@ func _update_prompt() -> void:
 				best = score
 				_hover = Vector2i(drop.kind, id)
 				prompt = "заменить гранаты на «%s»" % ARSENAL.GRENADE_LABELS[drop.weapon] if swap_grenades else _weapon_pickup_label(actor, drop)
+		var fixtures := _match.get_node_or_null("Map/VillageFixtures")
+		if fixtures:
+			_hover_door = fixtures.door_in_view(actor)
+			if _hover_door >= 0:
+				prompt = fixtures.door_prompt(_hover_door)
 	if prompt != "":
 		prompt = "%s — %s" % [GameSettings.binding_label(&"interact"), prompt]
 	_hud.show_loot_prompt(prompt)

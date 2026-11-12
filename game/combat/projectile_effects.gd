@@ -10,6 +10,7 @@ const SHOT_HEARING_DISTANCE := 125.0
 const SHOT_DISTANCE_LOSS_DB := 16.0
 
 const SURFACES := {
+	"glass": [Color(0.69, 0.91, 0.94), Color(0.64, 0.82, 0.85), 28, 0.0],
 	"metal": [Color(1.0, 0.61, 0.22), Color(0.38, 0.42, 0.44), 11, 0.0],
 	"brick": [Color(0.66, 0.34, 0.24), Color(0.48, 0.29, 0.23), 7, 0.22],
 	"wood": [Color(0.72, 0.52, 0.28), Color(0.54, 0.40, 0.27), 7, 0.34],
@@ -28,6 +29,7 @@ const SHOT_SOUNDS := {
 	"shotgun": preload("res://assets/weapon_audio/shotgun_fire.wav"),
 }
 const IMPACT_SOUNDS := {
+	"glass": preload("res://assets/match_audio/hit_glass.wav"),
 	"concrete": preload("res://assets/match_audio/hit_concrete.wav"),
 	"metal": preload("res://assets/match_audio/hit_metal.wav"),
 	"wood": preload("res://assets/match_audio/hit_wood.wav"),
@@ -278,6 +280,10 @@ func impact(at: Vector3, normal: Vector3, surface: String, profile: String, rema
 	var amount: int = data[2]
 	var dust: Color = data[1]
 	dust.a = 0.19 if surface == "metal" else 0.31
+	if surface == "glass":
+		_burst(position, normal, data[0], amount, 0.64, 6.9, 94.0,
+			0.032 * strength, Vector3.DOWN * 13.0, "glass")
+		return
 	var lifetime := 0.33 if surface == "operator" else 0.49
 	_burst(position, normal, dust, 4, lifetime, 2.6 * strength, 48.0,
 		0.14 * strength, Vector3.UP * 0.35, "smoke")
@@ -418,7 +424,9 @@ func _burst(at: Vector3, axis: Vector3, tint: Color, amount: int, duration: floa
 	particles.damping_max = 2.4
 	particles.scale_amount_min = size * 0.45
 	particles.scale_amount_max = size
-	particles.particle_flag_align_y = kind != "smoke"
+	particles.particle_flag_align_y = kind not in ["smoke", "glass"]
+	particles.angular_velocity_min = -420.0 if kind == "glass" else 0.0
+	particles.angular_velocity_max = 560.0 if kind == "glass" else 0.0
 	particles.mesh = _particle_mesh(kind, stretch)
 	if not _burst_gradients.has(tint):
 		var gradient := Gradient.new()
@@ -453,6 +461,17 @@ func _particle_mesh(kind: String, stretch: float) -> Mesh:
 		var quad := QuadMesh.new()
 		quad.material = _sprite(_soft, Color.WHITE, true)
 		mesh = quad
+	elif kind == "glass":
+		var shard := PrismMesh.new()
+		shard.size = Vector3(0.72, 1.9, 0.12)
+		shard.left_to_right = 0.34
+		var material := StandardMaterial3D.new()
+		material.vertex_color_use_as_albedo = true
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.roughness = 0.18
+		material.metallic = 0.28
+		shard.material = material
+		mesh = shard
 	else:
 		var chip := BoxMesh.new()
 		chip.size = Vector3(0.43, 2.7 + stretch, 0.43) if kind == "spark" else Vector3(0.68, 1.0 + stretch, 0.37)

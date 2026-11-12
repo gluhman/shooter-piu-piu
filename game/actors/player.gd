@@ -1109,6 +1109,9 @@ func _physics_process(delta: float) -> void:
 		vertical += -float(Balance.MOVEMENT.gravity_m_s2) * delta
 	if jump_pressed and is_on_floor() and not crouched:
 		vertical = JUMP_VELOCITY
+		var fixtures := get_parent().get_node_or_null("Map/VillageFixtures")
+		if fixtures and not direction.is_zero_approx():
+			vertical = maxf(vertical, fixtures.window_jump_speed(global_position, direction, STANDING_HEIGHT))
 
 	var speed := WALK_SPEED
 	if crouched:

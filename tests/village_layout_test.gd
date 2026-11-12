@@ -30,6 +30,7 @@ func _run() -> void:
 		_check_layout(map, nav, width)
 		if selected_size == 0:
 			await _check_stairs(arena)
+			await _check_fixtures(arena)
 		arena._clear_match_map()
 		await process_frame
 	arena.queue_free()
@@ -50,6 +51,35 @@ func _check_layout(map: Node3D, nav: RID, width: float) -> void:
 	if not clear:
 		return
 
+	var ground := PhysicsRayQueryParameters3D.new()
+	ground.collision_mask = BALANCE.WORLD_MASK
+	var low := 0.0
+	var high := 0.0
+	var steepest := 1.0
+	for x in range(-int(width * 0.5), int(width * 0.5)):
+		for z in range(-int(width * 0.5), int(width * 0.5)):
+			ground.from = Vector3(x + 0.2, 8.0, z + 0.3)
+			ground.to = ground.from - Vector3.UP * 10.0
+			var hit := space.intersect_ray(ground)
+			if not hit.is_empty() and hit.collider.name == &"VillageTerrain":
+				low = minf(low, hit.position.y)
+				high = maxf(high, hit.position.y)
+				steepest = minf(steepest, hit.normal.y)
+	_check("Terrain has hills and depressions with walkable grades (%.2f to %.2f m)" % [low, high],
+		low < -0.24 and high > 0.30 and steepest > cos(deg_to_rad(42.0)))
+	var fixtures := map.get_node("VillageFixtures")
+	var homes := 7 if width > 40.0 else 5
+	var thresholds_clear := true
+	for door in fixtures._doors:
+		for side in [-1.0, 1.0]:
+			query.transform.origin = door.portal * Vector3(0, 0.91, side * 0.72)
+			if not space.intersect_shape(query, 1).is_empty():
+				print("Blocked door threshold at ", query.transform.origin)
+				thresholds_clear = false
+	_check("Standing capsules fit on both sides of every house door", thresholds_clear)
+	_check("Every house has a working door and two glazed window openings",
+		fixtures._doors.size() == 5 + homes and fixtures._windows.size() == 3 + 2 * homes)
+
 	var barn: Vector3 = map.initial_spawn(0)
 	var gate: Vector3 = map.initial_spawn(1)
 	var square := Vector3(2.4, 0.2, 0)
@@ -69,7 +99,7 @@ func _check_layout(map: Node3D, nav: RID, width: float) -> void:
 	var upper_room := Vector3(-8.3, 3.0, -5.1)
 	_check("Both staircases offer separate paths to the inn's upper floor",
 		_route(nav, Vector3(-11.6, 0.2, -3.9), upper_room) < 11.0
-		and _route(nav, Vector3(-13.99, 0.2, 1.85), upper_room) < 16.0)
+		and _route(nav, Vector3(-14.23, 0.2, 1.85), upper_room) < 16.0)
 	var ray := PhysicsRayQueryParameters3D.create(Vector3(-2.2, 1.58, -4.3), Vector3(2.2, 1.58, 4.3), BALANCE.WORLD_MASK)
 	var hit := space.intersect_ray(ray)
 	_check("Well blocks the eye-height view across the square",
@@ -97,14 +127,111 @@ func _check_stairs(arena: Node3D) -> void:
 	walker.add_child(collider)
 	arena.add_child(walker)
 	walker.position = Vector3(-12.59, 0.07, -2.16)
-	var inside := await _walk(walker, Vector2(-7.45, -2.16))
-	_check("Player capsule climbs the internal stairs", inside and walker.position.y > 2.8)
-	walker.position = Vector3(-13.99, 0.07, 1.85)
-	var outside := await _walk(walker, Vector2(-13.99, -5.17))
+	var inside := await _walk(walker, Vector2(-7.83, -2.16))
+	var landing := await _walk(walker, Vector2(-7.83, -4.42))
+	_check("Player capsule turns off the internal landing into the upper room",
+		inside and landing and walker.position.y > 2.8)
+	walker.position = Vector3(-14.23, 0.07, 3.2)
+	var outside := await _walk(walker, Vector2(-14.23, -5.17))
 	var doorway := await _walk(walker, Vector2(-12.25, -5.17))
 	_check("Player capsule climbs the exterior stairs and enters the inn",
 		outside and doorway and walker.position.y > 2.8)
+	var threshold_is_wood := true
+	for x in [-13.21, -13.1, -12.99]:
+		var threshold := PhysicsRayQueryParameters3D.create(
+			Vector3(x, 3.2, -5.2), Vector3(x, 2.8, -5.2), BALANCE.WORLD_MASK)
+		var hit := arena.get_world_3d().direct_space_state.intersect_ray(threshold)
+		threshold_is_wood = threshold_is_wood and not hit.is_empty() \
+			and hit.collider.get_meta(&"impact_surface") == "wood" and is_equal_approx(hit.position.y, 2.9)
+	_check("Upstairs door has a flush wooden threshold", threshold_is_wood)
+	var ground_ray := PhysicsRayQueryParameters3D.create(Vector3(-18.7, 2.0, 15.8),
+		Vector3(-18.7, -1.2, 15.8), BALANCE.WORLD_MASK)
+	var ground := arena.get_world_3d().direct_space_state.intersect_ray(ground_ray)
+	if not ground.is_empty():
+		walker.position = ground.position + Vector3.UP * 0.03
+		var uphill := await _walk(walker, Vector2(-16.2, 15.8))
+		var crest := walker.position.y
+		var downhill := await _walk(walker, Vector2(-14.0, 15.8))
+		_check("Player capsule walks up and down the yard hill",
+			uphill and downhill and crest > 0.7 and crest - walker.position.y > 0.2)
+	else:
+		_check("Player capsule can reach the yard hill", false)
 	walker.queue_free()
+
+
+func _check_fixtures(arena: Node3D) -> void:
+	var fixtures := arena.get_node("Map/VillageFixtures")
+	var actor: CharacterBody3D = arena.combatant(1)
+	arena.get_node("HUD/WeaponSelect")._set_open(false)
+	actor._apply_equip("ak47")
+
+	var door = fixtures._doors[0]
+	actor.position = door.portal * Vector3(0, 0.08, 1.42)
+	_face(actor, -door.portal.basis.z)
+	for frame in 9:
+		await physics_frame
+	_interact()
+	for frame in 9:
+		await physics_frame
+	var closed: bool = not door.opened
+	var ray := PhysicsRayQueryParameters3D.create(door.portal * Vector3(0, 1.1, 0.8),
+		door.portal * Vector3(0, 1.1, -0.7), BALANCE.WORLD_MASK)
+	var space := arena.get_world_3d().direct_space_state
+	var blocks: bool = space.intersect_ray(ray).get("collider") == door.leaf
+	_interact()
+	for frame in 9:
+		await physics_frame
+	_check("Interact closes and reopens the door and updates its collision",
+		closed and blocks and door.opened and space.intersect_ray(ray).is_empty())
+
+	var window = fixtures._windows[2]
+	var sill: Transform3D = window.sill
+	var pane: StaticBody3D = window.pane
+	var from := sill * Vector3(0, 0.87, 1.15)
+	var through := -sill.basis.z
+	ray.from = from
+	ray.to = from + through * 1.7
+	var intact: bool = pane.visible and space.intersect_ray(ray).get("collider") == pane
+	var ballistics := arena.get_node("Ballistics")
+	ballistics.queue_shot("ak47", actor.gun.WEAPONS.ak47, actor,
+		Transform3D(Basis.looking_at(through), from), 0.2, from, PackedVector3Array([through]))
+	for frame in 4:
+		await physics_frame
+	_check("A simulated projectile removes the visible pane and its collision",
+		intact and window.broken and not pane.visible and space.intersect_ray(ray).is_empty())
+
+	actor.position = sill * Vector3(0, -0.66, 0.76)
+	actor.velocity = Vector3.ZERO
+	_face(actor, through)
+	for frame in 8:
+		await physics_frame
+	Input.action_press(&"move_forward")
+	Input.action_press(&"jump")
+	for frame in 40:
+		await physics_frame
+	Input.action_release(&"jump")
+	Input.action_release(&"move_forward")
+	_check("The player can jump through a broken ground-floor window",
+		(sill.affine_inverse() * actor.position).z < -0.40)
+	fixtures.reset_round()
+	await physics_frame
+	_check("Round restart restores the pane and closes the designated house doors",
+		not window.broken and pane.visible and not fixtures._doors[5].opened)
+
+
+func _face(actor: CharacterBody3D, direction: Vector3) -> void:
+	actor.rotation.y = atan2(-direction.x, -direction.z)
+	actor.get_node("Camera3D").rotation.x = 0.0
+
+
+func _interact() -> void:
+	var event := InputEventAction.new()
+	event.action = &"interact"
+	event.pressed = true
+	root.push_input(event)
+	event = event.duplicate()
+	event.pressed = false
+	root.push_input(event)
 
 
 func _walk(walker: CharacterBody3D, target: Vector2) -> bool:

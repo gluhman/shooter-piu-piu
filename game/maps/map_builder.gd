@@ -162,8 +162,9 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	if map_id == VILLAGE_ID:
 		var village_width := maxf(width, SIZE_WIDTHS[VILLAGE_MIN_SIZE])
 		_half_extent = village_width * 0.5
-		var supplies := VILLAGE.new(self).build(village_width, rng)
-		_build_respawn_grid(floori((_half_extent - 1.0) / 5.6), 5.6, _half_extent)
+		var layout := VILLAGE.new(self)
+		var supplies := layout.build(village_width, rng)
+		_build_respawn_grid(floori((_half_extent - 1.0) / 5.6), 5.6, _half_extent, layout.ground_height)
 		_patrol.assign(respawn_points)
 		return supplies
 
@@ -335,13 +336,14 @@ func _build_spawn_ring(radius: float) -> void:
 		_initial_spawns.append(Vector3(along, 0.2, radius).rotated(Vector3.UP, side * PI * 0.5))
 
 
-func _build_respawn_grid(steps: int, spacing: float, limit: float) -> void:
+func _build_respawn_grid(steps: int, spacing: float, limit: float, ground_height := Callable()) -> void:
 	respawn_points = _initial_spawns.duplicate()
 	for x in range(-steps, steps + 1):
 		for z in range(-steps, steps + 1):
 			var center := Vector2(x, z) * spacing
 			if _is_clear(_footprint(center, Vector2.ONE * 1.8), limit, 0.0):
-				respawn_points.append(Vector3(center.x, 0.2, center.y))
+				var height: float = ground_height.call(center) if ground_height.is_valid() else 0.0
+				respawn_points.append(Vector3(center.x, height + 0.2, center.y))
 
 
 func initial_spawn(index: int) -> Vector3:

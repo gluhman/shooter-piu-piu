@@ -458,6 +458,9 @@ func net_restart() -> void:
 	$Ballistics.reset_round()
 	$Grenades.reset_round()
 	$Map.clear_bullet_holes()
+	var fixtures := get_node_or_null("Map/VillageFixtures")
+	if fixtures:
+		fixtures.reset_round()
 	$HUD.reset_round()
 	$Loot.reset_round()
 	for player in get_tree().get_nodes_in_group("player"):
@@ -749,6 +752,10 @@ func _load_arena(layout_seed: int, bot_count: int, difficulty: int, token: int =
 		await _spawn_bots(bot_count, difficulty, token)
 	while _navigation_pending and not _reloading and (token < 0 or _load_current(token)):
 		await get_tree().process_frame
+	if not _reloading and (token < 0 or _load_current(token)):
+		var fixtures := get_node_or_null("Map/VillageFixtures")
+		if fixtures:
+			fixtures.reset_round()
 
 
 func _finish_loading() -> void:
@@ -816,7 +823,7 @@ func _build_arena(layout_seed: int) -> void:
 		mesh.cell_height = 0.1
 		mesh.agent_radius = 0.50 if village else 0.40
 		mesh.agent_height = 1.8
-		mesh.agent_max_climb = 0.2 if village else 0.1
+		mesh.agent_max_climb = 0.3 if village else 0.1
 		mesh.filter_walkable_low_height_spans = true
 		var width := arena_width()
 		if is_instance_valid(_breakwater):
@@ -826,8 +833,9 @@ func _build_arena(layout_seed: int) -> void:
 		elif map_id == MAP.DUST2_ID:
 			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -3.0, -width * 0.5), Vector3(width, 7.5, width))
 		else:
-			var bake_height := 6.0 if village else 2.8
-			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -0.5, -width * 0.5), Vector3(width, bake_height, width))
+			var bake_bottom := -1.3 if village else -0.5
+			var bake_height := 7.1 if village else 2.8
+			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, bake_bottom, -width * 0.5), Vector3(width, bake_height, width))
 		var geometry := NavigationMeshSourceGeometryData3D.new()
 		NavigationServer3D.parse_source_geometry_data(mesh, geometry, self)
 		_navigation_pending = true
@@ -1360,6 +1368,9 @@ func net_ready(revision: int) -> void:
 	for bot in get_tree().get_nodes_in_group("bot"):
 		bot.send_status_to(id)
 	$Map.send_bullet_holes(id)
+	var fixtures := get_node_or_null("Map/VillageFixtures")
+	if fixtures:
+		fixtures.send_state(id)
 	$Loot.send_state(id)
 	$Grenades.send_state(id)
 	for player in get_tree().get_nodes_in_group("player"):
