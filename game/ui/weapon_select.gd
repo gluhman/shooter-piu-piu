@@ -19,6 +19,7 @@ var _grenade_picker: OptionButton
 var _primary := ""
 var _cards: Dictionary[String, Button] = {}
 var _armory_player: Node
+var _loadout_reconfigure := false
 var _active_style: StyleBoxFlat
 var _card_style: StyleBoxFlat
 
@@ -34,9 +35,14 @@ func _ready() -> void:
 
 
 func show_select() -> void:
+	_loadout_reconfigure = false
+	_show_loadout()
+
+
+func _show_loadout() -> void:
 	_title.text = "Снаряжение"
 	_note.text = "Выбери специализацию, затем оружие и гранаты."
-	_close_button.hide()
+	_close_button.visible = _loadout_reconfigure
 	_panel.custom_minimum_size.x = 860
 	_class_bar.show()
 	_class_detail.show()
@@ -64,6 +70,13 @@ func show_select() -> void:
 	get_parent().get_node("Hint").hide()
 	get_parent().get_node("Ammo").hide()
 	_class_buttons[_specialization].grab_focus()
+
+
+func _open_loadout(player: Node) -> void:
+	_loadout_reconfigure = true
+	_show_loadout()
+	if player != _local_player():
+		return
 
 
 func _choose_specialization(key: String) -> void:
@@ -120,6 +133,27 @@ func close_armory() -> bool:
 	return true
 
 
+func close_selection() -> bool:
+	if close_armory():
+		return true
+	if not _loadout_reconfigure:
+		return false
+	_loadout_reconfigure = false
+	_set_open(false)
+	var player := _local_player()
+	if player and player.health > 0:
+		player.control_enabled = true
+		if not _match().input_blocked():
+			GameSettings.capture_gameplay_mouse()
+	get_parent().get_node("Hint").show()
+	get_parent().get_node("Ammo").show()
+	return true
+
+
+func selection_open() -> bool:
+	return armory_open() or _loadout_reconfigure
+
+
 func _set_open(open: bool) -> void:
 	visible = open
 	mouse_filter = Control.MOUSE_FILTER_STOP if open else Control.MOUSE_FILTER_IGNORE
@@ -144,10 +178,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		if armory_open():
 			close_armory()
 			MenuFeedback.back()
+		elif _loadout_reconfigure:
+			close_selection()
+			MenuFeedback.back()
 		elif not visible and not _match().input_blocked():
 			var player := _local_player()
 			if player and player.control_enabled and player.health > 0:
-				_open_armory(player)
+				_open_loadout(player)
 				MenuFeedback.confirm()
 		else:
 			return
@@ -225,7 +262,7 @@ func _build() -> void:
 	content.add_child(header)
 	_title = UI.label(header, "Выбор оружия", 34, UI.INK, true)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_close_button = UI.button(header, "Назад · Esc", close_armory, &"", true)
+	_close_button = UI.button(header, "Назад · Esc", close_selection, &"", true)
 	_note = UI.label(content, "", 16, UI.MUTED)
 	_class_bar = HBoxContainer.new()
 	_class_bar.add_theme_constant_override(&"separation", 8)
@@ -290,6 +327,7 @@ func _confirm_loadout() -> void:
 		return
 	var player := _local_player()
 	if player:
+		_loadout_reconfigure = false
 		_set_open(false)
 		get_parent().get_node("Hint").show()
 		var sidearm: String = _sidearm_picker.get_selected_metadata()

@@ -374,7 +374,7 @@ func equip(id: String) -> void:
 
 
 func choose_loadout(primary: String, sidearm: String, grenade: String) -> void:
-	if weapon_id != "" or _dead or get_parent().round_finished() or not _valid_loadout(primary, sidearm, grenade):
+	if _dead or get_parent().round_finished() or not _valid_loadout(primary, sidearm, grenade):
 		return
 	if _server_rules():
 		_apply_loadout(primary, sidearm, grenade)
@@ -392,6 +392,9 @@ func _apply_loadout(primary: String, sidearm: String, grenade: String) -> void:
 	_spawn_loadout = primary
 	_spawn_sidearm = sidearm
 	_spawn_grenade = grenade
+	_stored.clear()
+	_grenades.clear()
+	medkits = 0
 	_restore_starting_supplies()
 	_apply_equip(primary)
 	inventory_changed.emit()
@@ -747,7 +750,7 @@ func net_equip(id: String, loadout: String = "") -> void:
 func net_choose_loadout(primary: String, sidearm: String, grenade: String) -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if multiplayer.is_server():
-		if not _is_owner_request(sender) or weapon_id != "" or _dead or get_parent().round_finished() or not _valid_loadout(primary, sidearm, grenade):
+		if not _is_owner_request(sender) or _dead or get_parent().round_finished() or not _valid_loadout(primary, sidearm, grenade):
 			return
 		_apply_loadout(primary, sidearm, grenade)
 		_send_equipment(primary)

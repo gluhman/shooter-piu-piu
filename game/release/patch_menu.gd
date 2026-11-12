@@ -1,8 +1,7 @@
 extends AcceptDialog
 
-const REPOSITORY := "gluhman/shooter-piu-piu"
-const RELEASES := "https://api.github.com/repos/" + REPOSITORY + "/releases?per_page=100"
-const DOWNLOAD_PREFIX := "https://github.com/" + REPOSITORY + "/releases/download/"
+const UPDATE_SERVER := "http://51.250.79.77/shooter/"
+const UPDATE_MANIFEST := UPDATE_SERVER + "manifest.json"
 const DIALOG_SIZE := Vector2i(680, 420)
 
 var _choose: Button
@@ -24,7 +23,7 @@ func _ready() -> void:
 	max_size = Vector2i(720, 700)
 	ok_button_text = "Закрыть"
 	_choose = add_button("Выбрать .pck", true)
-	_check = add_button("Проверить GitHub", true)
+	_check = add_button("Проверить обновления", true)
 	_download = add_button("Скачать и установить", true)
 	_choose.pressed.connect(_picker_open)
 	_check.pressed.connect(_find_update)
@@ -55,7 +54,7 @@ func open() -> void:
 	if not visible:
 		_candidate.clear()
 		_download.hide()
-		_set_status("Текущая версия: %s\nGitHub: не проверен\n\nУстановка патча перезапустит игру." % ShooterRelease.version)
+		_set_status("Текущая версия: %s\nСервер обновлений: не проверен\n\nУстановка патча перезапустит игру." % ShooterRelease.version)
 		popup_centered(DIALOG_SIZE)
 
 
@@ -77,60 +76,54 @@ func _install_local(source: String) -> void:
 func _find_update() -> void:
 	_candidate.clear()
 	_download.hide()
-	_set_busy(true, "Ищем обновления на GitHub…")
-	var response := await _request(RELEASES, "", 16 * 1024 * 1024, 20.0)
+	_set_busy(true, "Проверяем сервер обновлений…")
+	var response := await _request(UPDATE_MANIFEST, "", 64 * 1024, 20.0)
 	if response.code != 200:
-		_set_busy(false, "GitHub: недоступен (HTTP %d).\n\nМожно выбрать файл патча вручную." % response.code)
+		_set_busy(false, "Сервер обновлений: недоступен (HTTP %d).\n\nМожно выбрать файл патча вручную." % response.code)
 		return
-	var releases: Variant = JSON.parse_string(response.body.get_string_from_utf8())
-	if not releases is Array:
-		_set_busy(false, "GitHub: доступен, но вернул неожиданный ответ.")
+	var manifest: Variant = JSON.parse_string(response.body.get_string_from_utf8())
+	if not manifest is Dictionary:
+		_set_busy(false, "Сервер обновлений: получен некорректный манифест.")
 		return
-	_candidate = _latest_patch(releases)
+	_candidate = _patch_from_manifest(manifest)
 	_download.visible = not _candidate.is_empty()
-	var message := "GitHub: доступен\nБаза: %s\n\nНовых патчей нет." % ShooterRelease.base_version
+	var message := "Сервер обновлений: доступен\nБаза: %s\n\nНовых патчей нет." % ShooterRelease.base_version
 	if not _candidate.is_empty():
-		message = "GitHub: доступен\nНайден патч %s · %s" % [_candidate.version, _format_bytes(_candidate.size)]
+		message = "Сервер обновлений: доступен\nНайден патч %s · %s" % [_candidate.version, _format_bytes(_candidate.size)]
 		if not _candidate.notes.is_empty():
 			message += "\n\nЧто нового:\n" + _release_notes(_candidate.notes).left(700)
 		message += "\n\nПосле установки игра перезапустится."
 	_set_busy(false, message)
 
 
-func _latest_patch(releases: Array) -> Dictionary:
-	var simple_pattern := RegEx.create_from_string("^Shooter-([0-9]+\\.[0-9]+\\.([0-9]+))\\.pck$")
-	var legacy_pattern := RegEx.create_from_string("^Shooter-" + ShooterRelease.base_version.replace(".", "\\.") + "-to-([0-9]+\\.[0-9]+\\.([0-9]+))\\.pck$")
-	var best: Dictionary = {}
-	for release: Variant in releases:
-		if not release is Dictionary or release.get("draft", false) or release.get("prerelease", false):
-			continue
-		var urls := {}
-		for asset: Variant in release.get("assets", []):
-			var url: String = asset.get("browser_download_url", "")
-			if url.begins_with(DOWNLOAD_PREFIX):
-				urls[asset.name] = {"url": url, "size": int(asset.get("size", 0))}
-		for name: String in urls:
-			if not urls.has(name + ".cfg"):
-				continue
-			var target := _patch_asset_version(name, simple_pattern, legacy_pattern)
-			if target.is_empty():
-				continue
-			var revision := int(target.get_slice(".", 2))
-			if ShooterRelease.can_install_version(target) and revision > best.get("revision", -1):
-				best = {"version": target, "revision": revision, "pck": urls[name].url, "cfg": urls[name + ".cfg"].url, "size": urls[name].size, "notes": str(release.get("body", "")).strip_edges()}
-	return best
+func _patch_from_manifest(manifest: Dictionary) -> Dictionary:
+	if str(manifest.get("base_version", "")) != ShooterRelease.base_version:
+		return {}
+	var version := str(manifest.get("version", ""))
+	var pck := str(manifest.get("pck", ""))
+	var cfg := str(manifest.get("cfg", ""))
+	if not ShooterRelease.can_install_version(version) or not _is_safe_release_path(pck) or not _is_safe_release_path(cfg):
+		return {}
+	return {
+		"version": version,
+		"pck": UPDATE_SERVER + pck,
+		"cfg": UPDATE_SERVER + cfg,
+		"size": int(manifest.get("size", 0)),
+		"notes": str(manifest.get("notes", "")).strip_edges(),
+	}
 
 
-func _patch_asset_version(name: String, simple_pattern: RegEx, legacy_pattern: RegEx) -> String:
-	var parsed := simple_pattern.search(name)
-	if parsed != null:
-		return parsed.get_string(1)
-	parsed = legacy_pattern.search(name)
-	return "" if parsed == null else parsed.get_string(1)
+func _is_safe_release_path(path: String) -> bool:
+	if path.is_empty() or path.begins_with("/") or path.contains("://"):
+		return false
+	for part in path.split("/", false):
+		if part == "." or part == "..":
+			return false
+	return true
 
 
 func _download_update() -> void:
-	_set_busy(true, "GitHub: доступен\nПодготавливаем патч %s…" % _candidate.version)
+	_set_busy(true, "Сервер обновлений: доступен\nПодготавливаем патч %s…" % _candidate.version)
 	var path := ShooterRelease.make_patch_slot()
 	if path.is_empty():
 		_set_busy(false, "Не удалось создать папку патча.")
@@ -154,7 +147,7 @@ func _request(url: String, path: String, limit: int, timeout: float) -> Dictiona
 	_http.download_file = path
 	_http.body_size_limit = limit
 	_http.timeout = timeout
-	if _http.request(url, ["Accept: application/vnd.github+json"] if path.is_empty() else []) != OK:
+	if _http.request(url, ["Accept: application/json"] if path.is_empty() else []) != OK:
 		return {"code": 0}
 	var response: Array = await _http.request_completed
 	return {"code": response[1] if response[0] == HTTPRequest.RESULT_SUCCESS else 0, "body": response[3]}
@@ -194,7 +187,7 @@ func _process(_delta: float) -> void:
 	var progress := ""
 	if total > 0:
 		progress = " · %.0f%%" % (100.0 * float(downloaded) / float(total))
-	_set_status("GitHub: доступен\nСкачивание %s%s\n%s из %s · %s/с" % [_download_version, progress, _format_bytes(downloaded), _format_bytes(total), _format_bytes(int(float(downloaded) / elapsed))])
+	_set_status("Сервер обновлений: доступен\nСкачивание %s%s\n%s из %s · %s/с" % [_download_version, progress, _format_bytes(downloaded), _format_bytes(total), _format_bytes(int(float(downloaded) / elapsed))])
 
 
 func _format_bytes(value: int) -> String:

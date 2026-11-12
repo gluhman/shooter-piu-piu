@@ -556,19 +556,16 @@ func _launch_sighted(barrel: Transform3D, camera: Transform3D, target: Vector3, 
 func _launch_projectiles(barrel: Transform3D, aim: Basis, spread: float, eye: Vector3, rewind: float = -1.0) -> void:
 	var directions := PackedVector3Array()
 	var cone_edge := cos(deg_to_rad(spread))
-	var centered_chance := 0.0 if int(_stats.pellets) > 1 or _weapon_id == "launcher" else lerpf(
-		float(Balance.ACCURACY.centered_shot_chance_hip),
-		float(Balance.ACCURACY.centered_shot_chance_ads), _accuracy_aim_amount())
+	var cone_radius := sqrt(maxf(0.0, 1.0 - cone_edge * cone_edge))
+	var concentration := float(Balance.ACCURACY.radial_concentration)
 	_shot_index += 1
 	var rng := RandomNumberGenerator.new()
 	for pellet in int(_stats.pellets):
 		rng.seed = hash([_match.combat_seed, _player.score_id(), _shot_index, pellet])
-		if centered_chance > 0.0 and rng.randf() < centered_chance:
-			directions.append(-aim.z.normalized())
-		else:
-			var depth := rng.randf_range(cone_edge, 1.0)
-			var offset := Vector2.from_angle(rng.randf() * TAU) * sqrt(maxf(0.0, 1.0 - depth * depth))
-			directions.append((aim * Vector3(offset.x, offset.y, -depth)).normalized())
+		var radius := pow(rng.randf(), concentration) * cone_radius
+		var depth := sqrt(maxf(0.0, 1.0 - radius * radius))
+		var offset := Vector2.from_angle(rng.randf() * TAU) * radius
+		directions.append((aim * Vector3(offset.x, offset.y, -depth)).normalized())
 	if _weapon_id == "launcher":
 		_grenades.launch_round(_player, barrel, directions[0], _barrel_length, int(_stats.damage))
 		return

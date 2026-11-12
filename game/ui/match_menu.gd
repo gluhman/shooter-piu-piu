@@ -56,7 +56,7 @@ func _input(event: InputEvent) -> void:
 		if _match.round_finished():
 			_leave()
 			return
-		if _hud.get_node("WeaponSelect").close_armory():
+		if _hud.get_node("WeaponSelect").close_selection():
 			MenuFeedback.back()
 			return
 		if visible:
@@ -156,9 +156,7 @@ func show_results(reason: String, rows: Array) -> void:
 	scroll.add_child(table)
 	var scores := VBoxContainer.new()
 	table.add_child(scores)
-	_score_line(scores, "Игрок", "Убийства", "Смерти", MUTED)
-	for row in rows:
-		_score_line(scores, row[0], str(row[1]), str(row[2]), ACCENT if row[0] in leaders else INK)
+	_score_sections(scores, rows)
 	var table_height := scores.get_combined_minimum_size().y
 	scroll.custom_minimum_size.y = minf(table_height, 260.0)
 	if table_height > 260.0:
@@ -560,20 +558,46 @@ func _rebuild_score(rows: Array) -> void:
 	for child in _score_rows.get_children().slice(1):
 		_score_rows.remove_child(child)
 		child.queue_free()
-	_score_line(_score_rows, "Игрок", "Убийства", "Смерти", MUTED)
-	for row in rows:
-		_score_line(_score_rows, row[0], str(row[1]), str(row[2]), ACCENT if row[3] else INK)
+	_score_sections(_score_rows, rows)
 
 
-func _score_line(parent: VBoxContainer, title: String, kills: String, deaths: String, color: Color) -> void:
+func _score_sections(parent: VBoxContainer, rows: Array) -> void:
+	if not _match.team_deathmatch:
+		_score_header(parent, "Игрок")
+		for row in rows:
+			_score_line(parent, row, ACCENT if row[5] else INK)
+		return
+	for team in 2:
+		var title := "Команда %d" % (team + 1)
+		var section_rows: Array = []
+		for row in rows:
+			if row[6] == team:
+				section_rows.append(row)
+		if section_rows.is_empty():
+			continue
+		_score_header(parent, title)
+		for row in section_rows:
+			_score_line(parent, row, ACCENT if row[5] else INK)
+
+
+func _score_header(parent: VBoxContainer, title: String) -> void:
+	_score_line(parent, [title, "Уб", "См", "K/D", "Ping", false, -1], MUTED)
+
+
+func _score_line(parent: VBoxContainer, row: Array, color: Color) -> void:
 	var line := HBoxContainer.new()
 	parent.add_child(line)
-	var player := _label(line, title, 17, color)
+	var player := _label(line, str(row[0]), 17, color)
 	player.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for value in [kills, deaths]:
+	var ping := str(row[4]) if row[4] is String else _ping_text(row[4])
+	for value in [str(row[1]), str(row[2]), row[3] if row[3] is String else "%.2f" % row[3], ping]:
 		var cell := _label(line, value, 17, color)
-		cell.custom_minimum_size.x = 112
+		cell.custom_minimum_size.x = 70
 		cell.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+
+func _ping_text(value: Variant) -> String:
+	return "—" if int(value) < 0 else "%d мс" % int(value)
 
 
 func _layout(parent: Control, minimum: Vector2, modal: bool) -> VBoxContainer:

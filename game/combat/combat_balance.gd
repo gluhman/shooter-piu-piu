@@ -176,9 +176,8 @@ const DATA := {
 		}
 	},
 	"accuracy": {
-		"spread_distribution": "uniform_solid_angle_cone",
-		"centered_shot_chance_hip": 0.08,
-		"centered_shot_chance_ads": 0.32,
+		"spread_distribution": "center_weighted_solid_angle_cone",
+		"radial_concentration": 1.65,
 		"crouched_spread_multiplier": 0.8,
 		"moving_ads_spread_add_deg": 0.15,
 		"moving_hip_spread_add_deg": 0.35,
@@ -435,9 +434,9 @@ const DATA := {
 		"smoke": {
 			"fuse_from_release_s": 1.1,
 			"radius_m": 3.5,
-			"time_to_full_density_s": 1.2,
-			"full_density_duration_s": 10,
-			"fade_out_s": 2,
+			"time_to_full_density_s": 1.5,
+			"full_density_duration_s": 16,
+			"fade_out_s": 4,
 			"blocks_projectiles": false,
 			"blocks_human_hitscan": false,
 			"disables_ai_vision_through_dense_smoke": true,

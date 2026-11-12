@@ -219,12 +219,29 @@ func score_rows(highlight_local: bool = true) -> Array:
 	for bot in bots:
 		var title := "Бот" if bots.size() == 1 else "Бот %d" % (1 - bot.combatant_id)
 		rows.append(_score_row(bot.combatant_id, title, false))
+	rows.sort_custom(_sort_score_rows)
 	return rows
 
 
 func _score_row(id: int, title: String, local: bool) -> Array:
 	var score := _score_for(id)
-	return [title, score.x, score.y, local]
+	var actor: Node = get_parent().combatant(id)
+	var team: int = actor.team_id() if is_instance_valid(actor) and get_parent().team_deathmatch else -1
+	return [title, score.x, score.y, _kill_death_ratio(score), get_parent().ping_for(id), local, team]
+
+
+func _sort_score_rows(first: Array, second: Array) -> bool:
+	if first[1] != second[1]:
+		return first[1] > second[1]
+	if first[3] != second[3]:
+		return first[3] > second[3]
+	if first[2] != second[2]:
+		return first[2] < second[2]
+	return first[0].naturalnocasecmp_to(second[0]) < 0
+
+
+func _kill_death_ratio(score: Vector2i) -> float:
+	return float(score.x) / float(maxi(1, score.y))
 
 
 func _score_for(id: int) -> Vector2i:

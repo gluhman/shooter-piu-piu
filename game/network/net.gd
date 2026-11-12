@@ -61,6 +61,16 @@ func local_id() -> int:
 	return multiplayer.get_unique_id()
 
 
+func peer_ping_ms(peer_id: int) -> int:
+	var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if enet == null or peer_id <= 0:
+		return -1
+	var peer := enet.get_peer(peer_id)
+	if peer == null:
+		return -1
+	return roundi(peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME))
+
+
 func lan_addresses() -> PackedStringArray:
 	var preferred := PackedStringArray()
 	var rest := PackedStringArray()

@@ -75,6 +75,8 @@ var _ready_peers: Array[int] = []
 var _pose_time := 0.0
 var _cloud_time := 0.0
 var _status_time := 0.0
+var _ping_time := 0.0
+var _ping_by_peer: Dictionary[int, int] = {}
 var _had_player := false
 var _room_password := ""
 var _owner_token := ""
@@ -203,7 +205,7 @@ func has_started() -> bool:
 
 
 func input_blocked() -> bool:
-	return _reloading or is_loading() or round_finished() or $HUD/MatchMenu.visible or $HUD/WeaponSelect.armory_open()
+	return _reloading or is_loading() or round_finished() or $HUD/MatchMenu.visible or $HUD/WeaponSelect.selection_open()
 
 
 func round_finished() -> bool:
@@ -887,7 +889,6 @@ func _finish_round(reason: String) -> void:
 		var winner := "Ничья" if _team_score.x == _team_score.y else ("Команда 1 победила" if _team_score.x > _team_score.y else "Команда 2 победила")
 		reason = "%s (%d–%d) · %s" % [winner, _team_score.x, _team_score.y, reason]
 	var rows: Array = $HUD.score_rows(false)
-	rows.sort_custom(func(a: Array, b: Array) -> bool: return a[1] > b[1] or (a[1] == b[1] and a[2] < b[2]))
 	net_finish(reason, rows)
 	for peer in _ready_peers:
 		net_finish.rpc_id(peer, reason, rows)
@@ -1118,6 +1119,34 @@ func _send_breakwater_spawn(id: int, slot: int, at: Vector3) -> void:
 		net_breakwater_spawn.rpc_id(peer, _map_revision, id, slot, at)
 
 
+func ping_for(id: int) -> int:
+	return _ping_by_peer.get(id, -1)
+
+
+func _sync_ping_snapshot(delta: float) -> void:
+	if not Net.active or not multiplayer.is_server():
+		return
+	_ping_time += delta
+	if _ping_time < 1.0:
+		return
+	_ping_time = fmod(_ping_time, 1.0)
+	var snapshot: Dictionary[int, int] = {}
+	for peer in player_slots:
+		if peer > 1:
+			snapshot[peer] = Net.peer_ping_ms(peer)
+	_ping_by_peer = snapshot
+	net_ping_snapshot(_ping_by_peer)
+	for peer in _ready_peers:
+		net_ping_snapshot.rpc_id(peer, _ping_by_peer)
+
+
+@rpc("authority", "unreliable")
+func net_ping_snapshot(snapshot: Dictionary) -> void:
+	_ping_by_peer.clear()
+	for peer: Variant in snapshot:
+		_ping_by_peer[int(peer)] = int(snapshot[peer])
+
+
 @rpc("authority", "reliable")
 func net_breakwater_spawn(revision: int, id: int, slot: int, at: Vector3) -> void:
 	if revision != _map_revision or not is_instance_valid(_breakwater) or combatant(id):
@@ -1136,6 +1165,7 @@ func _physics_process(delta: float) -> void:
 			_write_room_status()
 	if not _started or _loading or round_finished():
 		return
+	_sync_ping_snapshot(delta)
 	if is_instance_valid(_breakwater) and (not Net.active or multiplayer.is_server()):
 		_spawn_retry_left -= delta
 		if _spawn_retry_left <= 0.0:

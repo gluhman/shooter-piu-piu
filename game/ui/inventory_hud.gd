@@ -104,17 +104,21 @@ func _refresh() -> void:
 	_weapon_hint.hide()
 	for slot: String in GameSettings.WEAPON_SLOTS:
 		var id: String = _player.weapon_in_slot(slot)
-		_weapon_keys[slot].hide()
+		_weapon_keys[slot].text = GameSettings.binding_label(GameSettings.WEAPON_SLOTS[slot])
+		_weapon_keys[slot].show()
 		_weapon_names[slot].text = WEAPON.WEAPONS[id].name if id != "" else "Пусто"
 	_medkit_key.hide()
 	_medkit_count.text = "%d / %d" % [_player.medkits, _player.MAX_MEDKITS]
 	_medkit_count.modulate = UI.INK if _player.medkits > 0 else UI.MUTED
 	var selected: String = _player.carried_grenade()
-	_grenade_key.text = "Гранаты" if selected == "" else "Гранаты · %s" % ARSENAL.GRENADE_LABELS[selected]
+	_grenade_key.text = "%s — след. · %s — бросить" % [
+		GameSettings.binding_label(&"select_grenade"), GameSettings.binding_label(&"throw_grenade"),
+	]
 	for kind: String in ARSENAL.GRENADE_IDS:
 		var count: int = _player.grenade_stock(kind)
 		var slot: Label = _grenade_slots[kind]
-		slot.text = "%s\n%d" % [ARSENAL.GRENADE_LABELS[kind].left(3), count]
+		var action: StringName = ARSENAL.GRENADE_ACTIONS[kind]
+		slot.text = "%s %s\n%d" % [GameSettings.binding_label(action), ARSENAL.GRENADE_LABELS[kind].left(3), count]
 		slot.modulate = UI.ACCENT if kind == selected else (UI.INK if count > 0 else UI.MUTED)
 	if _wheel_panel.visible:
 		_update_wheel()
