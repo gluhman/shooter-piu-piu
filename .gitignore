@@ -9,6 +9,7 @@
 .DS_Store
 
 /.shooter-build/
+/.shooter-export-cache/
 /releases/
 /assets/arena_props/psx/
 /assets/arena_props/oxygen/

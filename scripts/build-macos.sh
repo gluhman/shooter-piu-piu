@@ -57,6 +57,7 @@ if [[ -n "$base_pack" && "$(<"$base_pack.engine")" != "$engine_version" ]]; then
 fi
 
 build_dir="$project_dir/.shooter-build"
+import_cache="$project_dir/.shooter-export-cache/.godot"
 output="$project_dir/Shooter.app"
 local_template="$(dirname "$project_dir")/macos-4.7.2.stable.zip"
 if [[ -r "$local_template" ]]; then
@@ -100,12 +101,28 @@ printf '%s\n' "$version" > "$snapshot/game/release/version.txt"
 VERSION="$version" perl -0pi -e 's/^application\/short_version=.*$/application\/short_version="$ENV{VERSION}"/m' "$snapshot/export_presets.cfg"
 VERSION="$version" perl -0pi -e 's/^application\/version=.*$/application\/version="$ENV{VERSION}"/m' "$snapshot/export_presets.cfg"
 
+cache_source=
+if [[ -d "$import_cache" ]]; then
+    cache_source="$import_cache"
+elif [[ -d "$project_dir/.godot" ]]; then
+    cache_source="$project_dir/.godot"
+fi
+if [[ -n "$cache_source" ]]; then
+    printf 'Восстанавливаем кэш импорта Godot\n'
+    mkdir -p "$snapshot/.godot"
+    rsync -a --delete --exclude editor --exclude logs --exclude tmp "$cache_source/" "$snapshot/.godot/"
+fi
+
 printf 'Импорт ресурсов Godot\n'
 if ! "$godot" --headless --path "$snapshot" --editor --import >"$build_dir/import.log" 2>&1 ||
     grep -Eq 'SCRIPT ERROR|Parse Error|Failed loading resource' "$build_dir/import.log"; then
     tail -n 80 "$build_dir/import.log" >&2
     fail 'Не удалось импортировать ресурсы.'
 fi
+
+printf 'Обновляем кэш импорта Godot\n'
+mkdir -p "$import_cache"
+rsync -a --delete --exclude editor --exclude logs --exclude tmp "$snapshot/.godot/" "$import_cache/"
 
 if [[ -n "$base_pack" ]]; then
     patch="$build_dir/$patch_name"
