@@ -10,6 +10,14 @@ VERSION_SETTING = re.compile(r"^config/version\s*=.*$", re.MULTILINE)
 RELEASE_HEADING = re.compile(r"##\s+(.+)")
 CHANGE_ITEM = re.compile(r"\s*[-*]\s+.*\w")
 DOC_PATH = ":(glob)docs/**/*.md"
+NON_RELEASE_PATHS = (
+    "docs/",
+    "README.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "scripts/check-release.py",
+    "scripts/git-hooks/",
+)
 
 
 def git(*args):
@@ -46,7 +54,18 @@ def check_docs(base, head):
     raise ValueError("Добавь или обнови Markdown-документ в docs/ и включи его в отправляемые коммиты.")
 
 
+def needs_release(base, head):
+    if not base:
+        return True
+    paths = git("diff", "--name-only", "-z", base, head).rstrip("\0").split("\0")
+    return any(path and not path.startswith(NON_RELEASE_PATHS) and path not in NON_RELEASE_PATHS for path in paths)
+
+
 def check_release(base, head):
+    if not needs_release(base, head):
+        check_docs(base, head)
+        print("Документационное изменение проверено без выпуска новой версии.")
+        return
     version = project_version(head)
     base_has_changelog = False
     if base:
