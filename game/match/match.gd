@@ -296,6 +296,7 @@ func _choose_safe_spawn(actor: Node3D, slot: int, previous: Vector3,
 	var visibility_radius := maxf(64.0, arena_width() * 0.65)
 	var distance_limit := visibility_radius + 8.0
 	var village := map_id == MAP.VILLAGE_ID
+	var prefer_cover := village or map_id == MAP.WORKSHOP_ID
 	for point: Vector3 in candidates:
 		var nearest_occupied := INF
 		for fighter in occupied:
@@ -315,17 +316,17 @@ func _choose_safe_spawn(actor: Node3D, slot: int, previous: Vector3,
 			score -= 6.0
 		if score <= best_score:
 			continue
-		if village or nearest >= MIN_RESPAWN_DISTANCE:
+		if prefer_cover or nearest >= MIN_RESPAWN_DISTANCE:
 			ray.to = point + Vector3.UP * 1.4
 			for enemy in enemies:
 				var distance := enemy.global_position.distance_to(point)
-				if not village and distance > visibility_radius:
+				if not prefer_cover and distance > visibility_radius:
 					continue
 				ray.from = enemy.aim_center()
 				var hit: Dictionary = $Ballistics.ray_through_glass(space, ray) if village else space.intersect_ray(ray)
 				if hit.is_empty():
-					score -= 400.0 if village else 25.0 * (1.0 - distance / distance_limit)
-					if village:
+					score -= 400.0 if prefer_cover else 25.0 * (1.0 - distance / distance_limit)
+					if prefer_cover:
 						break
 				if score <= best_score:
 					break
@@ -1106,8 +1107,7 @@ func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
 		if team_deathmatch and player_slots[_bot_slots[index]] != 0:
 			continue
 		var slot := _bot_slots[index] if team_deathmatch else 0
-		var team_start := team_deathmatch and (
-			map_id == MAP.VILLAGE_ID or (map_id == MAP.WORKSHOP_ID and arena_width() >= 40.0))
+		var team_start := team_deathmatch and map_id in [MAP.VILLAGE_ID, MAP.WORKSHOP_ID]
 		var spawn_index := slot if team_start else Net.MAX_PLAYERS + index
 		var bot := _add_bot(index, slot, difficulty, $Map.initial_spawn(spawn_index))
 		if not Net.active or multiplayer.is_server():

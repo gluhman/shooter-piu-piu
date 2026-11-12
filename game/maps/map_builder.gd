@@ -120,8 +120,6 @@ func preload_textures(map_id: int) -> void:
 		for material in VILLAGE_TEXTURES:
 			for kind in VILLAGE_TEXTURES[material]:
 				_textures.erase(_texture_path(material, kind))
-	if map_id == WORKSHOP_ID:
-		return
 	var pending: Array[String] = []
 	for material in materials:
 		for kind in materials[material]:

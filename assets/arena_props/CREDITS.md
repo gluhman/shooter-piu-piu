@@ -12,9 +12,9 @@ Dust II uses the scrap skip from [Abandoned Junkyard](https://ptdesigns.itch.io/
 
 Верхние контейнеры используют красный, оранжевый и чёрный варианты LOD2 из [Containers Asset Pack](https://oxygen3d.itch.io/game-ready-containers-asset-pack) от Oxygen. Модели разделены на панели, чтобы пробоины отображались на стороне попадания. Подготовленный GLB хранится локально в `assets/arena_props/oxygen/stacked_containers.glb`.
 
-### Цех № 3
+### Архивные ресурсы «Цеха № 3»
 
-В локальной сборке используются модели из [PSX Ultra Mid Budget](https://slopmaster.itch.io/psx-ultra-mid-budget) от SlopMaster. Описание набора разрешает использование в играх и ограничивает распространение отдельных моделей. Исходные GLB хранятся в локальной папке `assets/arena_props/psx/`.
+В предыдущей версии карты использовались модели из [PSX Ultra Mid Budget](https://slopmaster.itch.io/psx-ultra-mid-budget) от SlopMaster. Описание набора разрешает использование в играх и ограничивает распространение отдельных моделей. [Ресурсы обновлённой карты](workshop/CREDITS.md).
 
 Для сборки с этими моделями скопируйте в папку следующие файлы из каталога `GLB` соответствующего архива.
 

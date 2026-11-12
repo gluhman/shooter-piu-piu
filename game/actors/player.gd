@@ -3,6 +3,7 @@ extends CharacterBody3D
 const Balance := preload("res://game/combat/combat_balance.gd")
 const WALK_SPEED: float = Balance.MOVEMENT.walk_speed_m_s
 const SPRINT_SPEED: float = WALK_SPEED * Balance.MOVEMENT.sprint_multiplier
+const LADDER_SPEED := 2.4
 const CROUCH_SPEED: float = WALK_SPEED * Balance.MOVEMENT.crouch_speed_multiplier
 const AIM_SPEED: float = WALK_SPEED * Balance.MOVEMENT.ads_speed_multiplier
 const GROUND_ACCELERATION := 42.0
@@ -95,6 +96,9 @@ var _recoil_yaw := 0.0
 var _dead := false
 var _respawn_selection := PackedStringArray()
 var _respawn_ready := false
+var _ladder_route := PackedVector3Array()
+var _ladder_step := 0
+
 var _respawn_timer: SceneTreeTimer
 var _hurt_lock := 0.0
 var _avatar: Node3D
@@ -229,7 +233,7 @@ func armor_ads_delay() -> float:
 
 
 func combat_grounded() -> bool:
-	return is_on_floor() if _is_local() or is_in_group("bot") else _net_grounded
+	return is_on_floor() and not is_climbing_ladder() if _is_local() or is_in_group("bot") else _net_grounded
 
 
 func combat_speed() -> float:
@@ -646,7 +650,7 @@ func network_pose() -> PackedFloat32Array:
 	if not _latest_pose.is_empty() and not _is_local() and not is_in_group("bot"):
 		return _latest_pose
 	_pose_sequence += 1
-	var grounded := is_on_floor() if _is_local() or (_server_rules() and is_in_group("bot")) else _net_grounded
+	var grounded := combat_grounded() if _is_local() or (_server_rules() and is_in_group("bot")) else _net_grounded
 	return PackedFloat32Array([
 		position.x, position.y, position.z, rotation.y, _camera.rotation.x, float(crouched), float(aiming),
 		float(sprinting), float(sliding), _view_lean, float(grounded), float(_spawn_revision), float(_pose_sequence),
@@ -864,6 +868,7 @@ func _commit(killer_id: int, impact: Dictionary = {}) -> void:
 	if health > 0 or _dead:
 		return
 	_dead = true
+	_ladder_route.clear()
 	if _hit_reaction:
 		_hit_reaction.reset()
 	_hurtboxes.set_active(false)
@@ -905,6 +910,7 @@ func _clear_inventory() -> void:
 
 
 func _reset_support() -> void:
+	_ladder_route.clear()
 	vest_tier = Balance.PLAYER.spawn_vest
 	armor = armor_capacity()
 	_vest.show()
@@ -962,6 +968,7 @@ func restart_round() -> void:
 
 
 func stop_round() -> void:
+	_ladder_route.clear()
 	_cancel_respawn()
 	if _hit_reaction:
 		_hit_reaction.reset()
@@ -1163,6 +1170,9 @@ func _physics_process(delta: float) -> void:
 		PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, global_transform)
 		_track_movement_audio(delta, false)
 		return
+	if not _ladder_route.is_empty():
+		_climb_ladder(delta)
+		return
 	var accepts_input := accepts_gameplay_input()
 	if accepts_input:
 		var look := Vector2(Input.get_joy_axis(0, JOY_AXIS_RIGHT_X), Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y))
@@ -1234,6 +1244,42 @@ func _physics_process(delta: float) -> void:
 	velocity.z = horizontal.y
 	velocity.y = vertical
 	move_and_slide()
+	_track_movement_audio(delta, true)
+
+
+func start_ladder_climb(route: PackedVector3Array) -> bool:
+	if route.is_empty() or not accepts_gameplay_input() or is_climbing_ladder():
+		return false
+	var feet := global_transform
+	for point in route:
+		if test_move(feet, point - feet.origin):
+			return false
+		feet.origin = point
+	_ladder_route = route
+	_ladder_step = 0
+	velocity = Vector3.ZERO
+	sprinting = false
+	sliding = false
+	aiming = false
+	_lean_amount = 0.0
+	_slide_left = 0.0
+	return true
+
+
+func is_climbing_ladder() -> bool:
+	return not _ladder_route.is_empty()
+
+
+func _climb_ladder(delta: float) -> void:
+	var offset := _ladder_route[_ladder_step] - global_position
+	var movement := offset.limit_length(LADDER_SPEED * delta)
+	if move_and_collide(movement):
+		_ladder_route.clear()
+		return
+	if offset.length_squared() <= movement.length_squared() + 0.000001:
+		_ladder_step += 1
+		if _ladder_step == _ladder_route.size():
+			_ladder_route.clear()
 	_track_movement_audio(delta, true)
 
 

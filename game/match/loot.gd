@@ -171,6 +171,9 @@ func _drop_offset(at: Vector3, offset: Vector3, ignored: Array[RID]) -> Vector3:
 func interact(actor: Node) -> void:
 	if not actor.accepts_gameplay_input():
 		return
+	var ladders := _match.get_node_or_null("Map/WorkshopLadders")
+	if ladders and (actor.is_climbing_ladder() or actor.start_ladder_climb(ladders.route_in_view(actor))):
+		return
 	if _hover_door >= 0:
 		var fixtures := _match.get_node_or_null("Map/VillageFixtures")
 		if fixtures:
@@ -278,7 +281,14 @@ func _update_prompt() -> void:
 	_hover = Vector2i(-1, -1)
 	_hover_door = -1
 	var prompt := ""
-	if actor and actor.accepts_gameplay_input():
+	if actor and actor.accepts_gameplay_input() and not actor.is_climbing_ladder():
+		var ladders := _match.get_node_or_null("Map/WorkshopLadders")
+		if ladders:
+			var route: PackedVector3Array = ladders.route_in_view(actor)
+			if not route.is_empty():
+				var action := "подняться на крышу" if route[-1].y > actor.global_position.y else "спуститься по лестнице"
+				_hud.show_loot_prompt("%s — %s" % [GameSettings.binding_label(&"interact"), action])
+				return
 		var best := INF
 		for index in _crates.size():
 			if _open[index]:
