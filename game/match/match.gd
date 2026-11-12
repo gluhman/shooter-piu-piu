@@ -339,7 +339,7 @@ func _start_round_on_map(arena: int) -> void:
 		map_id = arena
 		await start_host_match()
 	else:
-	var bot_count := _solo_bot_count if Net.solo else lan_bot_count
+		var bot_count := _solo_bot_count if Net.solo else lan_bot_count
 		_clear_match_map()
 		await start_solo(bot_count, bot_difficulty, weapon_set, arena, Vector2i(time_option, kill_option), map_size, team_deathmatch)
 

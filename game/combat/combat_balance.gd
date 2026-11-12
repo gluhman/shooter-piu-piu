@@ -177,6 +177,8 @@ const DATA := {
 	},
 	"accuracy": {
 		"spread_distribution": "uniform_solid_angle_cone",
+		"centered_shot_chance_hip": 0.08,
+		"centered_shot_chance_ads": 0.32,
 		"crouched_spread_multiplier": 0.8,
 		"moving_ads_spread_add_deg": 0.15,
 		"moving_hip_spread_add_deg": 0.35,
