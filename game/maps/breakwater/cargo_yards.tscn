@@ -1,0 +1,1100 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/container_blue.tscn" id="container_blue"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/container_oxide.tscn" id="container_oxide"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/container_sand.tscn" id="container_sand"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/container_gray.tscn" id="container_gray"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/factory_loading_bay.glb" id="bay"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/factory_window.glb" id="factory_window"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/barrel_03.glb" id="barrel"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/wooden_crate_01.glb" id="wood"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/hall_switchgear.glb" id="boxgear"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/concrete_floor_worn_001_color.jpg" id="concrete_floor_worn_001_color"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/concrete_floor_worn_001_normal.jpg" id="concrete_floor_worn_001_normal"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/concrete_floor_worn_001_orm.jpg" id="concrete_floor_worn_001_orm"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/painted_metal_010_color.jpg" id="painted_metal_010_color"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/painted_metal_010_normal.jpg" id="painted_metal_010_normal"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/painted_metal_010_orm.jpg" id="painted_metal_010_orm"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/rusty_metal_sheet_color.jpg" id="rusty_metal_sheet_color"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/rusty_metal_sheet_normal.jpg" id="rusty_metal_sheet_normal"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/rusty_metal_sheet_orm.jpg" id="rusty_metal_sheet_orm"]
+
+[sub_resource type="ORMMaterial3D" id="warehouse_wall"]
+albedo_color = Color(0.72, 0.73, 0.69, 1)
+albedo_texture = ExtResource("concrete_floor_worn_001_color")
+orm_texture = ExtResource("concrete_floor_worn_001_orm")
+normal_enabled = true
+normal_scale = 0.42
+normal_texture = ExtResource("concrete_floor_worn_001_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.4, 0.4, 0.4)
+texture_filter = 5
+
+[sub_resource type="ORMMaterial3D" id="warehouse_roof"]
+albedo_color = Color(0.51, 0.58, 0.57, 1)
+albedo_texture = ExtResource("painted_metal_010_color")
+orm_texture = ExtResource("painted_metal_010_orm")
+normal_enabled = true
+normal_scale = 0.42
+normal_texture = ExtResource("painted_metal_010_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.5, 0.5, 0.5)
+texture_filter = 5
+
+[sub_resource type="StandardMaterial3D" id="traffic_paint"]
+albedo_color = Color(0.68, 0.53, 0.26, 1)
+metallic = 0
+roughness = 0.85
+
+[sub_resource type="ORMMaterial3D" id="pole"]
+albedo_color = Color(0.55, 0.61, 0.61, 1)
+albedo_texture = ExtResource("rusty_metal_sheet_color")
+orm_texture = ExtResource("rusty_metal_sheet_orm")
+normal_enabled = true
+normal_scale = 0.42
+normal_texture = ExtResource("rusty_metal_sheet_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.5, 0.5, 0.5)
+texture_filter = 5
+
+[sub_resource type="BoxShape3D" id="ground_container"]
+size = Vector3(2.43, 2.58, 3.6)
+
+[sub_resource type="BoxMesh" id="box_0p16x10p2x0p16"]
+size = Vector3(0.16, 10.2, 0.16)
+
+[sub_resource type="BoxMesh" id="box_1p18x0p14x0p14"]
+size = Vector3(1.18, 0.14, 0.14)
+
+[sub_resource type="BoxMesh" id="box_0p37x0p27x0p58"]
+size = Vector3(0.37, 0.27, 0.58)
+
+[sub_resource type="BoxMesh" id="box_0p083x0p016x1p9"]
+size = Vector3(0.083, 0.016, 1.9)
+
+[sub_resource type="BoxMesh" id="box_13p95x6p96x1p7"]
+size = Vector3(13.95, 6.96, 1.7)
+
+[sub_resource type="BoxMesh" id="box_14p1x0p29x4p1"]
+size = Vector3(14.1, 0.29, 4.1)
+
+[sub_resource type="BoxMesh" id="box_0p24x4p4x0p32"]
+size = Vector3(0.24, 4.4, 0.32)
+
+[sub_resource type="BoxMesh" id="box_9p1x0p16x1p58"]
+size = Vector3(9.1, 0.16, 1.58)
+
+[node name="CargoYards" type="Node3D"]
+
+[node name="Stacks" type="Node3D" parent="."]
+
+[node name="Backlot" type="Node3D" parent="."]
+
+[node name="Equipment" type="Node3D" parent="."]
+
+[node name="Lighting" type="Node3D" parent="."]
+
+[node name="WestTierTwo0" parent="Stacks" instance=ExtResource("container_oxide")]
+position = Vector3(-27, 3.99, -12.3)
+scale = Vector3(1, 1, 0.78464)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="WestTierThree0" parent="Stacks" instance=ExtResource("container_gray")]
+position = Vector3(-27, 6.57, -12.21)
+scale = Vector3(1, 1, 0.76423)
+
+[node name="WestTierTwo1" parent="Stacks" instance=ExtResource("container_sand")]
+position = Vector3(-23.4, 3.99, 0)
+scale = Vector3(1, 1, 0.73456)
+
+[node name="WestTierTwo2" parent="Stacks" instance=ExtResource("container_blue")]
+position = Vector3(-27, 3.99, 12)
+scale = Vector3(1, 1, 0.81803)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="WestTierThree2" parent="Stacks" instance=ExtResource("container_oxide")]
+position = Vector3(-27, 6.57, 12.09)
+scale = Vector3(1, 1, 0.79675)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="WestFreightCover0" type="StaticBody3D" parent="Stacks"]
+position = Vector3(-28.4, 1.29, -4.9)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Model" parent="Stacks/WestFreightCover0" instance=ExtResource("container_gray")]
+position = Vector3(0, 0, 0)
+scale = Vector3(0.94, 1, 0.6)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="Collision" type="CollisionShape3D" parent="Stacks/WestFreightCover0"]
+shape = SubResource("ground_container")
+
+[node name="WestFreightCover1" type="StaticBody3D" parent="Stacks"]
+position = Vector3(-26.4, 1.29, 6.15)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Model" parent="Stacks/WestFreightCover1" instance=ExtResource("container_oxide")]
+position = Vector3(0, 0, 0)
+scale = Vector3(0.94, 1, 0.6)
+
+[node name="Collision" type="CollisionShape3D" parent="Stacks/WestFreightCover1"]
+shape = SubResource("ground_container")
+
+[node name="WestStorageStack0_0" parent="Backlot" instance=ExtResource("container_blue")]
+position = Vector3(-34, 1.29, -18)
+
+[node name="WestStorageStack0_1" parent="Backlot" instance=ExtResource("container_sand")]
+position = Vector3(-34.12, 3.87, -18)
+
+[node name="WestStorageStack1_0" parent="Backlot" instance=ExtResource("container_sand")]
+position = Vector3(-34, 1.29, -10.9)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="WestStorageStack1_1" parent="Backlot" instance=ExtResource("container_oxide")]
+position = Vector3(-34.12, 3.87, -10.9)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="WestStorageStack1_2" parent="Backlot" instance=ExtResource("container_gray")]
+position = Vector3(-34.24, 6.45, -10.9)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="WestStorageStack2_0" parent="Backlot" instance=ExtResource("container_oxide")]
+position = Vector3(-34, 1.29, -4)
+
+[node name="WestStorageStack2_1" parent="Backlot" instance=ExtResource("container_gray")]
+position = Vector3(-34.12, 3.87, -4)
+
+[node name="WestStorageStack3_0" parent="Backlot" instance=ExtResource("container_gray")]
+position = Vector3(-34, 1.29, 2.8)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="WestStorageStack3_1" parent="Backlot" instance=ExtResource("container_blue")]
+position = Vector3(-34.12, 3.87, 2.8)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="WestStorageStack4_0" parent="Backlot" instance=ExtResource("container_blue")]
+position = Vector3(-34, 1.29, 9.7)
+
+[node name="WestStorageStack4_1" parent="Backlot" instance=ExtResource("container_sand")]
+position = Vector3(-34.12, 3.87, 9.7)
+
+[node name="WestStorageStack4_2" parent="Backlot" instance=ExtResource("container_oxide")]
+position = Vector3(-34.24, 6.45, 9.7)
+
+[node name="WestStorageStack5_0" parent="Backlot" instance=ExtResource("container_sand")]
+position = Vector3(-34, 1.29, 16.6)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="WestStorageStack5_1" parent="Backlot" instance=ExtResource("container_oxide")]
+position = Vector3(-34.12, 3.87, 16.6)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="WestRoofDrum0" parent="Equipment" instance=ExtResource("barrel")]
+position = Vector3(-26.75, 7.86, -14.4)
+scale = Vector3(0.88, 0.88, 0.88)
+
+[node name="WestRoofPallet0" parent="Equipment" instance=ExtResource("wood")]
+position = Vector3(-27.29, 8.03, -13.85)
+scale = Vector3(1.05, 0.98, 1.4)
+
+[node name="WestRoofDrum1" parent="Equipment" instance=ExtResource("barrel")]
+position = Vector3(-23.15, 5.28, 2.15)
+scale = Vector3(0.88, 0.88, 0.88)
+rotation = Vector3(0, 0.91, 0)
+
+[node name="WestRoofPallet1" parent="Equipment" instance=ExtResource("wood")]
+position = Vector3(-23.69, 5.45, 2.7)
+scale = Vector3(1.05, 0.98, 1.4)
+rotation = Vector3(0, 0.63, 0)
+
+[node name="WestRoofDrum2" parent="Equipment" instance=ExtResource("barrel")]
+position = Vector3(-26.75, 7.86, 14.2)
+scale = Vector3(0.88, 0.88, 0.88)
+rotation = Vector3(0, 1.82, 0)
+
+[node name="WestRoofPallet2" parent="Equipment" instance=ExtResource("wood")]
+position = Vector3(-27.29, 8.03, 14.75)
+scale = Vector3(1.05, 0.98, 1.4)
+rotation = Vector3(0, 1.26, 0)
+
+[node name="WestFloodPole0" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-30.93, 5.12, -17.8)
+mesh = SubResource("box_0p16x10p2x0p16")
+material_override = SubResource("pole")
+
+[node name="WestFloodBracket0" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-30.45, 10.18, -17.8)
+mesh = SubResource("box_1p18x0p14x0p14")
+material_override = SubResource("pole")
+
+[node name="WestFloodHead0" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-29.87, 10.06, -17.8)
+rotation = Vector3(0, 0, -0.32)
+mesh = SubResource("box_0p37x0p27x0p58")
+material_override = SubResource("pole")
+
+[node name="WestFloodPool0" type="SpotLight3D" parent="Lighting"]
+position = Vector3(-29.7, 9.93, -17.8)
+rotation = Vector3(-1.16, -1.5708, 0)
+light_color = Color(0.8, 0.87, 1, 1)
+light_energy = 2.4
+spot_range = 19
+spot_angle = 36
+
+[node name="WestFloodPole1" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-30.93, 5.12, 16.6)
+mesh = SubResource("box_0p16x10p2x0p16")
+material_override = SubResource("pole")
+
+[node name="WestFloodBracket1" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-30.45, 10.18, 16.6)
+mesh = SubResource("box_1p18x0p14x0p14")
+material_override = SubResource("pole")
+
+[node name="WestFloodHead1" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-29.87, 10.06, 16.6)
+rotation = Vector3(0, 0, -0.32)
+mesh = SubResource("box_0p37x0p27x0p58")
+material_override = SubResource("pole")
+
+[node name="WestFloodPool1" type="SpotLight3D" parent="Lighting"]
+position = Vector3(-29.7, 9.93, 16.6)
+rotation = Vector3(-1.16, -1.5708, 0)
+light_color = Color(0.8, 0.87, 1, 1)
+light_energy = 2.4
+spot_range = 19
+spot_angle = 36
+
+[node name="WestTrafficDash0" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, -21)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestTrafficDash1" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, -17)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestTrafficDash2" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, -13)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestTrafficDash3" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, -9)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestTrafficDash4" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, -5)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestTrafficDash5" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, -1)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestTrafficDash6" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, 3)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestTrafficDash7" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, 7)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestTrafficDash8" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, 11)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestTrafficDash9" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, 15)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestTrafficDash10" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-20.45, 0.01, 19)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="WestRoadLabel0" type="Label3D" parent="Equipment"]
+position = Vector3(-23.5, 0.026, -20.7)
+rotation = Vector3(-1.5708, 0, 0)
+text = "KEEP CLEAR"
+font_size = 66
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="WestRoadLabel1" type="Label3D" parent="Equipment"]
+position = Vector3(-23.5, 0.026, 20.7)
+rotation = Vector3(-1.5708, 0, 0)
+text = "KEEP CLEAR"
+font_size = 66
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="EastTierTwo0" parent="Stacks" instance=ExtResource("container_gray")]
+position = Vector3(27, 3.99, -12.3)
+scale = Vector3(1, 1, 0.78464)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="EastTierThree0" parent="Stacks" instance=ExtResource("container_gray")]
+position = Vector3(27, 6.57, -12.21)
+scale = Vector3(1, 1, 0.76423)
+
+[node name="EastTierTwo1" parent="Stacks" instance=ExtResource("container_blue")]
+position = Vector3(23.4, 3.99, 0)
+scale = Vector3(1, 1, 0.73456)
+
+[node name="EastTierTwo2" parent="Stacks" instance=ExtResource("container_sand")]
+position = Vector3(27, 3.99, 12)
+scale = Vector3(1, 1, 0.81803)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="EastTierThree2" parent="Stacks" instance=ExtResource("container_oxide")]
+position = Vector3(27, 6.57, 12.09)
+scale = Vector3(1, 1, 0.79675)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="EastFreightCover0" type="StaticBody3D" parent="Stacks"]
+position = Vector3(28.4, 1.29, -4.9)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Model" parent="Stacks/EastFreightCover0" instance=ExtResource("container_gray")]
+position = Vector3(0, 0, 0)
+scale = Vector3(0.94, 1, 0.6)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="Collision" type="CollisionShape3D" parent="Stacks/EastFreightCover0"]
+shape = SubResource("ground_container")
+
+[node name="EastFreightCover1" type="StaticBody3D" parent="Stacks"]
+position = Vector3(26.4, 1.29, 6.15)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Model" parent="Stacks/EastFreightCover1" instance=ExtResource("container_oxide")]
+position = Vector3(0, 0, 0)
+scale = Vector3(0.94, 1, 0.6)
+
+[node name="Collision" type="CollisionShape3D" parent="Stacks/EastFreightCover1"]
+shape = SubResource("ground_container")
+
+[node name="EastStorageStack0_0" parent="Backlot" instance=ExtResource("container_sand")]
+position = Vector3(34, 1.29, -18)
+
+[node name="EastStorageStack0_1" parent="Backlot" instance=ExtResource("container_oxide")]
+position = Vector3(34.12, 3.87, -18)
+
+[node name="EastStorageStack1_0" parent="Backlot" instance=ExtResource("container_oxide")]
+position = Vector3(34, 1.29, -10.9)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="EastStorageStack1_1" parent="Backlot" instance=ExtResource("container_gray")]
+position = Vector3(34.12, 3.87, -10.9)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="EastStorageStack1_2" parent="Backlot" instance=ExtResource("container_blue")]
+position = Vector3(34.24, 6.45, -10.9)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="EastStorageStack2_0" parent="Backlot" instance=ExtResource("container_gray")]
+position = Vector3(34, 1.29, -4)
+
+[node name="EastStorageStack2_1" parent="Backlot" instance=ExtResource("container_blue")]
+position = Vector3(34.12, 3.87, -4)
+
+[node name="EastStorageStack3_0" parent="Backlot" instance=ExtResource("container_blue")]
+position = Vector3(34, 1.29, 2.8)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="EastStorageStack3_1" parent="Backlot" instance=ExtResource("container_sand")]
+position = Vector3(34.12, 3.87, 2.8)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="EastStorageStack4_0" parent="Backlot" instance=ExtResource("container_sand")]
+position = Vector3(34, 1.29, 9.7)
+
+[node name="EastStorageStack4_1" parent="Backlot" instance=ExtResource("container_oxide")]
+position = Vector3(34.12, 3.87, 9.7)
+
+[node name="EastStorageStack4_2" parent="Backlot" instance=ExtResource("container_gray")]
+position = Vector3(34.24, 6.45, 9.7)
+
+[node name="EastStorageStack5_0" parent="Backlot" instance=ExtResource("container_oxide")]
+position = Vector3(34, 1.29, 16.6)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="EastStorageStack5_1" parent="Backlot" instance=ExtResource("container_gray")]
+position = Vector3(34.12, 3.87, 16.6)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="EastRoofDrum0" parent="Equipment" instance=ExtResource("barrel")]
+position = Vector3(27.25, 7.86, -14.4)
+scale = Vector3(0.88, 0.88, 0.88)
+
+[node name="EastRoofPallet0" parent="Equipment" instance=ExtResource("wood")]
+position = Vector3(26.71, 8.03, -13.85)
+scale = Vector3(1.05, 0.98, 1.4)
+
+[node name="EastRoofDrum1" parent="Equipment" instance=ExtResource("barrel")]
+position = Vector3(23.65, 5.28, 2.15)
+scale = Vector3(0.88, 0.88, 0.88)
+rotation = Vector3(0, 0.91, 0)
+
+[node name="EastRoofPallet1" parent="Equipment" instance=ExtResource("wood")]
+position = Vector3(23.11, 5.45, 2.7)
+scale = Vector3(1.05, 0.98, 1.4)
+rotation = Vector3(0, 0.63, 0)
+
+[node name="EastRoofDrum2" parent="Equipment" instance=ExtResource("barrel")]
+position = Vector3(27.25, 7.86, 14.2)
+scale = Vector3(0.88, 0.88, 0.88)
+rotation = Vector3(0, 1.82, 0)
+
+[node name="EastRoofPallet2" parent="Equipment" instance=ExtResource("wood")]
+position = Vector3(26.71, 8.03, 14.75)
+scale = Vector3(1.05, 0.98, 1.4)
+rotation = Vector3(0, 1.26, 0)
+
+[node name="EastFloodPole0" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(30.93, 5.12, -17.8)
+mesh = SubResource("box_0p16x10p2x0p16")
+material_override = SubResource("pole")
+
+[node name="EastFloodBracket0" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(30.45, 10.18, -17.8)
+mesh = SubResource("box_1p18x0p14x0p14")
+material_override = SubResource("pole")
+
+[node name="EastFloodHead0" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(29.87, 10.06, -17.8)
+rotation = Vector3(0, 0, 0.32)
+mesh = SubResource("box_0p37x0p27x0p58")
+material_override = SubResource("pole")
+
+[node name="EastFloodPool0" type="SpotLight3D" parent="Lighting"]
+position = Vector3(29.7, 9.93, -17.8)
+rotation = Vector3(-1.16, 1.5708, 0)
+light_color = Color(0.8, 0.87, 1, 1)
+light_energy = 2.4
+spot_range = 19
+spot_angle = 36
+
+[node name="EastFloodPole1" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(30.93, 5.12, 16.6)
+mesh = SubResource("box_0p16x10p2x0p16")
+material_override = SubResource("pole")
+
+[node name="EastFloodBracket1" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(30.45, 10.18, 16.6)
+mesh = SubResource("box_1p18x0p14x0p14")
+material_override = SubResource("pole")
+
+[node name="EastFloodHead1" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(29.87, 10.06, 16.6)
+rotation = Vector3(0, 0, 0.32)
+mesh = SubResource("box_0p37x0p27x0p58")
+material_override = SubResource("pole")
+
+[node name="EastFloodPool1" type="SpotLight3D" parent="Lighting"]
+position = Vector3(29.7, 9.93, 16.6)
+rotation = Vector3(-1.16, 1.5708, 0)
+light_color = Color(0.8, 0.87, 1, 1)
+light_energy = 2.4
+spot_range = 19
+spot_angle = 36
+
+[node name="EastTrafficDash0" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, -21)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastTrafficDash1" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, -17)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastTrafficDash2" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, -13)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastTrafficDash3" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, -9)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastTrafficDash4" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, -5)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastTrafficDash5" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, -1)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastTrafficDash6" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, 3)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastTrafficDash7" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, 7)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastTrafficDash8" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, 11)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastTrafficDash9" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, 15)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastTrafficDash10" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(20.45, 0.01, 19)
+mesh = SubResource("box_0p083x0p016x1p9")
+material_override = SubResource("traffic_paint")
+cast_shadow = 0
+
+[node name="EastRoadLabel0" type="Label3D" parent="Equipment"]
+position = Vector3(23.5, 0.026, -20.7)
+rotation = Vector3(-1.5708, 0, 0)
+text = "KEEP CLEAR"
+font_size = 66
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="EastRoadLabel1" type="Label3D" parent="Equipment"]
+position = Vector3(23.5, 0.026, 20.7)
+rotation = Vector3(-1.5708, 0, 0)
+text = "KEEP CLEAR"
+font_size = 66
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="NorthWarehouse0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-21, 3.48, -24.1)
+mesh = SubResource("box_13p95x6p96x1p7")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthWarehouseRoof0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-21, 7.02, -25.1)
+mesh = SubResource("box_14p1x0p29x4p1")
+material_override = SubResource("warehouse_roof")
+
+[node name="NorthLoadingBay0" parent="Equipment" instance=ExtResource("bay")]
+position = Vector3(-21, 0.01, -22.72)
+scale = Vector3(1.42, 1.14, 1)
+
+[node name="NorthPanel0" parent="Equipment" instance=ExtResource("boxgear")]
+position = Vector3(-16.1, 1.3, -22.75)
+scale = Vector3(0.74, 0.74, 0.74)
+
+[node name="NorthWarehouseWindow0_0" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-25.28, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehouseWindow0_1" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-21, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehouseWindow0_2" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-16.72, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehousePier0_0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-27.83, 4.75, -22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthWarehousePier0_1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-14.17, 4.75, -22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthLoadingCanopy0" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-21, 3.65, -22.15)
+mesh = SubResource("box_9p1x0p16x1p58")
+material_override = SubResource("warehouse_roof")
+
+[node name="NorthDockNumber0" type="Label3D" parent="Equipment"]
+position = Vector3(-21, 3.74, -22.81)
+rotation = Vector3(0, 0, 0)
+text = "N / 01"
+font_size = 74
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="NorthWarehouse1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-7, 3.48, -24.1)
+mesh = SubResource("box_13p95x6p96x1p7")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthWarehouseRoof1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-7, 7.02, -25.1)
+mesh = SubResource("box_14p1x0p29x4p1")
+material_override = SubResource("warehouse_roof")
+
+[node name="NorthLoadingBay1" parent="Equipment" instance=ExtResource("bay")]
+position = Vector3(-7, 0.01, -22.72)
+scale = Vector3(1.42, 1.14, 1)
+
+[node name="NorthPanel1" parent="Equipment" instance=ExtResource("boxgear")]
+position = Vector3(-2.1, 1.3, -22.75)
+scale = Vector3(0.74, 0.74, 0.74)
+
+[node name="NorthWarehouseWindow1_0" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-11.28, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehouseWindow1_1" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-7, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehouseWindow1_2" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-2.72, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehousePier1_0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-13.83, 4.75, -22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthWarehousePier1_1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-0.17, 4.75, -22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthLoadingCanopy1" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-7, 3.65, -22.15)
+mesh = SubResource("box_9p1x0p16x1p58")
+material_override = SubResource("warehouse_roof")
+
+[node name="NorthDockNumber1" type="Label3D" parent="Equipment"]
+position = Vector3(-7, 3.74, -22.81)
+rotation = Vector3(0, 0, 0)
+text = "N / 02"
+font_size = 74
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="NorthWarehouse2" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(7, 3.48, -24.1)
+mesh = SubResource("box_13p95x6p96x1p7")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthWarehouseRoof2" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(7, 7.02, -25.1)
+mesh = SubResource("box_14p1x0p29x4p1")
+material_override = SubResource("warehouse_roof")
+
+[node name="NorthLoadingBay2" parent="Equipment" instance=ExtResource("bay")]
+position = Vector3(7, 0.01, -22.72)
+scale = Vector3(1.42, 1.14, 1)
+
+[node name="NorthPanel2" parent="Equipment" instance=ExtResource("boxgear")]
+position = Vector3(11.9, 1.3, -22.75)
+scale = Vector3(0.74, 0.74, 0.74)
+
+[node name="NorthWarehouseWindow2_0" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(2.72, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehouseWindow2_1" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(7, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehouseWindow2_2" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(11.28, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehousePier2_0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(0.17, 4.75, -22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthWarehousePier2_1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(13.83, 4.75, -22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthLoadingCanopy2" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(7, 3.65, -22.15)
+mesh = SubResource("box_9p1x0p16x1p58")
+material_override = SubResource("warehouse_roof")
+
+[node name="NorthDockNumber2" type="Label3D" parent="Equipment"]
+position = Vector3(7, 3.74, -22.81)
+rotation = Vector3(0, 0, 0)
+text = "N / 03"
+font_size = 74
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="NorthWarehouse3" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(21, 3.48, -24.1)
+mesh = SubResource("box_13p95x6p96x1p7")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthWarehouseRoof3" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(21, 7.02, -25.1)
+mesh = SubResource("box_14p1x0p29x4p1")
+material_override = SubResource("warehouse_roof")
+
+[node name="NorthLoadingBay3" parent="Equipment" instance=ExtResource("bay")]
+position = Vector3(21, 0.01, -22.72)
+scale = Vector3(1.42, 1.14, 1)
+
+[node name="NorthPanel3" parent="Equipment" instance=ExtResource("boxgear")]
+position = Vector3(25.9, 1.3, -22.75)
+scale = Vector3(0.74, 0.74, 0.74)
+
+[node name="NorthWarehouseWindow3_0" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(16.72, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehouseWindow3_1" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(21, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehouseWindow3_2" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(25.28, 5.99, -22.8)
+scale = Vector3(1.14, 0.52, 1)
+
+[node name="NorthWarehousePier3_0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(14.17, 4.75, -22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthWarehousePier3_1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(27.83, 4.75, -22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="NorthLoadingCanopy3" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(21, 3.65, -22.15)
+mesh = SubResource("box_9p1x0p16x1p58")
+material_override = SubResource("warehouse_roof")
+
+[node name="NorthDockNumber3" type="Label3D" parent="Equipment"]
+position = Vector3(21, 3.74, -22.81)
+rotation = Vector3(0, 0, 0)
+text = "N / 04"
+font_size = 74
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="SouthWarehouse0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-21, 3.48, 24.1)
+mesh = SubResource("box_13p95x6p96x1p7")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthWarehouseRoof0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-21, 7.02, 25.1)
+mesh = SubResource("box_14p1x0p29x4p1")
+material_override = SubResource("warehouse_roof")
+
+[node name="SouthLoadingBay0" parent="Equipment" instance=ExtResource("bay")]
+position = Vector3(-21, 0.01, 22.72)
+scale = Vector3(1.42, 1.14, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthPanel0" parent="Equipment" instance=ExtResource("boxgear")]
+position = Vector3(-16.1, 1.3, 22.75)
+scale = Vector3(0.74, 0.74, 0.74)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow0_0" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-25.28, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow0_1" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-21, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow0_2" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-16.72, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehousePier0_0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-27.83, 4.75, 22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthWarehousePier0_1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-14.17, 4.75, 22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthLoadingCanopy0" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-21, 3.65, 22.15)
+mesh = SubResource("box_9p1x0p16x1p58")
+material_override = SubResource("warehouse_roof")
+
+[node name="SouthDockNumber0" type="Label3D" parent="Equipment"]
+position = Vector3(-21, 3.74, 22.81)
+rotation = Vector3(0, 3.14159, 0)
+text = "S / 01"
+font_size = 74
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="SouthWarehouse1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-7, 3.48, 24.1)
+mesh = SubResource("box_13p95x6p96x1p7")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthWarehouseRoof1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-7, 7.02, 25.1)
+mesh = SubResource("box_14p1x0p29x4p1")
+material_override = SubResource("warehouse_roof")
+
+[node name="SouthLoadingBay1" parent="Equipment" instance=ExtResource("bay")]
+position = Vector3(-7, 0.01, 22.72)
+scale = Vector3(1.42, 1.14, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthPanel1" parent="Equipment" instance=ExtResource("boxgear")]
+position = Vector3(-2.1, 1.3, 22.75)
+scale = Vector3(0.74, 0.74, 0.74)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow1_0" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-11.28, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow1_1" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-7, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow1_2" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(-2.72, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehousePier1_0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-13.83, 4.75, 22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthWarehousePier1_1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(-0.17, 4.75, 22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthLoadingCanopy1" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(-7, 3.65, 22.15)
+mesh = SubResource("box_9p1x0p16x1p58")
+material_override = SubResource("warehouse_roof")
+
+[node name="SouthDockNumber1" type="Label3D" parent="Equipment"]
+position = Vector3(-7, 3.74, 22.81)
+rotation = Vector3(0, 3.14159, 0)
+text = "S / 02"
+font_size = 74
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="SouthWarehouse2" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(7, 3.48, 24.1)
+mesh = SubResource("box_13p95x6p96x1p7")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthWarehouseRoof2" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(7, 7.02, 25.1)
+mesh = SubResource("box_14p1x0p29x4p1")
+material_override = SubResource("warehouse_roof")
+
+[node name="SouthLoadingBay2" parent="Equipment" instance=ExtResource("bay")]
+position = Vector3(7, 0.01, 22.72)
+scale = Vector3(1.42, 1.14, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthPanel2" parent="Equipment" instance=ExtResource("boxgear")]
+position = Vector3(11.9, 1.3, 22.75)
+scale = Vector3(0.74, 0.74, 0.74)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow2_0" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(2.72, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow2_1" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(7, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow2_2" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(11.28, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehousePier2_0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(0.17, 4.75, 22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthWarehousePier2_1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(13.83, 4.75, 22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthLoadingCanopy2" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(7, 3.65, 22.15)
+mesh = SubResource("box_9p1x0p16x1p58")
+material_override = SubResource("warehouse_roof")
+
+[node name="SouthDockNumber2" type="Label3D" parent="Equipment"]
+position = Vector3(7, 3.74, 22.81)
+rotation = Vector3(0, 3.14159, 0)
+text = "S / 03"
+font_size = 74
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="SouthWarehouse3" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(21, 3.48, 24.1)
+mesh = SubResource("box_13p95x6p96x1p7")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthWarehouseRoof3" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(21, 7.02, 25.1)
+mesh = SubResource("box_14p1x0p29x4p1")
+material_override = SubResource("warehouse_roof")
+
+[node name="SouthLoadingBay3" parent="Equipment" instance=ExtResource("bay")]
+position = Vector3(21, 0.01, 22.72)
+scale = Vector3(1.42, 1.14, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthPanel3" parent="Equipment" instance=ExtResource("boxgear")]
+position = Vector3(25.9, 1.3, 22.75)
+scale = Vector3(0.74, 0.74, 0.74)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow3_0" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(16.72, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow3_1" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(21, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehouseWindow3_2" parent="Backlot" instance=ExtResource("factory_window")]
+position = Vector3(25.28, 5.99, 22.8)
+scale = Vector3(1.14, 0.52, 1)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthWarehousePier3_0" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(14.17, 4.75, 22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthWarehousePier3_1" type="MeshInstance3D" parent="Backlot"]
+position = Vector3(27.83, 4.75, 22.78)
+mesh = SubResource("box_0p24x4p4x0p32")
+material_override = SubResource("warehouse_wall")
+
+[node name="SouthLoadingCanopy3" type="MeshInstance3D" parent="Equipment"]
+position = Vector3(21, 3.65, 22.15)
+mesh = SubResource("box_9p1x0p16x1p58")
+material_override = SubResource("warehouse_roof")
+
+[node name="SouthDockNumber3" type="Label3D" parent="Equipment"]
+position = Vector3(21, 3.74, 22.81)
+rotation = Vector3(0, 3.14159, 0)
+text = "S / 04"
+font_size = 74
+pixel_size = 0.009
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0

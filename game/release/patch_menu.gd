@@ -98,7 +98,8 @@ func _find_update() -> void:
 
 
 func _latest_patch(releases: Array) -> Dictionary:
-	var pattern := RegEx.create_from_string("^Shooter-" + ShooterRelease.base_version.replace(".", "\\.") + "-to-([0-9]+\\.[0-9]+\\.([0-9]+))\\.pck$")
+	var simple_pattern := RegEx.create_from_string("^Shooter-([0-9]+\\.[0-9]+\\.([0-9]+))\\.pck$")
+	var legacy_pattern := RegEx.create_from_string("^Shooter-" + ShooterRelease.base_version.replace(".", "\\.") + "-to-([0-9]+\\.[0-9]+\\.([0-9]+))\\.pck$")
 	var best: Dictionary = {}
 	for release: Variant in releases:
 		if not release is Dictionary or release.get("draft", false) or release.get("prerelease", false):
@@ -109,14 +110,23 @@ func _latest_patch(releases: Array) -> Dictionary:
 			if url.begins_with(DOWNLOAD_PREFIX):
 				urls[asset.name] = {"url": url, "size": int(asset.get("size", 0))}
 		for name: String in urls:
-			var parsed := pattern.search(name)
-			if parsed == null or not urls.has(name + ".cfg"):
+			if not urls.has(name + ".cfg"):
 				continue
-			var target := parsed.get_string(1)
-			var revision := int(parsed.get_string(2))
+			var target := _patch_asset_version(name, simple_pattern, legacy_pattern)
+			if target.is_empty():
+				continue
+			var revision := int(target.get_slice(".", 2))
 			if ShooterRelease.can_install_version(target) and revision > best.get("revision", -1):
 				best = {"version": target, "revision": revision, "pck": urls[name].url, "cfg": urls[name + ".cfg"].url, "size": urls[name].size, "notes": str(release.get("body", "")).strip_edges()}
 	return best
+
+
+func _patch_asset_version(name: String, simple_pattern: RegEx, legacy_pattern: RegEx) -> String:
+	var parsed := simple_pattern.search(name)
+	if parsed != null:
+		return parsed.get_string(1)
+	parsed = legacy_pattern.search(name)
+	return "" if parsed == null else parsed.get_string(1)
 
 
 func _download_update() -> void:

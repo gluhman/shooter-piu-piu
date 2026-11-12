@@ -12,9 +12,9 @@ class PerforatedCover:
 
 const GRASS := preload("res://assets/arena_props/grass.glb")
 const SHRUBS := preload("res://assets/arena_props/shrubs.glb")
-const VILLAGE := preload("res://game/maps/village_layout.gd")
-const DUST2 := preload("res://game/maps/dust2_layout.gd")
-const WORKSHOP := preload("res://game/maps/workshop_layout.gd")
+const VILLAGE := preload("res://game/maps/procedural/village_layout.gd")
+const DUST2 := preload("res://game/maps/procedural/dust2_layout.gd")
+const WORKSHOP := preload("res://game/maps/procedural/workshop_layout.gd")
 
 const CONTAINER_HEIGHT := 2.59
 const CONTAINER_WIDTH := 2.44

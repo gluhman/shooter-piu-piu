@@ -1,0 +1,92 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/factory_loading_bay.glb" id="door"]
+
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/painted_metal_010_color.jpg" id="color"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/painted_metal_010_normal.jpg" id="normal"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/painted_metal_010_orm.jpg" id="orm"]
+
+[sub_resource type="ORMMaterial3D" id="steel"]
+albedo_color = Color(0.38, 0.41, 0.42, 1)
+albedo_texture = ExtResource("color")
+orm_texture = ExtResource("orm")
+normal_enabled = true
+normal_scale = 0.3
+normal_texture = ExtResource("normal")
+uv1_triplanar = true
+uv1_scale = Vector3(0.8, 0.8, 0.8)
+
+[sub_resource type="StandardMaterial3D" id="status"]
+shading_mode = 0
+albedo_color = Color(0.87, 0.31, 0.09, 1)
+
+[sub_resource type="StandardMaterial3D" id="bumper"]
+albedo_color = Color(0.62, 0.44, 0.17, 1)
+roughness = 0.74
+
+[sub_resource type="BoxMesh" id="backing"]
+size = Vector3(6, 4.56, 0.15)
+
+[sub_resource type="BoxMesh" id="header"]
+size = Vector3(6, 0.63, 0.23)
+
+[sub_resource type="BoxMesh" id="jamb"]
+size = Vector3(0.13, 4.56, 0.31)
+
+[sub_resource type="BoxMesh" id="indicator"]
+size = Vector3(0.15, 0.08, 0.032)
+
+[sub_resource type="BoxMesh" id="bumper"]
+size = Vector3(0.14, 0.48, 0.17)
+
+[node name="ClosedLoadingBay" type="Node3D"]
+
+[node name="ShutterAndServiceDoor" parent="." instance=ExtResource("door")]
+position = Vector3(0, 0, 0.115)
+scale = Vector3(0.992, 1.32, 0.55)
+
+[node name="Backing" type="MeshInstance3D" parent="."]
+position = Vector3(0, 2.28, -0.2)
+mesh = SubResource("backing")
+material_override = SubResource("steel")
+
+[node name="Lintel" type="MeshInstance3D" parent="."]
+position = Vector3(0, 4.245, 0.117)
+mesh = SubResource("header")
+material_override = SubResource("steel")
+
+[node name="LeftFrame" type="MeshInstance3D" parent="."]
+position = Vector3(-2.935, 2.28, 0.106)
+mesh = SubResource("jamb")
+material_override = SubResource("steel")
+
+[node name="RightFrame" type="MeshInstance3D" parent="."]
+position = Vector3(2.935, 2.28, 0.106)
+mesh = SubResource("jamb")
+material_override = SubResource("steel")
+
+[node name="StatusLamp" type="MeshInstance3D" parent="."]
+position = Vector3(-1.36, 4.25, 0.25)
+mesh = SubResource("indicator")
+material_override = SubResource("status")
+
+[node name="LeftBumper" type="MeshInstance3D" parent="."]
+position = Vector3(-2.79, 0.24, 0.17)
+mesh = SubResource("bumper")
+material_override = SubResource("bumper")
+
+[node name="RightBumper" type="MeshInstance3D" parent="."]
+position = Vector3(2.79, 0.24, 0.17)
+mesh = SubResource("bumper")
+material_override = SubResource("bumper")
+
+[node name="ClosedSign" type="Label3D" parent="."]
+position = Vector3(0.21, 4.25, 0.244)
+text = "LOADING BAY CLOSED"
+font_size = 52
+pixel_size = 0.0043
+outline_size = 0
+modulate = Color(0.85, 0.82, 0.71, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0

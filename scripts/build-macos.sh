@@ -24,7 +24,7 @@ case "$#:${1:-}" in
         [[ ! -e "$archive" && ! -e "$archive.engine" ]] ||
             fail 'База этой версии уже сохранена. Для нового выпуска увеличь версию.'
         ;;
-    2:--patch)
+    2:--patch|2:--patch-legacy)
         [[ -f "$2" && -f "$2.engine" ]] || fail 'Укажи сохранённый базовый PCK с файлом .pck.engine.'
         base_pack="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
         [[ "$base_pack" != *,* ]] || fail 'Путь к базовому PCK должен быть без запятых.'
@@ -33,11 +33,15 @@ case "$#:${1:-}" in
         base_version="${BASH_REMATCH[1]}"
         [[ "${base_version%.*}" == "${version%.*}" && "${version##*.}" -gt "${base_version##*.}" ]] ||
             fail 'Патч должен увеличивать Z при тех же X.Y.'
-        patch_name="Shooter-$base_version-to-$version.pck"
+        if [[ "$1" == --patch-legacy ]]; then
+            patch_name="Shooter-$base_version-to-$version.pck"
+        else
+            patch_name="Shooter-$version.pck"
+        fi
         [[ ! -e "$release_dir/$patch_name" && ! -e "$release_dir/$patch_name.cfg" ]] ||
             fail 'Патч этой версии уже существует.'
         ;;
-    *) fail 'Использование: build-macos.sh [--archive-base | --patch путь-к-базовому.pck]' ;;
+    *) fail 'Использование: build-macos.sh [--archive-base | --patch путь-к-базовому.pck | --patch-legacy путь-к-базовому.pck]' ;;
 esac
 
 godot="${GODOT_BIN:-}"
@@ -84,7 +88,6 @@ snapshot="$build_dir/project"
 mkdir "$snapshot"
 rsync -a "$project_dir/assets" "$project_dir/game" "$project_dir/project.godot" \
     "$project_dir/default_bus_layout.tres" "$project_dir/export_presets.cfg" "$snapshot/"
-rsync -a "$project_dir/levels" "$snapshot/"
 if [[ -r "$local_template" ]]; then
     ln -s "$local_template" "$build_dir/$(basename "$local_template")"
     sed -i '' '1,/^\[preset\.1\]$/s|^custom_template/release=""$|custom_template/release="res://../macos-4.7.2.stable.zip"|' "$snapshot/export_presets.cfg"

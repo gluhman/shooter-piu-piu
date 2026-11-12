@@ -1,0 +1,2665 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/concrete_floor_worn_001_color.jpg" id="concrete_floor_worn_001_color"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/concrete_floor_worn_001_normal.jpg" id="concrete_floor_worn_001_normal"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/concrete_floor_worn_001_orm.jpg" id="concrete_floor_worn_001_orm"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/rusty_metal_sheet_color.jpg" id="rusty_metal_sheet_color"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/rusty_metal_sheet_normal.jpg" id="rusty_metal_sheet_normal"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/rusty_metal_sheet_orm.jpg" id="rusty_metal_sheet_orm"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/metal_grate_rusty_color.jpg" id="metal_grate_rusty_color"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/metal_grate_rusty_normal.jpg" id="metal_grate_rusty_normal"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/metal_grate_rusty_orm.jpg" id="metal_grate_rusty_orm"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/turbine_assembly.tscn" id="turbine"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/turbine_pipework.glb" id="pipework"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/factory_window.glb" id="factory_window"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/hall_pendant.glb" id="pendant"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/hall_switchgear.glb" id="switchgear"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/hall_wall_lamp.glb" id="wall_lamp"]
+[ext_resource type="PackedScene" path="res://game/maps/breakwater/art/models/factory_loading_bay.glb" id="service_door"]
+
+[sub_resource type="ORMMaterial3D" id="concrete"]
+albedo_color = Color(0.95, 0.94, 0.89, 1)
+albedo_texture = ExtResource("concrete_floor_worn_001_color")
+orm_texture = ExtResource("concrete_floor_worn_001_orm")
+normal_enabled = true
+normal_scale = 0.42
+normal_texture = ExtResource("concrete_floor_worn_001_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.4, 0.4, 0.4)
+texture_filter = 5
+
+[sub_resource type="ORMMaterial3D" id="foundation"]
+albedo_color = Color(0.69, 0.71, 0.67, 1)
+albedo_texture = ExtResource("concrete_floor_worn_001_color")
+orm_texture = ExtResource("concrete_floor_worn_001_orm")
+normal_enabled = true
+normal_scale = 0.42
+normal_texture = ExtResource("concrete_floor_worn_001_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.44, 0.44, 0.44)
+texture_filter = 5
+
+[sub_resource type="ORMMaterial3D" id="structural_steel"]
+albedo_color = Color(0.4, 0.46, 0.46, 1)
+albedo_texture = ExtResource("rusty_metal_sheet_color")
+orm_texture = ExtResource("rusty_metal_sheet_orm")
+normal_enabled = true
+normal_scale = 0.3
+normal_texture = ExtResource("rusty_metal_sheet_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.5, 0.5, 0.5)
+texture_filter = 5
+
+[sub_resource type="ORMMaterial3D" id="roof_cladding"]
+albedo_color = Color(0.77, 0.77, 0.74, 1)
+albedo_texture = ExtResource("concrete_floor_worn_001_color")
+orm_texture = ExtResource("concrete_floor_worn_001_orm")
+normal_enabled = true
+normal_scale = 0.34
+normal_texture = ExtResource("concrete_floor_worn_001_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.37, 0.37, 0.37)
+texture_filter = 5
+
+[sub_resource type="ORMMaterial3D" id="service_tiles"]
+albedo_color = Color(0.98, 0.94, 0.84, 1)
+albedo_texture = ExtResource("concrete_floor_worn_001_color")
+orm_texture = ExtResource("concrete_floor_worn_001_orm")
+normal_enabled = true
+normal_scale = 0.28
+normal_texture = ExtResource("concrete_floor_worn_001_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.55, 0.55, 0.55)
+texture_filter = 5
+
+[sub_resource type="ORMMaterial3D" id="grating"]
+albedo_color = Color(0.48, 0.55, 0.62, 1)
+albedo_texture = ExtResource("metal_grate_rusty_color")
+orm_texture = ExtResource("metal_grate_rusty_orm")
+normal_enabled = true
+normal_scale = 0.52
+normal_texture = ExtResource("metal_grate_rusty_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.62, 0.62, 0.62)
+texture_filter = 5
+
+[sub_resource type="StandardMaterial3D" id="expansion_joint"]
+albedo_color = Color(0.16, 0.18, 0.17, 1)
+metallic = 0
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="skylight"]
+albedo_color = Color(0.68, 0.78, 0.8, 0.25)
+metallic = 0
+roughness = 0.44
+transparency = 1
+emission_enabled = true
+emission = Color(0.47, 0.62, 0.69, 1)
+emission_energy_multiplier = 0.4
+cull_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="fixture_lens"]
+albedo_color = Color(0.92, 0.79, 0.57, 1)
+metallic = 0
+roughness = 0.4
+emission_enabled = true
+emission = Color(1, 0.87, 0.69, 1)
+emission_energy_multiplier = 2.25
+
+[sub_resource type="StandardMaterial3D" id="dock_blue"]
+albedo_color = Color(0.26, 0.39, 0.49, 1)
+metallic = 0.15
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="dock_oxide"]
+albedo_color = Color(0.49, 0.26, 0.19, 1)
+metallic = 0.15
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="floor_yellow"]
+albedo_color = Color(0.76, 0.59, 0.25, 1)
+metallic = 0
+roughness = 0.8
+
+[sub_resource type="BoxMesh" id="box_6p8x0p34x27"]
+size = Vector3(6.8, 0.34, 27)
+
+[sub_resource type="BoxShape3D" id="shape_6p8x0p34x27"]
+size = Vector3(6.8, 0.34, 27)
+
+[sub_resource type="BoxMesh" id="box_6p8x0p34x4p4"]
+size = Vector3(6.8, 0.34, 4.4)
+
+[sub_resource type="BoxShape3D" id="shape_6p8x0p34x4p4"]
+size = Vector3(6.8, 0.34, 4.4)
+
+[sub_resource type="BoxMesh" id="box_6p8x0p34x4p2"]
+size = Vector3(6.8, 0.34, 4.2)
+
+[sub_resource type="BoxShape3D" id="shape_6p8x0p34x4p2"]
+size = Vector3(6.8, 0.34, 4.2)
+
+[sub_resource type="BoxMesh" id="box_6p8x0p34x0p8"]
+size = Vector3(6.8, 0.34, 0.8)
+
+[sub_resource type="BoxShape3D" id="shape_6p8x0p34x0p8"]
+size = Vector3(6.8, 0.34, 0.8)
+
+[sub_resource type="BoxMesh" id="box_6p4x0p34x27"]
+size = Vector3(6.4, 0.34, 27)
+
+[sub_resource type="BoxShape3D" id="shape_6p4x0p34x27"]
+size = Vector3(6.4, 0.34, 27)
+
+[sub_resource type="BoxMesh" id="box_6p8x0p045x2p3"]
+size = Vector3(6.8, 0.045, 2.3)
+
+[sub_resource type="BoxMesh" id="box_0p1x0p15x2p3"]
+size = Vector3(0.1, 0.15, 2.3)
+
+[sub_resource type="BoxMesh" id="box_33p75x0p44x0p24"]
+size = Vector3(33.75, 0.44, 0.24)
+
+[sub_resource type="BoxMesh" id="box_33p75x0p095x0p47"]
+size = Vector3(33.75, 0.095, 0.47)
+
+[sub_resource type="BoxMesh" id="box_0p15x0p19x26p85"]
+size = Vector3(0.15, 0.19, 26.85)
+
+[sub_resource type="BoxMesh" id="box_0p57x1p23x26p9"]
+size = Vector3(0.57, 1.23, 26.9)
+
+[sub_resource type="BoxShape3D" id="shape_0p57x1p23x26p9"]
+size = Vector3(0.57, 1.23, 26.9)
+
+[sub_resource type="BoxMesh" id="box_0p62x0p98x26p9"]
+size = Vector3(0.62, 0.98, 26.9)
+
+[sub_resource type="BoxShape3D" id="shape_0p62x0p98x26p9"]
+size = Vector3(0.62, 0.98, 26.9)
+
+[sub_resource type="BoxMesh" id="box_0p82x0p25x26p9"]
+size = Vector3(0.82, 0.25, 26.9)
+
+[sub_resource type="BoxMesh" id="box_0p6x2p88x0p45"]
+size = Vector3(0.6, 2.88, 0.45)
+
+[sub_resource type="BoxMesh" id="box_0p61x4p44x0p5"]
+size = Vector3(0.61, 4.44, 0.5)
+
+[sub_resource type="BoxShape3D" id="shape_0p61x4p44x0p5"]
+size = Vector3(0.61, 4.44, 0.5)
+
+[sub_resource type="BoxMesh" id="box_0p73x0p68x0p6"]
+size = Vector3(0.73, 0.68, 0.6)
+
+[sub_resource type="BoxMesh" id="box_0p62x4p4x2p31"]
+size = Vector3(0.62, 4.4, 2.31)
+
+[sub_resource type="BoxShape3D" id="shape_0p62x4p4x2p31"]
+size = Vector3(0.62, 4.4, 2.31)
+
+[sub_resource type="BoxMesh" id="box_0p08x0p8x2p31"]
+size = Vector3(0.08, 0.8, 2.31)
+
+[sub_resource type="BoxMesh" id="box_0p62x4p4x2p28"]
+size = Vector3(0.62, 4.4, 2.28)
+
+[sub_resource type="BoxShape3D" id="shape_0p62x4p4x2p28"]
+size = Vector3(0.62, 4.4, 2.28)
+
+[sub_resource type="BoxMesh" id="box_0p08x0p8x2p28"]
+size = Vector3(0.08, 0.8, 2.28)
+
+[sub_resource type="BoxMesh" id="box_0p62x4p4x2p84"]
+size = Vector3(0.62, 4.4, 2.84)
+
+[sub_resource type="BoxShape3D" id="shape_0p62x4p4x2p84"]
+size = Vector3(0.62, 4.4, 2.84)
+
+[sub_resource type="BoxMesh" id="box_0p08x0p8x2p84"]
+size = Vector3(0.08, 0.8, 2.84)
+
+[sub_resource type="BoxMesh" id="box_0p038x2p45x1p99"]
+size = Vector3(0.038, 2.45, 1.99)
+
+[sub_resource type="BoxMesh" id="box_11p8x1p18x0p81"]
+size = Vector3(11.8, 1.18, 0.81)
+
+[sub_resource type="BoxShape3D" id="shape_11p8x1p18x0p81"]
+size = Vector3(11.8, 1.18, 0.81)
+
+[sub_resource type="BoxMesh" id="box_11p8x0p13x0p23"]
+size = Vector3(11.8, 0.13, 0.23)
+
+[sub_resource type="BoxMesh" id="box_4x1p18x0p81"]
+size = Vector3(4, 1.18, 0.81)
+
+[sub_resource type="BoxShape3D" id="shape_4x1p18x0p81"]
+size = Vector3(4, 1.18, 0.81)
+
+[sub_resource type="BoxMesh" id="box_4x0p13x0p23"]
+size = Vector3(4, 0.13, 0.23)
+
+[sub_resource type="BoxMesh" id="box_33p56x1p0x0p7"]
+size = Vector3(33.56, 1, 0.7)
+
+[sub_resource type="BoxShape3D" id="shape_33p56x1p0x0p7"]
+size = Vector3(33.56, 1, 0.7)
+
+[sub_resource type="BoxMesh" id="box_33p56x4p31x0p66"]
+size = Vector3(33.56, 4.31, 0.66)
+
+[sub_resource type="BoxShape3D" id="shape_33p56x4p31x0p66"]
+size = Vector3(33.56, 4.31, 0.66)
+
+[sub_resource type="BoxMesh" id="box_0p032x4p16x0p014"]
+size = Vector3(0.032, 4.16, 0.014)
+
+[sub_resource type="BoxMesh" id="box_33p51x0p027x0p013"]
+size = Vector3(33.51, 0.027, 0.013)
+
+[sub_resource type="BoxMesh" id="box_0p36x4p83x0p32"]
+size = Vector3(0.36, 4.83, 0.32)
+
+[sub_resource type="BoxMesh" id="box_12p8x2p55x0p61"]
+size = Vector3(12.8, 2.55, 0.61)
+
+[sub_resource type="BoxMesh" id="box_13p1x0p2x1p0"]
+size = Vector3(13.1, 0.2, 1)
+
+[sub_resource type="BoxMesh" id="box_13p04x0p23x0p77"]
+size = Vector3(13.04, 0.23, 0.77)
+
+[sub_resource type="BoxMesh" id="box_2p4x1p36x0p1"]
+size = Vector3(2.4, 1.36, 0.1)
+
+[sub_resource type="BoxMesh" id="box_2p26x1p19x0p039"]
+size = Vector3(2.26, 1.19, 0.039)
+
+[sub_resource type="BoxMesh" id="box_0p066x1p22x0p11"]
+size = Vector3(0.066, 1.22, 0.11)
+
+[sub_resource type="BoxMesh" id="box_2p33x0p54x0p12"]
+size = Vector3(2.33, 0.54, 0.12)
+
+[sub_resource type="BoxMesh" id="box_5p8x0p024x5p58"]
+size = Vector3(5.8, 0.024, 5.58)
+
+[sub_resource type="BoxMesh" id="box_0p22x0p026x5p58"]
+size = Vector3(0.22, 0.026, 5.58)
+
+[sub_resource type="BoxMesh" id="box_0p065x0p024x5p58"]
+size = Vector3(0.065, 0.024, 5.58)
+
+[sub_resource type="BoxMesh" id="box_6p18x0p026x0p16"]
+size = Vector3(6.18, 0.026, 0.16)
+
+[sub_resource type="CylinderShape3D" id="aux_Base"]
+radius = 1.64
+height = 0.64
+
+[sub_resource type="CylinderShape3D" id="aux_Housing"]
+radius = 1.07
+height = 1.44
+
+[sub_resource type="BoxMesh" id="box_33p0x0p012x0p035"]
+size = Vector3(33, 0.012, 0.035)
+
+[sub_resource type="BoxMesh" id="box_0p034x0p012x26p3"]
+size = Vector3(0.034, 0.012, 26.3)
+
+[sub_resource type="CylinderMesh" id="lens_mesh"]
+top_radius = 0.163
+bottom_radius = 0.163
+height = 0.032
+radial_segments = 16
+rings = 0
+
+[node name="TurbineHall" type="Node3D"]
+
+[node name="Shell" type="Node3D" parent="."]
+
+[node name="Roof" type="Node3D" parent="."]
+
+[node name="Decks" type="Node3D" parent="."]
+
+[node name="Machinery" type="Node3D" parent="."]
+
+[node name="Fixtures" type="Node3D" parent="."]
+
+[node name="Lighting" type="Node3D" parent="."]
+
+[node name="RoofPanel0" type="StaticBody3D" parent="Roof"]
+position = Vector3(-13.4, 9.32, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel0"]
+mesh = SubResource("box_6p8x0p34x27")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel0"]
+shape = SubResource("shape_6p8x0p34x27")
+
+[node name="RoofPanel1_0" type="StaticBody3D" parent="Roof"]
+position = Vector3(-6.6, 9.32, -11.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel1_0"]
+mesh = SubResource("box_6p8x0p34x4p4")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel1_0"]
+shape = SubResource("shape_6p8x0p34x4p4")
+
+[node name="RoofPanel1_1" type="StaticBody3D" parent="Roof"]
+position = Vector3(-6.6, 9.32, -4.7)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel1_1"]
+mesh = SubResource("box_6p8x0p34x4p2")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel1_1"]
+shape = SubResource("shape_6p8x0p34x4p2")
+
+[node name="RoofPanel1_2" type="StaticBody3D" parent="Roof"]
+position = Vector3(-6.6, 9.32, 1.8)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel1_2"]
+mesh = SubResource("box_6p8x0p34x4p2")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel1_2"]
+shape = SubResource("shape_6p8x0p34x4p2")
+
+[node name="RoofPanel1_3" type="StaticBody3D" parent="Roof"]
+position = Vector3(-6.6, 9.32, 8.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel1_3"]
+mesh = SubResource("box_6p8x0p34x4p2")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel1_3"]
+shape = SubResource("shape_6p8x0p34x4p2")
+
+[node name="RoofPanel1_4" type="StaticBody3D" parent="Roof"]
+position = Vector3(-6.6, 9.32, 13.1)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel1_4"]
+mesh = SubResource("box_6p8x0p34x0p8")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel1_4"]
+shape = SubResource("shape_6p8x0p34x0p8")
+
+[node name="RoofPanel2" type="StaticBody3D" parent="Roof"]
+position = Vector3(0, 9.32, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel2"]
+mesh = SubResource("box_6p4x0p34x27")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel2"]
+shape = SubResource("shape_6p4x0p34x27")
+
+[node name="RoofPanel3_0" type="StaticBody3D" parent="Roof"]
+position = Vector3(6.6, 9.32, -11.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel3_0"]
+mesh = SubResource("box_6p8x0p34x4p4")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel3_0"]
+shape = SubResource("shape_6p8x0p34x4p4")
+
+[node name="RoofPanel3_1" type="StaticBody3D" parent="Roof"]
+position = Vector3(6.6, 9.32, -4.7)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel3_1"]
+mesh = SubResource("box_6p8x0p34x4p2")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel3_1"]
+shape = SubResource("shape_6p8x0p34x4p2")
+
+[node name="RoofPanel3_2" type="StaticBody3D" parent="Roof"]
+position = Vector3(6.6, 9.32, 1.8)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel3_2"]
+mesh = SubResource("box_6p8x0p34x4p2")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel3_2"]
+shape = SubResource("shape_6p8x0p34x4p2")
+
+[node name="RoofPanel3_3" type="StaticBody3D" parent="Roof"]
+position = Vector3(6.6, 9.32, 8.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel3_3"]
+mesh = SubResource("box_6p8x0p34x4p2")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel3_3"]
+shape = SubResource("shape_6p8x0p34x4p2")
+
+[node name="RoofPanel3_4" type="StaticBody3D" parent="Roof"]
+position = Vector3(6.6, 9.32, 13.1)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel3_4"]
+mesh = SubResource("box_6p8x0p34x0p8")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel3_4"]
+shape = SubResource("shape_6p8x0p34x0p8")
+
+[node name="RoofPanel4" type="StaticBody3D" parent="Roof"]
+position = Vector3(13.4, 9.32, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Roof/RoofPanel4"]
+mesh = SubResource("box_6p8x0p34x27")
+material_override = SubResource("roof_cladding")
+
+[node name="Collision" type="CollisionShape3D" parent="Roof/RoofPanel4"]
+shape = SubResource("shape_6p8x0p34x27")
+
+[node name="WestSkylight0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-6.6, 9.24, -7.95)
+mesh = SubResource("box_6p8x0p045x2p3")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestSkylightMullion0_0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-8.75, 9.2, -7.95)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylightMullion0_215" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-6.6, 9.2, -7.95)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylightMullion0_430" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-4.45, 9.2, -7.95)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylight1" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-6.6, 9.24, -1.45)
+mesh = SubResource("box_6p8x0p045x2p3")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestSkylightMullion1_0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-8.75, 9.2, -1.45)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylightMullion1_215" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-6.6, 9.2, -1.45)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylightMullion1_430" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-4.45, 9.2, -1.45)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylight2" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-6.6, 9.24, 5.05)
+mesh = SubResource("box_6p8x0p045x2p3")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestSkylightMullion2_0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-8.75, 9.2, 5.05)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylightMullion2_215" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-6.6, 9.2, 5.05)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylightMullion2_430" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-4.45, 9.2, 5.05)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylight3" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-6.6, 9.24, 11.55)
+mesh = SubResource("box_6p8x0p045x2p3")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestSkylightMullion3_0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-8.75, 9.2, 11.55)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylightMullion3_215" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-6.6, 9.2, 11.55)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="WestSkylightMullion3_430" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-4.45, 9.2, 11.55)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylight0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(6.6, 9.24, -7.95)
+mesh = SubResource("box_6p8x0p045x2p3")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastSkylightMullion0_0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(4.45, 9.2, -7.95)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylightMullion0_215" type="MeshInstance3D" parent="Roof"]
+position = Vector3(6.6, 9.2, -7.95)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylightMullion0_430" type="MeshInstance3D" parent="Roof"]
+position = Vector3(8.75, 9.2, -7.95)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylight1" type="MeshInstance3D" parent="Roof"]
+position = Vector3(6.6, 9.24, -1.45)
+mesh = SubResource("box_6p8x0p045x2p3")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastSkylightMullion1_0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(4.45, 9.2, -1.45)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylightMullion1_215" type="MeshInstance3D" parent="Roof"]
+position = Vector3(6.6, 9.2, -1.45)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylightMullion1_430" type="MeshInstance3D" parent="Roof"]
+position = Vector3(8.75, 9.2, -1.45)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylight2" type="MeshInstance3D" parent="Roof"]
+position = Vector3(6.6, 9.24, 5.05)
+mesh = SubResource("box_6p8x0p045x2p3")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastSkylightMullion2_0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(4.45, 9.2, 5.05)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylightMullion2_215" type="MeshInstance3D" parent="Roof"]
+position = Vector3(6.6, 9.2, 5.05)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylightMullion2_430" type="MeshInstance3D" parent="Roof"]
+position = Vector3(8.75, 9.2, 5.05)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylight3" type="MeshInstance3D" parent="Roof"]
+position = Vector3(6.6, 9.24, 11.55)
+mesh = SubResource("box_6p8x0p045x2p3")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastSkylightMullion3_0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(4.45, 9.2, 11.55)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylightMullion3_215" type="MeshInstance3D" parent="Roof"]
+position = Vector3(6.6, 9.2, 11.55)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="EastSkylightMullion3_430" type="MeshInstance3D" parent="Roof"]
+position = Vector3(8.75, 9.2, 11.55)
+mesh = SubResource("box_0p1x0p15x2p3")
+material_override = SubResource("structural_steel")
+
+[node name="RoofBeam0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.93, -13.25)
+mesh = SubResource("box_33p75x0p44x0p24")
+material_override = SubResource("structural_steel")
+
+[node name="BeamFlange0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.69, -13.25)
+mesh = SubResource("box_33p75x0p095x0p47")
+material_override = SubResource("structural_steel")
+
+[node name="RoofBeam1" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.93, -9.9)
+mesh = SubResource("box_33p75x0p44x0p24")
+material_override = SubResource("structural_steel")
+
+[node name="BeamFlange1" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.69, -9.9)
+mesh = SubResource("box_33p75x0p095x0p47")
+material_override = SubResource("structural_steel")
+
+[node name="RoofBeam2" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.93, -5.1)
+mesh = SubResource("box_33p75x0p44x0p24")
+material_override = SubResource("structural_steel")
+
+[node name="BeamFlange2" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.69, -5.1)
+mesh = SubResource("box_33p75x0p095x0p47")
+material_override = SubResource("structural_steel")
+
+[node name="RoofBeam3" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.93, -0.3)
+mesh = SubResource("box_33p75x0p44x0p24")
+material_override = SubResource("structural_steel")
+
+[node name="BeamFlange3" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.69, -0.3)
+mesh = SubResource("box_33p75x0p095x0p47")
+material_override = SubResource("structural_steel")
+
+[node name="RoofBeam4" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.93, 4.5)
+mesh = SubResource("box_33p75x0p44x0p24")
+material_override = SubResource("structural_steel")
+
+[node name="BeamFlange4" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.69, 4.5)
+mesh = SubResource("box_33p75x0p095x0p47")
+material_override = SubResource("structural_steel")
+
+[node name="RoofBeam5" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.93, 9.3)
+mesh = SubResource("box_33p75x0p44x0p24")
+material_override = SubResource("structural_steel")
+
+[node name="BeamFlange5" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.69, 9.3)
+mesh = SubResource("box_33p75x0p095x0p47")
+material_override = SubResource("structural_steel")
+
+[node name="RoofBeam6" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.93, 13.25)
+mesh = SubResource("box_33p75x0p44x0p24")
+material_override = SubResource("structural_steel")
+
+[node name="BeamFlange6" type="MeshInstance3D" parent="Roof"]
+position = Vector3(0, 8.69, 13.25)
+mesh = SubResource("box_33p75x0p095x0p47")
+material_override = SubResource("structural_steel")
+
+[node name="RoofPurlin0" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-10, 9.03, 0)
+mesh = SubResource("box_0p15x0p19x26p85")
+material_override = SubResource("structural_steel")
+
+[node name="RoofPurlin1" type="MeshInstance3D" parent="Roof"]
+position = Vector3(-3.21, 9.03, 0)
+mesh = SubResource("box_0p15x0p19x26p85")
+material_override = SubResource("structural_steel")
+
+[node name="RoofPurlin2" type="MeshInstance3D" parent="Roof"]
+position = Vector3(3.21, 9.03, 0)
+mesh = SubResource("box_0p15x0p19x26p85")
+material_override = SubResource("structural_steel")
+
+[node name="RoofPurlin3" type="MeshInstance3D" parent="Roof"]
+position = Vector3(10, 9.03, 0)
+mesh = SubResource("box_0p15x0p19x26p85")
+material_override = SubResource("structural_steel")
+
+[node name="WestSill" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 5.2, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestSill"]
+mesh = SubResource("box_0p57x1p23x26p9")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestSill"]
+shape = SubResource("shape_0p57x1p23x26p9")
+
+[node name="WestCornice" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 8.67, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestCornice"]
+mesh = SubResource("box_0p62x0p98x26p9")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestCornice"]
+shape = SubResource("shape_0p62x0p98x26p9")
+
+[node name="WestHeader" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.6, 4.61, 0)
+mesh = SubResource("box_0p82x0p25x26p9")
+material_override = SubResource("structural_steel")
+
+[node name="WestPier0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.72, 6.96, -13.05)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="WestPortalJamb0" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 2.22, -13.05)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestPortalJamb0"]
+mesh = SubResource("box_0p61x4p44x0p5")
+material_override = SubResource("foundation")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestPortalJamb0"]
+shape = SubResource("shape_0p61x4p44x0p5")
+
+[node name="WestPortalBase0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.64, 0.34, -13.05)
+mesh = SubResource("box_0p73x0p68x0p6")
+material_override = SubResource("foundation")
+
+[node name="WestPier1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.72, 6.96, -8.8)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="WestPortalJamb1" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 2.22, -8.8)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestPortalJamb1"]
+mesh = SubResource("box_0p61x4p44x0p5")
+material_override = SubResource("foundation")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestPortalJamb1"]
+shape = SubResource("shape_0p61x4p44x0p5")
+
+[node name="WestPortalBase1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.64, 0.34, -8.8)
+mesh = SubResource("box_0p73x0p68x0p6")
+material_override = SubResource("foundation")
+
+[node name="WestPier2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.72, 6.96, -4.4)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="WestPier3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.72, 6.96, 0)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="WestPortalJamb3" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 2.22, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestPortalJamb3"]
+mesh = SubResource("box_0p61x4p44x0p5")
+material_override = SubResource("foundation")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestPortalJamb3"]
+shape = SubResource("shape_0p61x4p44x0p5")
+
+[node name="WestPortalBase3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.64, 0.34, 0)
+mesh = SubResource("box_0p73x0p68x0p6")
+material_override = SubResource("foundation")
+
+[node name="WestPier4" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.72, 6.96, 4.4)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="WestPier5" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.72, 6.96, 8.8)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="WestPortalJamb5" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 2.22, 8.8)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestPortalJamb5"]
+mesh = SubResource("box_0p61x4p44x0p5")
+material_override = SubResource("foundation")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestPortalJamb5"]
+shape = SubResource("shape_0p61x4p44x0p5")
+
+[node name="WestPortalBase5" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.64, 0.34, 8.8)
+mesh = SubResource("box_0p73x0p68x0p6")
+material_override = SubResource("foundation")
+
+[node name="WestPier6" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.72, 6.96, 13.05)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="WestPortalJamb6" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 2.22, 13.05)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestPortalJamb6"]
+mesh = SubResource("box_0p61x4p44x0p5")
+material_override = SubResource("foundation")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestPortalJamb6"]
+shape = SubResource("shape_0p61x4p44x0p5")
+
+[node name="WestPortalBase6" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.64, 0.34, 13.05)
+mesh = SubResource("box_0p73x0p68x0p6")
+material_override = SubResource("foundation")
+
+[node name="WestLowerPanel0" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 2.2, -12.1)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestLowerPanel0"]
+mesh = SubResource("box_0p62x4p4x2p31")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestLowerPanel0"]
+shape = SubResource("shape_0p62x4p4x2p31")
+
+[node name="WestPanelSkirt0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.38, 0.4, -12.1)
+mesh = SubResource("box_0p08x0p8x2p31")
+material_override = SubResource("foundation")
+
+[node name="WestLowerPanel1" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 2.2, -6.8)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestLowerPanel1"]
+mesh = SubResource("box_0p62x4p4x2p28")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestLowerPanel1"]
+shape = SubResource("shape_0p62x4p4x2p28")
+
+[node name="WestPanelSkirt1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.38, 0.4, -6.8)
+mesh = SubResource("box_0p08x0p8x2p28")
+material_override = SubResource("foundation")
+
+[node name="WestLowerPanel2" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 2.2, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestLowerPanel2"]
+mesh = SubResource("box_0p62x4p4x2p84")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestLowerPanel2"]
+shape = SubResource("shape_0p62x4p4x2p84")
+
+[node name="WestPanelSkirt2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.38, 0.4, 0)
+mesh = SubResource("box_0p08x0p8x2p84")
+material_override = SubResource("foundation")
+
+[node name="WestLowerPanel3" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 2.2, 6.8)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestLowerPanel3"]
+mesh = SubResource("box_0p62x4p4x2p28")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestLowerPanel3"]
+shape = SubResource("shape_0p62x4p4x2p28")
+
+[node name="WestPanelSkirt3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.38, 0.4, 6.8)
+mesh = SubResource("box_0p08x0p8x2p28")
+material_override = SubResource("foundation")
+
+[node name="WestLowerPanel4" type="StaticBody3D" parent="Shell"]
+position = Vector3(-16.72, 2.2, 12.1)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/WestLowerPanel4"]
+mesh = SubResource("box_0p62x4p4x2p31")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/WestLowerPanel4"]
+shape = SubResource("shape_0p62x4p4x2p31")
+
+[node name="WestPanelSkirt4" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.38, 0.4, 12.1)
+mesh = SubResource("box_0p08x0p8x2p31")
+material_override = SubResource("foundation")
+
+[node name="WestTransferShutter" parent="Fixtures" instance=ExtResource("service_door")]
+position = Vector3(-16.335, 0, 0)
+scale = Vector3(0.43, 1, 0.32)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestTransferLabel" type="Label3D" parent="Fixtures"]
+position = Vector3(-16.255, 3.47, 0)
+rotation = Vector3(0, 1.5708, 0)
+text = "TRANSFER  /  01"
+font_size = 58
+pixel_size = 0.0049
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="WestClerestory0_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, -12.02)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing0_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, -12.02)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory0_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, -9.98)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing0_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, -9.98)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory1_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, -7.62)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing1_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, -7.62)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory1_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, -5.58)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing1_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, -5.58)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory2_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, -3.22)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing2_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, -3.22)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory2_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, -1.18)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing2_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, -1.18)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory3_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, 1.18)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing3_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, 1.18)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory3_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, 3.22)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing3_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, 3.22)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory4_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, 5.58)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing4_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, 5.58)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory4_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, 7.62)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing4_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, 7.62)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory5_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, 9.98)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing5_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, 9.98)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestClerestory5_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(-16.69, 7.02, 12.02)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestGlazing5_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-16.82, 7.02, 12.02)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="WestPortalFixture-6.55" parent="Fixtures" instance=ExtResource("wall_lamp")]
+position = Vector3(-16.29, 3.8, -6.55)
+scale = Vector3(1.6, 1.6, 1.6)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestPortalBounce-6.55" type="OmniLight3D" parent="Lighting"]
+position = Vector3(-15.77, 3.75, -6.55)
+light_color = Color(0.69, 0.82, 1, 1)
+light_energy = 0.62
+omni_range = 5.3
+
+[node name="WestPortalFixture6.55" parent="Fixtures" instance=ExtResource("wall_lamp")]
+position = Vector3(-16.29, 3.8, 6.55)
+scale = Vector3(1.6, 1.6, 1.6)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="WestPortalBounce6.55" type="OmniLight3D" parent="Lighting"]
+position = Vector3(-15.77, 3.75, 6.55)
+light_color = Color(0.69, 0.82, 1, 1)
+light_energy = 0.62
+omni_range = 5.3
+
+[node name="EastSill" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 5.2, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastSill"]
+mesh = SubResource("box_0p57x1p23x26p9")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastSill"]
+shape = SubResource("shape_0p57x1p23x26p9")
+
+[node name="EastCornice" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 8.67, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastCornice"]
+mesh = SubResource("box_0p62x0p98x26p9")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastCornice"]
+shape = SubResource("shape_0p62x0p98x26p9")
+
+[node name="EastHeader" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.6, 4.61, 0)
+mesh = SubResource("box_0p82x0p25x26p9")
+material_override = SubResource("structural_steel")
+
+[node name="EastPier0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.72, 6.96, -13.05)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="EastPortalJamb0" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 2.22, -13.05)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastPortalJamb0"]
+mesh = SubResource("box_0p61x4p44x0p5")
+material_override = SubResource("foundation")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastPortalJamb0"]
+shape = SubResource("shape_0p61x4p44x0p5")
+
+[node name="EastPortalBase0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.64, 0.34, -13.05)
+mesh = SubResource("box_0p73x0p68x0p6")
+material_override = SubResource("foundation")
+
+[node name="EastPier1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.72, 6.96, -8.8)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="EastPortalJamb1" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 2.22, -8.8)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastPortalJamb1"]
+mesh = SubResource("box_0p61x4p44x0p5")
+material_override = SubResource("foundation")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastPortalJamb1"]
+shape = SubResource("shape_0p61x4p44x0p5")
+
+[node name="EastPortalBase1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.64, 0.34, -8.8)
+mesh = SubResource("box_0p73x0p68x0p6")
+material_override = SubResource("foundation")
+
+[node name="EastPier2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.72, 6.96, -4.4)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="EastPier3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.72, 6.96, 0)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="EastPortalJamb3" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 2.22, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastPortalJamb3"]
+mesh = SubResource("box_0p61x4p44x0p5")
+material_override = SubResource("foundation")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastPortalJamb3"]
+shape = SubResource("shape_0p61x4p44x0p5")
+
+[node name="EastPortalBase3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.64, 0.34, 0)
+mesh = SubResource("box_0p73x0p68x0p6")
+material_override = SubResource("foundation")
+
+[node name="EastPier4" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.72, 6.96, 4.4)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="EastPier5" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.72, 6.96, 8.8)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="EastPortalJamb5" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 2.22, 8.8)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastPortalJamb5"]
+mesh = SubResource("box_0p61x4p44x0p5")
+material_override = SubResource("foundation")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastPortalJamb5"]
+shape = SubResource("shape_0p61x4p44x0p5")
+
+[node name="EastPortalBase5" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.64, 0.34, 8.8)
+mesh = SubResource("box_0p73x0p68x0p6")
+material_override = SubResource("foundation")
+
+[node name="EastPier6" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.72, 6.96, 13.05)
+mesh = SubResource("box_0p6x2p88x0p45")
+material_override = SubResource("concrete")
+
+[node name="EastPortalJamb6" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 2.22, 13.05)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastPortalJamb6"]
+mesh = SubResource("box_0p61x4p44x0p5")
+material_override = SubResource("foundation")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastPortalJamb6"]
+shape = SubResource("shape_0p61x4p44x0p5")
+
+[node name="EastPortalBase6" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.64, 0.34, 13.05)
+mesh = SubResource("box_0p73x0p68x0p6")
+material_override = SubResource("foundation")
+
+[node name="EastLowerPanel0" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 2.2, -12.1)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastLowerPanel0"]
+mesh = SubResource("box_0p62x4p4x2p31")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastLowerPanel0"]
+shape = SubResource("shape_0p62x4p4x2p31")
+
+[node name="EastPanelSkirt0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.38, 0.4, -12.1)
+mesh = SubResource("box_0p08x0p8x2p31")
+material_override = SubResource("foundation")
+
+[node name="EastLowerPanel1" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 2.2, -6.8)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastLowerPanel1"]
+mesh = SubResource("box_0p62x4p4x2p28")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastLowerPanel1"]
+shape = SubResource("shape_0p62x4p4x2p28")
+
+[node name="EastPanelSkirt1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.38, 0.4, -6.8)
+mesh = SubResource("box_0p08x0p8x2p28")
+material_override = SubResource("foundation")
+
+[node name="EastLowerPanel2" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 2.2, 0)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastLowerPanel2"]
+mesh = SubResource("box_0p62x4p4x2p84")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastLowerPanel2"]
+shape = SubResource("shape_0p62x4p4x2p84")
+
+[node name="EastPanelSkirt2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.38, 0.4, 0)
+mesh = SubResource("box_0p08x0p8x2p84")
+material_override = SubResource("foundation")
+
+[node name="EastLowerPanel3" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 2.2, 6.8)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastLowerPanel3"]
+mesh = SubResource("box_0p62x4p4x2p28")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastLowerPanel3"]
+shape = SubResource("shape_0p62x4p4x2p28")
+
+[node name="EastPanelSkirt3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.38, 0.4, 6.8)
+mesh = SubResource("box_0p08x0p8x2p28")
+material_override = SubResource("foundation")
+
+[node name="EastLowerPanel4" type="StaticBody3D" parent="Shell"]
+position = Vector3(16.72, 2.2, 12.1)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/EastLowerPanel4"]
+mesh = SubResource("box_0p62x4p4x2p31")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/EastLowerPanel4"]
+shape = SubResource("shape_0p62x4p4x2p31")
+
+[node name="EastPanelSkirt4" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.38, 0.4, 12.1)
+mesh = SubResource("box_0p08x0p8x2p31")
+material_override = SubResource("foundation")
+
+[node name="EastTransferShutter" parent="Fixtures" instance=ExtResource("service_door")]
+position = Vector3(16.335, 0, 0)
+scale = Vector3(0.43, 1, 0.32)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastTransferLabel" type="Label3D" parent="Fixtures"]
+position = Vector3(16.255, 3.47, 0)
+rotation = Vector3(0, -1.5708, 0)
+text = "TRANSFER  /  02"
+font_size = 58
+pixel_size = 0.0049
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="EastClerestory0_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, -12.02)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing0_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, -12.02)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory0_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, -9.98)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing0_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, -9.98)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory1_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, -7.62)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing1_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, -7.62)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory1_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, -5.58)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing1_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, -5.58)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory2_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, -3.22)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing2_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, -3.22)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory2_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, -1.18)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing2_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, -1.18)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory3_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, 1.18)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing3_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, 1.18)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory3_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, 3.22)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing3_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, 3.22)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory4_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, 5.58)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing4_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, 5.58)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory4_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, 7.62)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing4_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, 7.62)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory5_0" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, 9.98)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing5_0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, 9.98)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastClerestory5_1" parent="Shell" instance=ExtResource("factory_window")]
+position = Vector3(16.69, 7.02, 12.02)
+scale = Vector3(1.02, 0.82, 1)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastGlazing5_1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(16.82, 7.02, 12.02)
+mesh = SubResource("box_0p038x2p45x1p99")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="EastPortalFixture-6.55" parent="Fixtures" instance=ExtResource("wall_lamp")]
+position = Vector3(16.29, 3.8, -6.55)
+scale = Vector3(1.6, 1.6, 1.6)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastPortalBounce-6.55" type="OmniLight3D" parent="Lighting"]
+position = Vector3(15.77, 3.75, -6.55)
+light_color = Color(1, 0.73, 0.43, 1)
+light_energy = 0.62
+omni_range = 5.3
+
+[node name="EastPortalFixture6.55" parent="Fixtures" instance=ExtResource("wall_lamp")]
+position = Vector3(16.29, 3.8, 6.55)
+scale = Vector3(1.6, 1.6, 1.6)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="EastPortalBounce6.55" type="OmniLight3D" parent="Lighting"]
+position = Vector3(15.77, 3.75, 6.55)
+light_color = Color(1, 0.73, 0.43, 1)
+light_energy = 0.62
+omni_range = 5.3
+
+[node name="NorthEndWallExtension0" type="StaticBody3D" parent="Shell"]
+position = Vector3(0, 3.29, -13.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/NorthEndWallExtension0"]
+mesh = SubResource("box_11p8x1p18x0p81")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/NorthEndWallExtension0"]
+shape = SubResource("shape_11p8x1p18x0p81")
+
+[node name="NorthEndWallRail0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 3.86, -12.83)
+mesh = SubResource("box_11p8x0p13x0p23")
+material_override = SubResource("structural_steel")
+
+[node name="NorthEndWallExtension1" type="StaticBody3D" parent="Shell"]
+position = Vector3(-12.2, 3.29, -13.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/NorthEndWallExtension1"]
+mesh = SubResource("box_4x1p18x0p81")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/NorthEndWallExtension1"]
+shape = SubResource("shape_4x1p18x0p81")
+
+[node name="NorthEndWallRail1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-12.2, 3.86, -12.83)
+mesh = SubResource("box_4x0p13x0p23")
+material_override = SubResource("structural_steel")
+
+[node name="NorthEndWallExtension2" type="StaticBody3D" parent="Shell"]
+position = Vector3(12.2, 3.29, -13.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/NorthEndWallExtension2"]
+mesh = SubResource("box_4x1p18x0p81")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/NorthEndWallExtension2"]
+shape = SubResource("shape_4x1p18x0p81")
+
+[node name="NorthEndWallRail2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(12.2, 3.86, -12.83)
+mesh = SubResource("box_4x0p13x0p23")
+material_override = SubResource("structural_steel")
+
+[node name="NorthEndHeader" type="StaticBody3D" parent="Shell"]
+position = Vector3(0, 4.37, -13.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/NorthEndHeader"]
+mesh = SubResource("box_33p56x1p0x0p7")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/NorthEndHeader"]
+shape = SubResource("shape_33p56x1p0x0p7")
+
+[node name="NorthEndWall" type="StaticBody3D" parent="Shell"]
+position = Vector3(0, 7.03, -13.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/NorthEndWall"]
+mesh = SubResource("box_33p56x4p31x0p66")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/NorthEndWall"]
+shape = SubResource("shape_33p56x4p31x0p66")
+
+[node name="NorthPanelJoint0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-14, 7.02, -12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelJoint1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-10.2, 7.02, -12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelJoint2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-6.8, 7.02, -12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelJoint3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-3.4, 7.02, -12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelJoint4" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 7.02, -12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelJoint5" type="MeshInstance3D" parent="Shell"]
+position = Vector3(3.4, 7.02, -12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelJoint6" type="MeshInstance3D" parent="Shell"]
+position = Vector3(6.8, 7.02, -12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelJoint7" type="MeshInstance3D" parent="Shell"]
+position = Vector3(10.2, 7.02, -12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelJoint8" type="MeshInstance3D" parent="Shell"]
+position = Vector3(14, 7.02, -12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelBed0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 5.56, -12.963)
+mesh = SubResource("box_33p51x0p027x0p013")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelBed1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 7.76, -12.963)
+mesh = SubResource("box_33p51x0p027x0p013")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthPanelBed2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 8.81, -12.963)
+mesh = SubResource("box_33p51x0p027x0p013")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="NorthWallColumn0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-15.8, 6.77, -12.86)
+mesh = SubResource("box_0p36x4p83x0p32")
+material_override = SubResource("foundation")
+
+[node name="NorthWallColumn1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-10.55, 6.77, -12.86)
+mesh = SubResource("box_0p36x4p83x0p32")
+material_override = SubResource("foundation")
+
+[node name="NorthWallColumn2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(10.55, 6.77, -12.86)
+mesh = SubResource("box_0p36x4p83x0p32")
+material_override = SubResource("foundation")
+
+[node name="NorthWallColumn3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(15.8, 6.77, -12.86)
+mesh = SubResource("box_0p36x4p83x0p32")
+material_override = SubResource("foundation")
+
+[node name="NorthControlBooth" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 6.18, -12.8)
+mesh = SubResource("box_12p8x2p55x0p61")
+material_override = SubResource("foundation")
+
+[node name="NorthBoothBase" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 4.95, -12.55)
+mesh = SubResource("box_13p1x0p2x1p0")
+material_override = SubResource("structural_steel")
+
+[node name="NorthBoothFascia" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 7.47, -12.6)
+mesh = SubResource("box_13p04x0p23x0p77")
+material_override = SubResource("dock_blue")
+
+[node name="NorthObservationRecess0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-4.05, 6.27, -12.46)
+mesh = SubResource("box_2p4x1p36x0p1")
+material_override = SubResource("structural_steel")
+
+[node name="NorthObservationPane0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-4.05, 6.27, -12.398)
+mesh = SubResource("box_2p26x1p19x0p039")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="NorthPaneMullion0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-4.05, 6.27, -12.37)
+mesh = SubResource("box_0p066x1p22x0p11")
+material_override = SubResource("structural_steel")
+
+[node name="NorthObservationRecess1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-1.35, 6.27, -12.46)
+mesh = SubResource("box_2p4x1p36x0p1")
+material_override = SubResource("structural_steel")
+
+[node name="NorthObservationPane1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-1.35, 6.27, -12.398)
+mesh = SubResource("box_2p26x1p19x0p039")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="NorthPaneMullion1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-1.35, 6.27, -12.37)
+mesh = SubResource("box_0p066x1p22x0p11")
+material_override = SubResource("structural_steel")
+
+[node name="NorthObservationRecess2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(1.35, 6.27, -12.46)
+mesh = SubResource("box_2p4x1p36x0p1")
+material_override = SubResource("structural_steel")
+
+[node name="NorthObservationPane2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(1.35, 6.27, -12.398)
+mesh = SubResource("box_2p26x1p19x0p039")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="NorthPaneMullion2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(1.35, 6.27, -12.37)
+mesh = SubResource("box_0p066x1p22x0p11")
+material_override = SubResource("structural_steel")
+
+[node name="NorthObservationRecess3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(4.05, 6.27, -12.46)
+mesh = SubResource("box_2p4x1p36x0p1")
+material_override = SubResource("structural_steel")
+
+[node name="NorthObservationPane3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(4.05, 6.27, -12.398)
+mesh = SubResource("box_2p26x1p19x0p039")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="NorthPaneMullion3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(4.05, 6.27, -12.37)
+mesh = SubResource("box_0p066x1p22x0p11")
+material_override = SubResource("structural_steel")
+
+[node name="NorthPortalSignMount-12.2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-12.2, 2.33, -12.6)
+mesh = SubResource("box_2p33x0p54x0p12")
+material_override = SubResource("dock_blue")
+
+[node name="NorthPortalSign-12.2" type="Label3D" parent="Shell"]
+position = Vector3(-12.2, 2.33, -12.532)
+rotation = Vector3(0, 0, 0)
+text = "NORTH  /  SERVICE"
+font_size = 57
+pixel_size = 0.005
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="NorthPortalSignMount12.2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(12.2, 2.33, -12.6)
+mesh = SubResource("box_2p33x0p54x0p12")
+material_override = SubResource("dock_blue")
+
+[node name="NorthPortalSign12.2" type="Label3D" parent="Shell"]
+position = Vector3(12.2, 2.33, -12.532)
+rotation = Vector3(0, 0, 0)
+text = "NORTH  /  SERVICE"
+font_size = 57
+pixel_size = 0.005
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="NorthHallIdentifier" type="Label3D" parent="Shell"]
+position = Vector3(0, 5.31, -12.44)
+rotation = Vector3(0, 0, 0)
+text = "09  /  TURBINE CONTROL"
+font_size = 66
+pixel_size = 0.0065
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="NorthDistributionPanel-2.9" parent="Fixtures" instance=ExtResource("switchgear")]
+position = Vector3(-2.9, 1.28, -12.72)
+scale = Vector3(0.83, 0.83, 0.83)
+
+[node name="NorthDistributionPanel2.9" parent="Fixtures" instance=ExtResource("switchgear")]
+position = Vector3(2.9, 1.28, -12.72)
+scale = Vector3(0.83, 0.83, 0.83)
+
+[node name="NorthPortalLight-8.05" type="OmniLight3D" parent="Lighting"]
+position = Vector3(-8.05, 3.1, -12.4)
+light_color = Color(0.7, 0.84, 1, 1)
+light_energy = 0.85
+omni_range = 7.1
+
+[node name="NorthPortalLight8.05" type="OmniLight3D" parent="Lighting"]
+position = Vector3(8.05, 3.1, -12.4)
+light_color = Color(0.7, 0.84, 1, 1)
+light_energy = 0.85
+omni_range = 7.1
+
+[node name="SouthEndWallExtension0" type="StaticBody3D" parent="Shell"]
+position = Vector3(0, 3.29, 13.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/SouthEndWallExtension0"]
+mesh = SubResource("box_11p8x1p18x0p81")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/SouthEndWallExtension0"]
+shape = SubResource("shape_11p8x1p18x0p81")
+
+[node name="SouthEndWallRail0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 3.86, 12.83)
+mesh = SubResource("box_11p8x0p13x0p23")
+material_override = SubResource("structural_steel")
+
+[node name="SouthEndWallExtension1" type="StaticBody3D" parent="Shell"]
+position = Vector3(-12.2, 3.29, 13.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/SouthEndWallExtension1"]
+mesh = SubResource("box_4x1p18x0p81")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/SouthEndWallExtension1"]
+shape = SubResource("shape_4x1p18x0p81")
+
+[node name="SouthEndWallRail1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-12.2, 3.86, 12.83)
+mesh = SubResource("box_4x0p13x0p23")
+material_override = SubResource("structural_steel")
+
+[node name="SouthEndWallExtension2" type="StaticBody3D" parent="Shell"]
+position = Vector3(12.2, 3.29, 13.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/SouthEndWallExtension2"]
+mesh = SubResource("box_4x1p18x0p81")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/SouthEndWallExtension2"]
+shape = SubResource("shape_4x1p18x0p81")
+
+[node name="SouthEndWallRail2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(12.2, 3.86, 12.83)
+mesh = SubResource("box_4x0p13x0p23")
+material_override = SubResource("structural_steel")
+
+[node name="SouthEndHeader" type="StaticBody3D" parent="Shell"]
+position = Vector3(0, 4.37, 13.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/SouthEndHeader"]
+mesh = SubResource("box_33p56x1p0x0p7")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/SouthEndHeader"]
+shape = SubResource("shape_33p56x1p0x0p7")
+
+[node name="SouthEndWall" type="StaticBody3D" parent="Shell"]
+position = Vector3(0, 7.03, 13.3)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Mesh" type="MeshInstance3D" parent="Shell/SouthEndWall"]
+mesh = SubResource("box_33p56x4p31x0p66")
+material_override = SubResource("concrete")
+
+[node name="Collision" type="CollisionShape3D" parent="Shell/SouthEndWall"]
+shape = SubResource("shape_33p56x4p31x0p66")
+
+[node name="SouthPanelJoint0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-14, 7.02, 12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelJoint1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-10.2, 7.02, 12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelJoint2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-6.8, 7.02, 12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelJoint3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-3.4, 7.02, 12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelJoint4" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 7.02, 12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelJoint5" type="MeshInstance3D" parent="Shell"]
+position = Vector3(3.4, 7.02, 12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelJoint6" type="MeshInstance3D" parent="Shell"]
+position = Vector3(6.8, 7.02, 12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelJoint7" type="MeshInstance3D" parent="Shell"]
+position = Vector3(10.2, 7.02, 12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelJoint8" type="MeshInstance3D" parent="Shell"]
+position = Vector3(14, 7.02, 12.964)
+mesh = SubResource("box_0p032x4p16x0p014")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelBed0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 5.56, 12.963)
+mesh = SubResource("box_33p51x0p027x0p013")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelBed1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 7.76, 12.963)
+mesh = SubResource("box_33p51x0p027x0p013")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthPanelBed2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 8.81, 12.963)
+mesh = SubResource("box_33p51x0p027x0p013")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="SouthWallColumn0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-15.8, 6.77, 12.86)
+mesh = SubResource("box_0p36x4p83x0p32")
+material_override = SubResource("foundation")
+
+[node name="SouthWallColumn1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-10.55, 6.77, 12.86)
+mesh = SubResource("box_0p36x4p83x0p32")
+material_override = SubResource("foundation")
+
+[node name="SouthWallColumn2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(10.55, 6.77, 12.86)
+mesh = SubResource("box_0p36x4p83x0p32")
+material_override = SubResource("foundation")
+
+[node name="SouthWallColumn3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(15.8, 6.77, 12.86)
+mesh = SubResource("box_0p36x4p83x0p32")
+material_override = SubResource("foundation")
+
+[node name="SouthControlBooth" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 6.18, 12.8)
+mesh = SubResource("box_12p8x2p55x0p61")
+material_override = SubResource("foundation")
+
+[node name="SouthBoothBase" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 4.95, 12.55)
+mesh = SubResource("box_13p1x0p2x1p0")
+material_override = SubResource("structural_steel")
+
+[node name="SouthBoothFascia" type="MeshInstance3D" parent="Shell"]
+position = Vector3(0, 7.47, 12.6)
+mesh = SubResource("box_13p04x0p23x0p77")
+material_override = SubResource("dock_oxide")
+
+[node name="SouthObservationRecess0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-4.05, 6.27, 12.46)
+mesh = SubResource("box_2p4x1p36x0p1")
+material_override = SubResource("structural_steel")
+
+[node name="SouthObservationPane0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-4.05, 6.27, 12.398)
+mesh = SubResource("box_2p26x1p19x0p039")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="SouthPaneMullion0" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-4.05, 6.27, 12.37)
+mesh = SubResource("box_0p066x1p22x0p11")
+material_override = SubResource("structural_steel")
+
+[node name="SouthObservationRecess1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-1.35, 6.27, 12.46)
+mesh = SubResource("box_2p4x1p36x0p1")
+material_override = SubResource("structural_steel")
+
+[node name="SouthObservationPane1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-1.35, 6.27, 12.398)
+mesh = SubResource("box_2p26x1p19x0p039")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="SouthPaneMullion1" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-1.35, 6.27, 12.37)
+mesh = SubResource("box_0p066x1p22x0p11")
+material_override = SubResource("structural_steel")
+
+[node name="SouthObservationRecess2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(1.35, 6.27, 12.46)
+mesh = SubResource("box_2p4x1p36x0p1")
+material_override = SubResource("structural_steel")
+
+[node name="SouthObservationPane2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(1.35, 6.27, 12.398)
+mesh = SubResource("box_2p26x1p19x0p039")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="SouthPaneMullion2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(1.35, 6.27, 12.37)
+mesh = SubResource("box_0p066x1p22x0p11")
+material_override = SubResource("structural_steel")
+
+[node name="SouthObservationRecess3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(4.05, 6.27, 12.46)
+mesh = SubResource("box_2p4x1p36x0p1")
+material_override = SubResource("structural_steel")
+
+[node name="SouthObservationPane3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(4.05, 6.27, 12.398)
+mesh = SubResource("box_2p26x1p19x0p039")
+material_override = SubResource("skylight")
+cast_shadow = 0
+
+[node name="SouthPaneMullion3" type="MeshInstance3D" parent="Shell"]
+position = Vector3(4.05, 6.27, 12.37)
+mesh = SubResource("box_0p066x1p22x0p11")
+material_override = SubResource("structural_steel")
+
+[node name="SouthPortalSignMount-12.2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(-12.2, 2.33, 12.6)
+mesh = SubResource("box_2p33x0p54x0p12")
+material_override = SubResource("dock_oxide")
+
+[node name="SouthPortalSign-12.2" type="Label3D" parent="Shell"]
+position = Vector3(-12.2, 2.33, 12.532)
+rotation = Vector3(0, 3.14159, 0)
+text = "SOUTH  /  LOADING"
+font_size = 57
+pixel_size = 0.005
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="SouthPortalSignMount12.2" type="MeshInstance3D" parent="Shell"]
+position = Vector3(12.2, 2.33, 12.6)
+mesh = SubResource("box_2p33x0p54x0p12")
+material_override = SubResource("dock_oxide")
+
+[node name="SouthPortalSign12.2" type="Label3D" parent="Shell"]
+position = Vector3(12.2, 2.33, 12.532)
+rotation = Vector3(0, 3.14159, 0)
+text = "SOUTH  /  LOADING"
+font_size = 57
+pixel_size = 0.005
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="SouthHallIdentifier" type="Label3D" parent="Shell"]
+position = Vector3(0, 5.31, 12.44)
+rotation = Vector3(0, 3.14159, 0)
+text = "09  /  BREAKWATER STATION"
+font_size = 66
+pixel_size = 0.0065
+outline_size = 0
+modulate = Color(0.83, 0.83, 0.74, 1)
+shaded = true
+double_sided = false
+cast_shadow = 0
+
+[node name="SouthDistributionPanel-2.9" parent="Fixtures" instance=ExtResource("switchgear")]
+position = Vector3(-2.9, 1.28, 12.72)
+scale = Vector3(0.83, 0.83, 0.83)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthDistributionPanel2.9" parent="Fixtures" instance=ExtResource("switchgear")]
+position = Vector3(2.9, 1.28, 12.72)
+scale = Vector3(0.83, 0.83, 0.83)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="SouthPortalLight-8.05" type="OmniLight3D" parent="Lighting"]
+position = Vector3(-8.05, 3.1, 12.4)
+light_color = Color(1, 0.81, 0.57, 1)
+light_energy = 0.85
+omni_range = 7.1
+
+[node name="SouthPortalLight8.05" type="OmniLight3D" parent="Lighting"]
+position = Vector3(8.05, 3.1, 12.4)
+light_color = Color(1, 0.81, 0.57, 1)
+light_energy = 0.85
+omni_range = 7.1
+
+[node name="GeneratorPipework" parent="Machinery" instance=ExtResource("pipework")]
+position = Vector3(0.28, 0.59, 1.76)
+scale = Vector3(0.76, 0.52, 0.75)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="MachineBed0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.012, -6.1)
+mesh = SubResource("box_5p8x0p024x5p58")
+material_override = SubResource("grating")
+cast_shadow = 0
+
+[node name="ServiceStrip0_-3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(-3, 0.016, -6.1)
+mesh = SubResource("box_0p22x0p026x5p58")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="ServiceStripe0_-3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(-3.3, 0.015, -6.1)
+mesh = SubResource("box_0p065x0p024x5p58")
+material_override = SubResource("floor_yellow")
+cast_shadow = 0
+
+[node name="ServiceStrip0_3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(3, 0.016, -6.1)
+mesh = SubResource("box_0p22x0p026x5p58")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="ServiceStripe0_3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(3.3, 0.015, -6.1)
+mesh = SubResource("box_0p065x0p024x5p58")
+material_override = SubResource("floor_yellow")
+cast_shadow = 0
+
+[node name="BedEnd0_-2.79" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.016, -8.89)
+mesh = SubResource("box_6p18x0p026x0p16")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="BedEnd0_2.79" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.016, -3.31)
+mesh = SubResource("box_6p18x0p026x0p16")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="NorthAuxiliaryTurbine" type="StaticBody3D" parent="Machinery"]
+position = Vector3(0, 0, -6.1)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Machine" parent="Machinery/NorthAuxiliaryTurbine" instance=ExtResource("turbine")]
+position = Vector3(0, 0, 0)
+scale = Vector3(0.66, 0.73, 0.66)
+
+[node name="Base" type="CollisionShape3D" parent="Machinery/NorthAuxiliaryTurbine"]
+position = Vector3(0, 0.32, 0)
+shape = SubResource("aux_Base")
+
+[node name="Housing" type="CollisionShape3D" parent="Machinery/NorthAuxiliaryTurbine"]
+position = Vector3(0, 1.36, 0)
+shape = SubResource("aux_Housing")
+
+[node name="MachineBed1" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.012, 0)
+mesh = SubResource("box_5p8x0p024x5p58")
+material_override = SubResource("grating")
+cast_shadow = 0
+
+[node name="ServiceStrip1_-3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(-3, 0.016, 0)
+mesh = SubResource("box_0p22x0p026x5p58")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="ServiceStripe1_-3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(-3.3, 0.015, 0)
+mesh = SubResource("box_0p065x0p024x5p58")
+material_override = SubResource("floor_yellow")
+cast_shadow = 0
+
+[node name="ServiceStrip1_3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(3, 0.016, 0)
+mesh = SubResource("box_0p22x0p026x5p58")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="ServiceStripe1_3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(3.3, 0.015, 0)
+mesh = SubResource("box_0p065x0p024x5p58")
+material_override = SubResource("floor_yellow")
+cast_shadow = 0
+
+[node name="BedEnd1_-2.79" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.016, -2.79)
+mesh = SubResource("box_6p18x0p026x0p16")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="BedEnd1_2.79" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.016, 2.79)
+mesh = SubResource("box_6p18x0p026x0p16")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="MachineBed2" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.012, 6.1)
+mesh = SubResource("box_5p8x0p024x5p58")
+material_override = SubResource("grating")
+cast_shadow = 0
+
+[node name="ServiceStrip2_-3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(-3, 0.016, 6.1)
+mesh = SubResource("box_0p22x0p026x5p58")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="ServiceStripe2_-3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(-3.3, 0.015, 6.1)
+mesh = SubResource("box_0p065x0p024x5p58")
+material_override = SubResource("floor_yellow")
+cast_shadow = 0
+
+[node name="ServiceStrip2_3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(3, 0.016, 6.1)
+mesh = SubResource("box_0p22x0p026x5p58")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="ServiceStripe2_3.0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(3.3, 0.015, 6.1)
+mesh = SubResource("box_0p065x0p024x5p58")
+material_override = SubResource("floor_yellow")
+cast_shadow = 0
+
+[node name="BedEnd2_-2.79" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.016, 3.31)
+mesh = SubResource("box_6p18x0p026x0p16")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="BedEnd2_2.79" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.016, 8.89)
+mesh = SubResource("box_6p18x0p026x0p16")
+material_override = SubResource("service_tiles")
+cast_shadow = 0
+
+[node name="SouthAuxiliaryTurbine" type="StaticBody3D" parent="Machinery"]
+position = Vector3(0, 0, 6.1)
+collision_layer = 1
+collision_mask = 1
+
+[node name="Machine" parent="Machinery/SouthAuxiliaryTurbine" instance=ExtResource("turbine")]
+position = Vector3(0, 0, 0)
+scale = Vector3(0.66, 0.73, 0.66)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="Base" type="CollisionShape3D" parent="Machinery/SouthAuxiliaryTurbine"]
+position = Vector3(0, 0.32, 0)
+shape = SubResource("aux_Base")
+
+[node name="Housing" type="CollisionShape3D" parent="Machinery/SouthAuxiliaryTurbine"]
+position = Vector3(0, 1.36, 0)
+shape = SubResource("aux_Housing")
+
+[node name="FloorJoint0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.006, -11)
+mesh = SubResource("box_33p0x0p012x0p035")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="FloorJoint1" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.006, -5.55)
+mesh = SubResource("box_33p0x0p012x0p035")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="FloorJoint2" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.006, 0)
+mesh = SubResource("box_33p0x0p012x0p035")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="FloorJoint3" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.006, 5.55)
+mesh = SubResource("box_33p0x0p012x0p035")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="FloorJoint4" type="MeshInstance3D" parent="Decks"]
+position = Vector3(0, 0.006, 11)
+mesh = SubResource("box_33p0x0p012x0p035")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="LongitudinalJoint0" type="MeshInstance3D" parent="Decks"]
+position = Vector3(-9.5, 0.007, 0)
+mesh = SubResource("box_0p034x0p012x26p3")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="LongitudinalJoint1" type="MeshInstance3D" parent="Decks"]
+position = Vector3(-4, 0.007, 0)
+mesh = SubResource("box_0p034x0p012x26p3")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="LongitudinalJoint2" type="MeshInstance3D" parent="Decks"]
+position = Vector3(4, 0.007, 0)
+mesh = SubResource("box_0p034x0p012x26p3")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="LongitudinalJoint3" type="MeshInstance3D" parent="Decks"]
+position = Vector3(9.5, 0.007, 0)
+mesh = SubResource("box_0p034x0p012x26p3")
+material_override = SubResource("expansion_joint")
+cast_shadow = 0
+
+[node name="Pendant0_0" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(-10.9, 8.66, -9.88)
+
+[node name="PendantLens0_0" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(-10.9, 7.29, -9.88)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool0_0" type="SpotLight3D" parent="Lighting"]
+position = Vector3(-10.9, 7.23, -9.88)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.12
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+
+[node name="Pendant0_1" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(-10.9, 8.66, -0.3)
+
+[node name="PendantLens0_1" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(-10.9, 7.29, -0.3)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool0_1" type="SpotLight3D" parent="Lighting"]
+position = Vector3(-10.9, 7.23, -0.3)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.65
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+
+[node name="Pendant0_2" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(-10.9, 8.66, 9.3)
+
+[node name="PendantLens0_2" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(-10.9, 7.29, 9.3)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool0_2" type="SpotLight3D" parent="Lighting"]
+position = Vector3(-10.9, 7.23, 9.3)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.12
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+
+[node name="Pendant1_0" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(-4.5, 8.66, -9.88)
+
+[node name="PendantLens1_0" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(-4.5, 7.29, -9.88)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool1_0" type="SpotLight3D" parent="Lighting"]
+position = Vector3(-4.5, 7.23, -9.88)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.12
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+
+[node name="Pendant1_1" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(-4.5, 8.66, -0.3)
+
+[node name="PendantLens1_1" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(-4.5, 7.29, -0.3)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool1_1" type="SpotLight3D" parent="Lighting" groups=["breakwater_shadow_lights"]]
+position = Vector3(-4.5, 7.23, -0.3)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.65
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+shadow_enabled = true
+
+[node name="Pendant1_2" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(-4.5, 8.66, 9.3)
+
+[node name="PendantLens1_2" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(-4.5, 7.29, 9.3)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool1_2" type="SpotLight3D" parent="Lighting"]
+position = Vector3(-4.5, 7.23, 9.3)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.12
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+
+[node name="Pendant2_0" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(4.5, 8.66, -9.88)
+
+[node name="PendantLens2_0" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(4.5, 7.29, -9.88)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool2_0" type="SpotLight3D" parent="Lighting"]
+position = Vector3(4.5, 7.23, -9.88)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.12
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+
+[node name="Pendant2_1" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(4.5, 8.66, -0.3)
+
+[node name="PendantLens2_1" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(4.5, 7.29, -0.3)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool2_1" type="SpotLight3D" parent="Lighting" groups=["breakwater_shadow_lights"]]
+position = Vector3(4.5, 7.23, -0.3)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.65
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+shadow_enabled = true
+
+[node name="Pendant2_2" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(4.5, 8.66, 9.3)
+
+[node name="PendantLens2_2" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(4.5, 7.29, 9.3)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool2_2" type="SpotLight3D" parent="Lighting"]
+position = Vector3(4.5, 7.23, 9.3)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.12
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+
+[node name="Pendant3_0" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(10.9, 8.66, -9.88)
+
+[node name="PendantLens3_0" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(10.9, 7.29, -9.88)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool3_0" type="SpotLight3D" parent="Lighting"]
+position = Vector3(10.9, 7.23, -9.88)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.12
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+
+[node name="Pendant3_1" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(10.9, 8.66, -0.3)
+
+[node name="PendantLens3_1" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(10.9, 7.29, -0.3)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool3_1" type="SpotLight3D" parent="Lighting"]
+position = Vector3(10.9, 7.23, -0.3)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.65
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+
+[node name="Pendant3_2" parent="Fixtures" instance=ExtResource("pendant")]
+position = Vector3(10.9, 8.66, 9.3)
+
+[node name="PendantLens3_2" type="MeshInstance3D" parent="Fixtures"]
+position = Vector3(10.9, 7.29, 9.3)
+mesh = SubResource("lens_mesh")
+material_override = SubResource("fixture_lens")
+cast_shadow = 0
+
+[node name="PendantPool3_2" type="SpotLight3D" parent="Lighting"]
+position = Vector3(10.9, 7.23, 9.3)
+rotation = Vector3(-1.5708, 0, 0)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 2.12
+spot_range = 14
+spot_angle = 40
+spot_attenuation = 0.74
+spot_angle_attenuation = 0.72
+
+[node name="HallBounce0" type="OmniLight3D" parent="Lighting"]
+position = Vector3(-6, 4.9, -5)
+light_color = Color(0.73, 0.84, 1, 1)
+light_energy = 0.42
+omni_range = 11
+omni_attenuation = 1.12
+
+[node name="HallBounce1" type="OmniLight3D" parent="Lighting"]
+position = Vector3(6, 4.9, -5)
+light_color = Color(0.73, 0.84, 1, 1)
+light_energy = 0.42
+omni_range = 11
+omni_attenuation = 1.12
+
+[node name="HallBounce2" type="OmniLight3D" parent="Lighting"]
+position = Vector3(-6, 4.9, 5)
+light_color = Color(0.73, 0.84, 1, 1)
+light_energy = 0.42
+omni_range = 11
+omni_attenuation = 1.12
+
+[node name="HallBounce3" type="OmniLight3D" parent="Lighting"]
+position = Vector3(6, 4.9, 5)
+light_color = Color(0.73, 0.84, 1, 1)
+light_energy = 0.42
+omni_range = 11
+omni_attenuation = 1.12

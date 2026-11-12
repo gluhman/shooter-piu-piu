@@ -1,0 +1,87 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/painted_metal_010_color.jpg" id="painted_metal_010_color"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/painted_metal_010_normal.jpg" id="painted_metal_010_normal"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/painted_metal_010_orm.jpg" id="painted_metal_010_orm"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/rusty_metal_sheet_color.jpg" id="rusty_metal_sheet_color"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/rusty_metal_sheet_normal.jpg" id="rusty_metal_sheet_normal"]
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/rusty_metal_sheet_orm.jpg" id="rusty_metal_sheet_orm"]
+[ext_resource type="ArrayMesh" path="res://game/maps/breakwater/art/models/turbine_casing.res" id="turbine_casing"]
+[ext_resource type="ArrayMesh" path="res://game/maps/breakwater/art/models/turbine_flange.res" id="turbine_flange"]
+[ext_resource type="ArrayMesh" path="res://game/maps/breakwater/art/models/turbine_band.res" id="turbine_band"]
+[ext_resource type="ArrayMesh" path="res://game/maps/breakwater/art/models/turbine_vents.res" id="turbine_vents"]
+
+[ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/turbine_stencil.png" id="turbine_stencil"]
+
+[sub_resource type="ORMMaterial3D" id="casing"]
+albedo_color = Color(0.3, 0.48, 0.5, 1)
+albedo_texture = ExtResource("painted_metal_010_color")
+orm_texture = ExtResource("painted_metal_010_orm")
+normal_enabled = true
+normal_scale = 0.44
+normal_texture = ExtResource("painted_metal_010_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.8, 0.8, 0.8)
+texture_filter = 5
+
+[sub_resource type="ORMMaterial3D" id="machined_steel"]
+albedo_color = Color(0.65, 0.67, 0.65, 1)
+albedo_texture = ExtResource("rusty_metal_sheet_color")
+orm_texture = ExtResource("rusty_metal_sheet_orm")
+normal_enabled = true
+normal_scale = 0.42
+normal_texture = ExtResource("rusty_metal_sheet_normal")
+uv1_triplanar = true
+uv1_triplanar_sharpness = 8
+uv1_scale = Vector3(0.7, 0.7, 0.7)
+texture_filter = 5
+
+[sub_resource type="StandardMaterial3D" id="warning"]
+albedo_color = Color(0.72, 0.54, 0.2, 1)
+metallic = 0.21
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="vent"]
+albedo_color = Color(0.055, 0.073, 0.076, 1)
+metallic = 0.3
+roughness = 0.8
+
+[node name="Turbine" type="Node3D"]
+
+[node name="Turbine_casing" type="MeshInstance3D" parent="."]
+layers = 32769
+mesh = ExtResource("turbine_casing")
+material_override = SubResource("casing")
+
+[node name="Turbine_flange" type="MeshInstance3D" parent="."]
+mesh = ExtResource("turbine_flange")
+material_override = SubResource("machined_steel")
+
+[node name="Turbine_band" type="MeshInstance3D" parent="."]
+mesh = ExtResource("turbine_band")
+material_override = SubResource("warning")
+
+[node name="Turbine_vents" type="MeshInstance3D" parent="."]
+mesh = ExtResource("turbine_vents")
+material_override = SubResource("vent")
+
+[node name="NorthServiceMark" type="Decal" parent="."]
+position = Vector3(0, 1.82, -1.47)
+rotation = Vector3(1.570796, 3.141593, 0)
+size = Vector3(1.32, 0.62, 0.42)
+texture_albedo = ExtResource("turbine_stencil")
+upper_fade = 0.05
+lower_fade = 0.05
+normal_fade = 0.42
+cull_mask = 32768
+
+[node name="SouthServiceMark" type="Decal" parent="."]
+position = Vector3(0, 1.82, 1.47)
+rotation = Vector3(1.570796, 0, 0)
+size = Vector3(1.32, 0.62, 0.42)
+texture_albedo = ExtResource("turbine_stencil")
+upper_fade = 0.05
+lower_fade = 0.05
+normal_fade = 0.42
+cull_mask = 32768
