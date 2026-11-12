@@ -7,12 +7,16 @@ const COVER_REACH := 9.0
 const COVER_TRAVEL_TIME := 3.5
 const COVER_ARRIVAL := 0.4
 const COVER_DIRECTIONS := 8
-const ENGAGE_DELAY := [Vector2(0.45, 0.75), Vector2(0.24, 0.42), Vector2(0.12, 0.26)]
-const REPOSITION_SHOTS := [5, 7, 9]
+const HEARING_RANGE := 34.0
+const HEARING_MEMORY := 2.4
+const ENGAGE_DELAY := [Vector2(0.45, 0.75), Vector2(0.24, 0.42), Vector2(0.12, 0.26), Vector2(0.08, 0.17), Vector2(0.05, 0.11)]
+const REPOSITION_SHOTS := [5, 7, 9, 11, 13]
 const DIFFICULTY := [
-	{"speed": 0.85, "shot_delay": 1.35, "spread": 2.4},
-	{"speed": 1.0, "shot_delay": 1.0, "spread": 1.15},
-	{"speed": 1.15, "shot_delay": 0.72, "spread": 0.50},
+	{"speed": 0.85, "shot_delay": 1.35, "spread": 2.4, "vision": Vector2(0.20, 0.30), "hearing": 26.0, "search_time": 4.0, "flank": 3.0, "cover_cooldown": Vector2(4.0, 5.0)},
+	{"speed": 1.0, "shot_delay": 1.0, "spread": 1.15, "vision": Vector2(0.12, 0.19), "hearing": HEARING_RANGE, "search_time": SEARCH_TIME, "flank": 5.0, "cover_cooldown": Vector2(3.5, 4.5)},
+	{"speed": 1.15, "shot_delay": 0.72, "spread": 0.50, "vision": Vector2(0.08, 0.14), "hearing": 38.0, "search_time": 7.0, "flank": 6.0, "cover_cooldown": Vector2(2.5, 3.5)},
+	{"speed": 1.20, "shot_delay": 0.62, "spread": 0.32, "vision": Vector2(0.05, 0.09), "hearing": 42.0, "search_time": 8.0, "flank": 7.0, "cover_cooldown": Vector2(2.0, 2.8)},
+	{"speed": 1.25, "shot_delay": 0.56, "spread": 0.20, "vision": Vector2(0.03, 0.06), "hearing": 46.0, "search_time": 9.0, "flank": 8.0, "cover_cooldown": Vector2(1.6, 2.3)},
 ]
 const FIRE := {
 	"launcher": {"range": 28.0, "preferred": 13.0, "delay": 2.4, "minimum": 7.0},
@@ -34,6 +38,7 @@ var combatant_id := 0
 var difficulty := 1
 var patrol_route: Array
 var _waypoint := 0
+var _patrol_direction := 1
 var _vision_wait := 0.0
 var _engage_left := 0.0
 var _target: Node3D
@@ -98,6 +103,11 @@ func take_damage(amount: float, killer_id: int = 0, zone: String = "chest", head
 	var attacker: Node = get_parent().combatant(killer_id)
 	if is_instance_valid(attacker) and attacker != self:
 		_incoming_fire = attacker.aim_center() + Vector3.UP * 0.4
+		if attacker is Node3D and attacker.control_enabled and attacker.health > 0 and not get_parent().same_team(score_id(), attacker.score_id()):
+			_target = attacker
+			_last_seen = attacker.global_position
+			_search_left = SEARCH_TIME
+			_flank_point = Vector3.INF
 		if _holding_cover:
 			_cover_goal = Vector3.INF
 			_holding_cover = false
@@ -122,10 +132,15 @@ func _reset_behavior() -> void:
 	for index in patrol_route.size():
 		if global_position.distance_squared_to(patrol_route[index]) < global_position.distance_squared_to(patrol_route[_waypoint]):
 			_waypoint = index
-	_shoot_wait = randf_range(0.55, 0.95) * float(DIFFICULTY[difficulty].shot_delay)
+	if not patrol_route.is_empty():
+		_waypoint = posmod(_waypoint + abs(combatant_id), patrol_route.size())
+		_patrol_direction = -1 if abs(combatant_id) % 2 == 1 else 1
+	var modifiers := _difficulty_modifiers()
+	_shoot_wait = randf_range(0.55, 0.95) * float(modifiers.shot_delay)
 	_shots_since_reposition = 0
 	_target = null
-	_vision_wait = randf_range(0.0, 0.14)
+	var vision: Vector2 = modifiers.vision
+	_vision_wait = randf_range(0.0, vision.y)
 	_engage_left = 0.0
 	_strafe_side = -1.0 if randf() < 0.5 else 1.0
 	_strafe_left = randf_range(0.5, 1.4)
@@ -168,29 +183,37 @@ func _physics_process(delta: float) -> void:
 		_loot_scan = randf_range(0.25, 0.45)
 		_loot_target = _loot.seek_bot_loot(self)
 	var profile: Dictionary = FIRE[weapon_id]
-	var modifiers: Dictionary = DIFFICULTY[difficulty]
+	var modifiers := _difficulty_modifiers()
+	var difficulty_index := _difficulty_index()
 	var ammo: Vector2i = gun.ammo_counts()
 	_vision_wait -= delta
 	if _vision_wait <= 0.0 and flash_left < 0.2:
-		_vision_wait = randf_range(0.12, 0.19)
+		var vision: Vector2 = modifiers.vision
+		_vision_wait = randf_range(vision.x, vision.y)
 		var next_target := _visible_target(float(profile.range))
 		if next_target != _target:
 			_target = next_target
 			if _target:
-				var delay: Vector2 = ENGAGE_DELAY[difficulty]
+				var delay: Vector2 = ENGAGE_DELAY[difficulty_index]
 				_engage_left = randf_range(delay.x, delay.y)
 				_shots_since_reposition = 0
 	var target := _target if flash_left < 0.2 and is_instance_valid(_target) and _target.control_enabled and _target.health > 0 else null
+	if target == null:
+		var heard := _audible_enemy(float(modifiers.hearing))
+		if heard and (_last_seen.distance_squared_to(heard.global_position) > 2.25 or _search_left <= 0.0):
+			_last_seen = heard.global_position
+			_search_left = HEARING_MEMORY * (1.0 + float(modifiers.search_time) / SEARCH_TIME * 0.2)
+			_flank_point = Vector3.INF
 	_shoot_wait = maxf(0.0, _shoot_wait - delta)
 	_engage_left = maxf(0.0, _engage_left - delta)
 	_cover_cooldown = maxf(0.0, _cover_cooldown - delta)
 	if target:
 		_last_seen = target.global_position
-		_search_left = SEARCH_TIME
+		_search_left = float(modifiers.search_time)
 		_flank_point = Vector3.INF
 	else:
 		_search_left = maxf(0.0, _search_left - delta)
-	_try_take_cover(target, profile, ammo)
+	_try_take_cover(target, profile, modifiers, ammo)
 
 	var wish := Vector3.ZERO
 	var speed := BOT_SPEED * float(modifiers.speed)
@@ -206,7 +229,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			aiming = false
 			_camera.rotation.x = move_toward(_camera.rotation.x, 0.0, delta * 2.5)
-			wish = _wander() if ammo == Vector2i.ZERO else _search(float(profile.preferred))
+			wish = _wander() if ammo == Vector2i.ZERO else _search(float(profile.preferred), float(modifiers.flank))
 			_face(wish, delta)
 	if crouched:
 		speed *= 0.65
@@ -244,7 +267,7 @@ func _fight(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Ve
 			var cadence := float(profile.delay) * float(modifiers.shot_delay) * randf_range(0.88, 1.14)
 			_shoot_wait = maxf(float(Weapon.WEAPONS[weapon_id].cooldown), cadence)
 			_shots_since_reposition += 1
-			if _shots_since_reposition >= int(REPOSITION_SHOTS[difficulty]) and _cover_cooldown == 0.0:
+			if _shots_since_reposition >= int(REPOSITION_SHOTS[_difficulty_index()]) and _cover_cooldown == 0.0:
 				_incoming_fire = target.aim_center() + Vector3.UP * 0.4
 				_shots_since_reposition = 0
 	var distance: float = global_position.distance_to(target.global_position)
@@ -253,9 +276,11 @@ func _fight(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Ve
 		_strafe_left = randf_range(0.65, 1.35)
 		_strafe_side *= -1.0
 	var side := direction.cross(Vector3.UP) * _strafe_side
+	var advance := ammo.x > 0 and distance > float(profile.preferred) * 1.15
 	var retreat := ammo.x == 0 or distance < float(profile.preferred) * 0.78
 	var back := -direction * (0.9 if retreat else 0.0)
-	var wish := (side + back).normalized()
+	var forward := _follow_path(target.global_position) if advance else Vector3.ZERO
+	var wish := (side * (0.45 if advance else 1.0) + back + forward * (1.35 if advance else 0.0)).normalized()
 	if test_move(global_transform, wish * 0.55):
 		wish = (back - side).normalized()
 		if test_move(global_transform, wish * 0.55):
@@ -263,13 +288,13 @@ func _fight(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Ve
 	return wish * (1.0 if retreat else 0.62)
 
 
-func _search(preferred: float) -> Vector3:
+func _search(preferred: float, flank_offset: float) -> Vector3:
 	if _search_left <= 0.0:
 		return _wander()
 	if not _flank_point.is_finite():
 		var toward := _flat_direction(_last_seen - global_position)
 		var side := toward.cross(Vector3.UP) * _strafe_side
-		var sample := _last_seen - toward * clampf(preferred * 0.75, 5.0, 10.0) + side * 5.0
+		var sample := _last_seen - toward * clampf(preferred * 0.75, 5.0, 10.0) + side * flank_offset
 		_flank_point = NavigationServer3D.map_get_closest_point(_navigation.get_navigation_map(), sample)
 	var wish := _follow_path(_flank_point)
 	if _navigation.is_navigation_finished():
@@ -277,7 +302,7 @@ func _search(preferred: float) -> Vector3:
 	return wish
 
 
-func _try_take_cover(target: Node3D, profile: Dictionary, ammo: Vector2i) -> void:
+func _try_take_cover(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Vector2i) -> void:
 	if _cover_goal.is_finite() or _cover_cooldown > 0.0:
 		return
 	var low_ammo: bool = ammo.x == 0 or (ammo.y > 0 and ammo.x <= 1 and not gun.is_reloading())
@@ -287,7 +312,8 @@ func _try_take_cover(target: Node3D, profile: Dictionary, ammo: Vector2i) -> voi
 		threat = target.aim_center() + Vector3.UP * 0.4
 	if not threat.is_finite():
 		return
-	_cover_cooldown = randf_range(2.5, 3.5) + (2 - difficulty)
+	var cover_cooldown: Vector2 = modifiers.cover_cooldown
+	_cover_cooldown = randf_range(cover_cooldown.x, cover_cooldown.y)
 	_incoming_fire = Vector3.INF
 	_cover_goal = _find_cover(threat, approach)
 	if _cover_goal.is_finite():
@@ -396,20 +422,40 @@ func _cover_blocks_shot(space: PhysicsDirectSpaceState3D, query: PhysicsRayQuery
 
 func _visible_target(reach: float) -> Node3D:
 	var best: Node3D
-	var best_distance := reach * reach
+	var best_score := INF
 	for enemy in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
 		if enemy == self or not enemy.control_enabled or enemy.health <= 0 or get_parent().same_team(score_id(), enemy.score_id()):
 			continue
 		var distance: float = global_position.distance_squared_to(enemy.global_position)
-		if distance >= best_distance or get_parent().get_node("Grenades").obscures(_camera.global_position, enemy.aim_center()):
+		if distance >= reach * reach or get_parent().get_node("Grenades").obscures(_camera.global_position, enemy.aim_center()):
 			continue
 		var direction := _flat_direction(enemy.global_position - global_position)
 		if distance > 25.0 and direction.dot(-global_basis.z) < -0.20 and enemy != _target:
 			continue
 		if _has_sight(enemy):
+			var score := distance * (0.72 if enemy == _target else 1.0)
+			if score >= best_score:
+				continue
 			best = enemy
-			best_distance = distance
+			best_score = score
 	return best
+
+
+func _audible_enemy(hearing_range: float) -> Node3D:
+	var closest: Node3D
+	var best_distance := hearing_range * hearing_range
+	for enemy in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
+		if enemy == self or not enemy.control_enabled or enemy.health <= 0 or get_parent().same_team(score_id(), enemy.score_id()):
+			continue
+		var distance := global_position.distance_squared_to(enemy.global_position)
+		if distance >= best_distance:
+			continue
+		var motion: Vector3 = enemy.velocity
+		if Vector2(motion.x, motion.z).length_squared() < 0.4:
+			continue
+		closest = enemy
+		best_distance = distance
+	return closest
 
 
 func _has_sight(enemy: Node3D) -> bool:
@@ -424,7 +470,7 @@ func _wander() -> Vector3:
 		return _follow_path(_loot_target)
 	var target: Vector3 = patrol_route[_waypoint]
 	if Vector2(target.x - position.x, target.z - position.z).length_squared() < 1.5:
-		_waypoint = (_waypoint + 1) % patrol_route.size()
+		_waypoint = posmod(_waypoint + _patrol_direction, patrol_route.size())
 		target = patrol_route[_waypoint]
 	return _follow_path(target)
 
@@ -448,3 +494,11 @@ func _flat_direction(offset: Vector3) -> Vector3:
 func _face(direction: Vector3, delta: float) -> void:
 	if direction.x * direction.x + direction.z * direction.z > 0.001:
 		rotation.y = rotate_toward(rotation.y, atan2(-direction.x, -direction.z), 9.0 * delta)
+
+
+func _difficulty_index() -> int:
+	return clampi(difficulty, 0, DIFFICULTY.size() - 1)
+
+
+func _difficulty_modifiers() -> Dictionary:
+	return DIFFICULTY[_difficulty_index()]

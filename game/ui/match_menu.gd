@@ -6,7 +6,7 @@ const MUTED := UI.MUTED
 const ACCENT := UI.ACCENT
 const CONTROL_GROUPS := {
 	"Движение": [&"move_forward", &"move_back", &"move_left", &"move_right", &"sprint", &"crouch", &"jump"],
-	"Бой и действия": [&"fire", &"aim_sights", &"aim_sights_alt", &"reload_weapon", &"interact", &"use_medkit", &"open_armory", &"throw_frag", &"throw_flash", &"throw_smoke", &"throw_grenade", &"cover_left", &"cover_right"],
+	"Бой и действия": [&"fire", &"aim_sights", &"aim_sights_alt", &"reload_weapon", &"interact", &"use_medkit", &"open_armory", &"throw_frag", &"throw_flash", &"throw_smoke", &"select_grenade", &"throw_grenade", &"cover_left", &"cover_right"],
 }
 
 @onready var _match := get_parent().get_parent()

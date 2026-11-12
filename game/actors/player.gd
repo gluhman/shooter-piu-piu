@@ -35,6 +35,7 @@ signal health_changed(current: int, maximum: int)
 signal respawned
 signal inventory_changed
 signal weapon_wheel_used
+signal grenade_selector_used
 
 var control_enabled := false
 var slot := 0
@@ -52,6 +53,7 @@ var _regen_left := 0.0
 var _regen_sync_left := 0.0
 var flash_left := 0.0
 var _grenades: Dictionary[String, int] = {}
+var _selected_grenade := ""
 var _throw_wait := 0.0
 var _frag_button: StringName
 var _pose_sequence := 0
@@ -253,22 +255,50 @@ func grenade_stock(kind: String) -> int:
 
 
 func carried_grenade() -> String:
-	return "" if _grenades.is_empty() else _grenades.keys()[0]
+	_ensure_selected_grenade()
+	return _selected_grenade
+
+
+func available_grenade_ids() -> Array[String]:
+	var available: Array[String] = []
+	for kind: String in ARSENAL.GRENADE_IDS:
+		if grenade_stock(kind) > 0:
+			available.append(kind)
+	return available
+
+
+func select_grenade(kind: String) -> bool:
+	if grenade_stock(kind) <= 0:
+		return false
+	_selected_grenade = kind
+	inventory_changed.emit()
+	return true
+
+
+func cycle_grenade(direction: int = 1) -> void:
+	var available := available_grenade_ids()
+	if available.is_empty():
+		return
+	var current := available.find(carried_grenade())
+	_selected_grenade = available[posmod(current + direction, available.size())]
+	inventory_changed.emit()
+	grenade_selector_used.emit()
 
 
 func grenade_space(kind: String) -> int:
-	var carried := carried_grenade()
-	return ARSENAL.MAX_GRENADES - grenade_stock(kind) if carried == "" or carried == kind else 0
+	return ARSENAL.MAX_GRENADES - grenade_stock(kind) if ARSENAL.GRENADE_IDS.has(kind) else 0
 
 
 func drop_carried_grenades() -> void:
 	_grenades.clear()
+	_selected_grenade = ""
 
 
 func grant_grenades(kind: String, amount: int) -> void:
 	var accepted := mini(amount, grenade_space(kind))
 	if _server_rules() and control_enabled and accepted > 0 and ARSENAL.GRENADE_IDS.has(kind):
 		_grenades[kind] = grenade_stock(kind) + accepted
+		_ensure_selected_grenade()
 		_send_inventory()
 
 
@@ -278,6 +308,9 @@ func consume_grenade(kind: String) -> bool:
 	_grenades[kind] -= 1
 	if _grenades[kind] == 0:
 		_grenades.erase(kind)
+		if _selected_grenade == kind:
+			_selected_grenade = ""
+			_ensure_selected_grenade()
 	_throw_wait = 0.72
 	_send_inventory()
 	return true
@@ -370,6 +403,7 @@ func _restore_starting_supplies() -> void:
 		_stored[_spawn_sidearm] = Vector2i(stats.mag, stats.reserve)
 	if _spawn_grenade != "":
 		_grenades[_spawn_grenade] = ARSENAL.MAX_GRENADES
+		_selected_grenade = _spawn_grenade
 
 
 func grant_weapon(id: String, magazine: int = -1, reserve: int = -1) -> void:
@@ -760,6 +794,7 @@ func net_inventory(stock: Dictionary[String, Vector2i], kits: int, grenades: Dic
 		_stored = stock
 		medkits = kits
 		_grenades = grenades
+		_ensure_selected_grenade()
 		_switch_pending = false
 		inventory_changed.emit()
 
@@ -825,6 +860,7 @@ func _clear_inventory() -> void:
 	_stored.clear()
 	medkits = 0
 	_grenades.clear()
+	_selected_grenade = ""
 	_switch_pending = false
 
 
@@ -1012,6 +1048,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		select_weapon(selection)
 		get_viewport().set_input_as_handled()
 		return
+	if event.is_action_pressed(&"select_grenade"):
+		cycle_grenade()
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		if event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 			_cycle_weapon(-1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
@@ -1047,9 +1087,17 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _throw_grenade(kind: String, action: StringName) -> void:
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not sprinting and grenade_stock(kind) > 0:
+		select_grenade(kind)
 		if kind == "frag":
 			_frag_button = action
 		get_parent().get_node("Grenades").request_throw(self, kind)
+
+
+func _ensure_selected_grenade() -> void:
+	if grenade_stock(_selected_grenade) > 0:
+		return
+	var available := available_grenade_ids()
+	_selected_grenade = available[0] if not available.is_empty() else ""
 
 
 func accepts_gameplay_input() -> bool:

@@ -11,7 +11,7 @@ var _weapon_names: Dictionary[String, Label] = {}
 var _medkit_key: Label
 var _medkit_count: Label
 var _grenade_key: Label
-var _grenade_count: Label
+var _grenade_slots: Dictionary[String, Label] = {}
 var _wheel_panel: PanelContainer
 var _wheel_previous: Label
 var _wheel_current: Label
@@ -56,9 +56,17 @@ func _ready() -> void:
 		var weapon := _card(cards)
 		_weapon_keys[slot] = UI.label(weapon, "", 11, UI.MUTED, true)
 		_weapon_names[slot] = UI.label(weapon, "", 14, UI.INK, true)
-	var grenade := _card(cards)
+	var grenade := _card(cards, 224)
 	_grenade_key = UI.label(grenade, "", 11, UI.MUTED, true)
-	_grenade_count = UI.label(grenade, "", 14, UI.INK, true)
+	var grenade_row := HBoxContainer.new()
+	grenade_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	grenade_row.add_theme_constant_override("separation", 6)
+	grenade.add_child(grenade_row)
+	for kind: String in ARSENAL.GRENADE_IDS:
+		var slot := UI.label(grenade_row, "", 12, UI.MUTED, true)
+		slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		slot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_grenade_slots[kind] = slot
 	var medkit := _card(cards)
 	_medkit_key = UI.label(medkit, "", 11, UI.MUTED, true)
 	_medkit_count = UI.label(medkit, "", 14, UI.INK, true)
@@ -79,10 +87,12 @@ func attach_player(player: Node) -> void:
 	if is_instance_valid(_player):
 		_player.inventory_changed.disconnect(_refresh)
 		_player.weapon_wheel_used.disconnect(_show_wheel)
+		_player.grenade_selector_used.disconnect(_refresh)
 	_player = player
 	if is_instance_valid(_player):
 		_player.inventory_changed.connect(_refresh)
 		_player.weapon_wheel_used.connect(_show_wheel)
+		_player.grenade_selector_used.connect(_refresh)
 	_refresh()
 
 
@@ -91,25 +101,21 @@ func _refresh() -> void:
 	if not visible:
 		_wheel_panel.hide()
 		return
-	_weapon_hint.text = "%s — арсенал   Колесо — смена оружия" % GameSettings.binding_label(&"open_armory")
-	var slot_labels := {"primary": "Основное", "secondary": "Запасное", "knife": "Нож"}
+	_weapon_hint.hide()
 	for slot: String in GameSettings.WEAPON_SLOTS:
 		var id: String = _player.weapon_in_slot(slot)
-		_weapon_keys[slot].text = "%s  %s" % [GameSettings.binding_label(GameSettings.WEAPON_SLOTS[slot]), slot_labels[slot]]
-		_weapon_keys[slot].add_theme_color_override(&"font_color", UI.ACCENT if id == _player.weapon_id else UI.MUTED)
+		_weapon_keys[slot].hide()
 		_weapon_names[slot].text = WEAPON.WEAPONS[id].name if id != "" else "Пусто"
-	_medkit_key.text = "%s  Аптечка" % GameSettings.binding_label(&"use_medkit")
+	_medkit_key.hide()
 	_medkit_count.text = "%d / %d" % [_player.medkits, _player.MAX_MEDKITS]
 	_medkit_count.modulate = UI.INK if _player.medkits > 0 else UI.MUTED
-	var kind: String = _player.carried_grenade()
-	if kind == "":
-		_grenade_key.text = "Гранаты"
-	else:
-		var title: String = ARSENAL.GRENADE_LABELS[kind]
-		_grenade_key.text = "%s  %s" % [GameSettings.binding_label(ARSENAL.GRENADE_ACTIONS[kind]), title]
-	var count: int = _player.grenade_stock(kind)
-	_grenade_count.text = "%d / %d" % [count, ARSENAL.MAX_GRENADES]
-	_grenade_count.modulate = UI.INK if count > 0 else UI.MUTED
+	var selected: String = _player.carried_grenade()
+	_grenade_key.text = "Гранаты" if selected == "" else "Гранаты · %s" % ARSENAL.GRENADE_LABELS[selected]
+	for kind: String in ARSENAL.GRENADE_IDS:
+		var count: int = _player.grenade_stock(kind)
+		var slot: Label = _grenade_slots[kind]
+		slot.text = "%s\n%d" % [ARSENAL.GRENADE_LABELS[kind].left(3), count]
+		slot.modulate = UI.ACCENT if kind == selected else (UI.INK if count > 0 else UI.MUTED)
 	if _wheel_panel.visible:
 		_update_wheel()
 
@@ -137,9 +143,9 @@ func _update_wheel() -> void:
 		_wheel_next.text = direction + WEAPON.WEAPONS[ids[(current + 1) % ids.size()]].name
 
 
-func _card(parent: Control) -> VBoxContainer:
+func _card(parent: Control, width := 84.0) -> VBoxContainer:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(84, 0)
+	panel.custom_minimum_size = Vector2(width, 0)
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_theme_stylebox_override(&"panel", UI.style(Color("#111816eb"), UI.LINE, 7, 4, 6))
 	parent.add_child(panel)

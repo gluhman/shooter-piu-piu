@@ -24,6 +24,16 @@ func _run() -> void:
 		push_error("Training range sky did not advance with the round clock")
 		quit(1)
 		return
+	var player: Node = arena.combatant(1)
+	var crate_at: Vector3 = loot._crates[0].position + Vector3.UP * 0.63
+	loot._open_crate(player, 0, crate_at)
+	var crate_drop: int = loot._crate_drop_ids[0]
+	loot._clock += 29.0
+	loot._physics_process(0.0)
+	if loot._open[0] or loot._drops.has(crate_drop):
+		push_error("Training range crate restored without clearing its item")
+		quit(1)
+		return
 	print("PASS training range starts a solo match without bots")
 	arena.queue_free()
 	await create_timer(0.25).timeout

@@ -19,6 +19,7 @@ var _crates: Array[StaticBody3D] = []
 var _lids: Array[Node3D] = []
 var _open: Array[bool] = []
 var _crate_respawns: Array[float] = []
+var _crate_drop_ids: Array[int] = []
 var _lid_tweens: Dictionary[int, Tween] = {}
 var _drops: Dictionary[int, Dictionary] = {}
 var _requests: Dictionary[int, Vector2i] = {}
@@ -59,6 +60,7 @@ func build_crates(placements: Array[Transform3D]) -> void:
 		_lids.append(lid)
 		_open.append(false)
 		_crate_respawns.append(0.0)
+		_crate_drop_ids.append(-1)
 
 
 func warm_rendering() -> Node3D:
@@ -76,6 +78,7 @@ func reset_round() -> void:
 	_armor_respawns.clear()
 	for index in _crate_respawns.size():
 		_crate_respawns[index] = 0.0
+		_crate_drop_ids[index] = -1
 	for id in _drops.keys():
 		net_remove_drop(id)
 	for index in _crates.size():
@@ -94,13 +97,14 @@ func clear_map() -> void:
 	_lids.clear()
 	_open.clear()
 	_crate_respawns.clear()
+	_crate_drop_ids.clear()
 	_lid_tweens.clear()
 
 
 func send_state(peer: int) -> void:
 	for index in _crates.size():
 		if _open[index]:
-			net_open_crate.rpc_id(peer, index, false)
+			net_open_crate.rpc_id(peer, index, false, _crate_drop_ids[index])
 	for id in _drops:
 		var drop := _drops[id]
 		var body_state: Dictionary = {}
@@ -135,8 +139,7 @@ func drop_combatant(actor: Node, impact: Dictionary) -> void:
 			items.append({"kind": Kind.AMMO, "weapon": id, "amount": ammo.y})
 	if actor.medkits > 0:
 		items.append({"kind": Kind.MEDKIT, "weapon": "", "amount": actor.medkits})
-	var grenade: String = actor.carried_grenade()
-	if grenade != "":
+	for grenade: String in actor.available_grenade_ids():
 		items.append({"kind": Kind.GRENADE, "weapon": grenade, "amount": actor.grenade_stock(grenade)})
 	for index in items.size():
 		var item := items[index]
@@ -205,6 +208,7 @@ func _physics_process(delta: float) -> void:
 		for index in _crate_respawns.size():
 			if _crate_respawns[index] > 0.0 and _crate_respawns[index] <= _clock:
 				_crate_respawns[index] = 0.0
+				_remove_crate_drop(index)
 				_set_open(index, false, true)
 				for peer in _match.match_peers():
 					net_reset_crate.rpc_id(peer, index, true)
@@ -265,14 +269,13 @@ func _update_prompt() -> void:
 				prompt = "открыть ящик"
 		for id in _drops:
 			var drop := _drops[id]
-			var swap_grenades: bool = drop.kind == Kind.GRENADE and actor.carried_grenade() not in ["", drop.weapon]
-			if (drop.kind != Kind.WEAPON and not swap_grenades) or not _can_take(actor, drop, true):
+			if drop.kind != Kind.WEAPON or not _can_take(actor, drop, true):
 				continue
 			var score := _target_score(actor, drop.position + Vector3.UP * 0.18)
 			if score < best:
 				best = score
 				_hover = Vector2i(drop.kind, id)
-				prompt = "заменить гранаты на «%s»" % ARSENAL.GRENADE_LABELS[drop.weapon] if swap_grenades else _weapon_pickup_label(actor, drop)
+				prompt = "забрать %s гранату" % ARSENAL.GRENADE_LABELS[drop.weapon] if drop.kind == Kind.GRENADE else _weapon_pickup_label(actor, drop)
 	if prompt != "":
 		prompt = "%s — %s" % [GameSettings.binding_label(&"interact"), prompt]
 	_hud.show_loot_prompt(prompt)
@@ -319,12 +322,7 @@ func _claim(actor: Node, target: Vector2i) -> void:
 
 func _collect_drop(actor: Node, id: int, drop: Dictionary, manual := false) -> void:
 	var amount := _take_amount(actor, drop, manual)
-	if drop.kind == Kind.GRENADE:
-		var carried: String = actor.carried_grenade()
-		if carried != "" and carried != drop.weapon:
-			_add_drop(Kind.GRENADE, carried, actor.grenade_stock(carried), drop.position, drop.yaw, true)
-			actor.drop_carried_grenades()
-	elif drop.kind == Kind.WEAPON and not actor.owns_weapon(drop.weapon):
+	if drop.kind == Kind.WEAPON and not actor.owns_weapon(drop.weapon):
 		var previous: String = actor.weapon_id if actor.is_in_group("bot") else actor.weapon_in_slot(WEAPON.inventory_slot(drop.weapon))
 		if previous != "" and previous != "knife":
 			var stock: Vector2i = actor.stock_for(previous)
@@ -352,9 +350,10 @@ func net_drop_amount(id: int, amount: int) -> void:
 
 
 func _open_crate(actor: Node, index: int, at: Vector3) -> void:
-	net_open_crate(index, true)
+	var drop_id := _next_id
+	net_open_crate(index, true, drop_id)
 	for peer in _match.match_peers():
-		net_open_crate.rpc_id(peer, index, true)
+		net_open_crate.rpc_id(peer, index, true, drop_id)
 	var kind: int = [Kind.AMMO, Kind.MEDKIT, Kind.ARMOR, Kind.GRENADE].pick_random()
 	var weapon: String = actor.ammo_reward_weapon()
 	if kind == Kind.GRENADE:
@@ -380,8 +379,7 @@ func _take_amount(actor: Node, drop: Dictionary, manual: bool) -> int:
 		Kind.MEDKIT:
 			return mini(amount, actor.medkit_space())
 		Kind.GRENADE:
-			var different: bool = actor.carried_grenade() not in ["", drop.weapon]
-			return mini(amount, ARSENAL.MAX_GRENADES if manual and different else actor.grenade_space(drop.weapon))
+			return mini(amount, actor.grenade_space(drop.weapon))
 	return amount
 
 
@@ -447,8 +445,10 @@ func net_pickup_notice(message: String) -> void:
 
 
 @rpc("authority", "reliable")
-func net_open_crate(index: int, animate: bool) -> void:
+func net_open_crate(index: int, animate: bool, drop_id := -1) -> void:
 	_set_open(index, true, animate)
+	if index >= 0 and index < _crate_drop_ids.size():
+		_crate_drop_ids[index] = drop_id
 
 
 func _set_open(index: int, opened: bool, animate: bool) -> void:
@@ -470,7 +470,17 @@ func _set_open(index: int, opened: bool, animate: bool) -> void:
 @rpc("authority", "reliable")
 func net_reset_crate(index: int, animate: bool) -> void:
 	if index >= 0 and index < _crates.size():
+		_remove_crate_drop(index)
 		_set_open(index, false, animate)
+
+
+func _remove_crate_drop(index: int) -> void:
+	if index < 0 or index >= _crate_drop_ids.size():
+		return
+	var drop_id := _crate_drop_ids[index]
+	if drop_id >= 0:
+		net_remove_drop(drop_id)
+	_crate_drop_ids[index] = -1
 
 
 func _crate_open_effect(crate: Node3D) -> void:

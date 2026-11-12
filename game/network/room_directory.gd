@@ -204,7 +204,7 @@ func _clean_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, b
 		"arena": clampi(arena, 0, map.MAP_NAMES.size() - 1),
 		"time": clampi(limits.x, 0, 8),
 		"kills": clampi(limits.y, 0, 8),
-		"difficulty": clampi(difficulty, 0, 2),
+		"difficulty": clampi(difficulty, 0, 4),
 		"bots": clampi(bot_count, 0, 10),
 		"size": clampi(size, 0, map.SIZE_WIDTHS.size() - 1),
 	}

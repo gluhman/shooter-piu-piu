@@ -154,8 +154,8 @@ func _on_health(current: int, maximum: int) -> void:
 
 
 func _refresh_medkit_hint() -> void:
-	_medkit_hint.visible = is_instance_valid(_player) and _player.medkits > 0
-	_medkit_hint.text = "%s — аптечка" % GameSettings.binding_label(&"use_medkit")
+	_medkit_hint.hide()
+	_medkit_hint.text = ""
 
 
 func confirm_projectile_hit(headshot: bool) -> void:
@@ -253,11 +253,8 @@ func _refresh_score() -> void:
 
 
 func _update_hint() -> void:
-	$Hint.text = "%s — атака    %s — прицел    %s — присесть    %s — перезарядка    %s — подбор    %s / %s — наклон    Tab — счёт    Esc — меню" % [
-		GameSettings.binding_label(&"fire"), GameSettings.binding_label(&"aim_sights"),
-		GameSettings.binding_label(&"crouch"), GameSettings.binding_label(&"reload_weapon"), GameSettings.binding_label(&"interact"),
-		GameSettings.binding_label(&"cover_left"), GameSettings.binding_label(&"cover_right"),
-	]
+	$Hint.text = ""
+	$Hint.hide()
 	_refresh_medkit_hint()
 
 

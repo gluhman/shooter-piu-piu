@@ -139,4 +139,5 @@ func set_reload_progress(progress: float) -> void:
 
 func _refresh_reload_prompt() -> void:
 	if _reload_prompt:
-		_status.text = "%s — перезарядить" % GameSettings.binding_label(&"reload_weapon")
+		_status.text = ""
+		_status.hide()

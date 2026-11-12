@@ -39,6 +39,7 @@ const ACTIONS := {
 	&"interact": ["Взаимодействие", KEY_F],
 	&"select_primary": ["Основное оружие", KEY_1],
 	&"select_secondary": ["Вспомогательное оружие", KEY_2],
+	&"select_grenade": ["Следующая граната", KEY_3],
 	&"select_knife": ["Нож", KEY_4],
 	&"use_medkit": ["Использовать аптечку", KEY_H],
 	&"open_armory": ["Открыть арсенал", KEY_B],
@@ -63,6 +64,7 @@ const GAMEPAD_BUTTONS := {
 	&"interact": JOY_BUTTON_Y,
 	&"select_primary": JOY_BUTTON_DPAD_UP,
 	&"select_secondary": JOY_BUTTON_DPAD_RIGHT,
+	&"select_grenade": JOY_BUTTON_DPAD_LEFT,
 	&"select_knife": JOY_BUTTON_DPAD_DOWN,
 }
 
