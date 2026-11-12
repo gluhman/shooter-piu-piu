@@ -56,6 +56,41 @@
 
 Размер патча зависит от того, какие ресурсы Godot заново импортировал при сборке. Даже небольшая правка может дать патч в десятки мегабайт. [Формат патчей Godot](https://docs.godotengine.org/en/stable/tutorials/export/exporting_pcks.html).
 
+### Runbook: выпуск PCK-патча
+
+Этот порядок применяется только к совместимому hotfix внутри одной базы. Полный выпуск, изменение нативной части или сетевого протокола требуют новой `Shooter.app`.
+
+1. Увеличь только последнюю часть версии в `project.godot`, добавь запись в `CHANGELOG.md` и обнови эту документацию.
+2. Проверь метаданные выпуска и собери накопительный патч от сохранённой базы:
+
+   ```sh
+   python3 scripts/check-release.py --base origin/main HEAD
+   ./scripts/build-macos.sh --patch releases/Shooter-1.2.14-base.pck
+   ```
+
+3. Проверь, что SHA-256 PCK совпадает со значением `sha256` в соседнем `.pck.cfg`, затем запусти базовую app без звука с явным путём к патчу:
+
+   ```sh
+   Shooter.app/Contents/MacOS/shoot-container --headless --audio-driver Dummy -- \
+     --shooter-patch "$PWD/releases/Shooter-1.2.14-to-1.2.16.pck" --shooter-version
+   ```
+
+   Успешная проверка выводит `Shooter: загружен патч <версия>` и `Shooter <версия>`.
+4. Отправь коммит и тег, затем сразу создай публичный GitHub Release — без draft — с обоими файлами:
+
+   ```sh
+   git push origin main
+   git push origin v1.2.16
+   gh release create v1.2.16 \
+     releases/Shooter-1.2.14-to-1.2.16.pck \
+     releases/Shooter-1.2.14-to-1.2.16.pck.cfg \
+     --title "Shooter 1.2.16" --notes "Описание изменений"
+   ```
+
+5. Скачай assets обратно из созданного Release и повтори проверку из шага 3. В игре открой «Обновление» → «Проверить GitHub» и убедись, что показаны версия, размер и changelog патча.
+
+Не добавляй в Release архивный `Shooter-<версия>-base.pck`: он остаётся локальным входом для следующей сборки. Для каждой поддерживаемой базы оставляй в GitHub две последние пары `.pck` и `.pck.cfg`.
+
 ### Локальная база 1.2.14
 
 В `releases/` сохранена точная копия PCK из полной `Shooter.app` версии 1.2.14 и файл версии движка. Для следующего hotfix-патча используй:
