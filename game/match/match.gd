@@ -384,9 +384,13 @@ func create_internet_room(weapons: int, arena: int, limits: Vector2i, difficulty
 
 func start_host_match() -> void:
 	if Net.internet and not multiplayer.is_server():
-		if room_owner != multiplayer.get_unique_id() or _started or _loading:
+		if room_owner != multiplayer.get_unique_id() or _started or is_loading():
 			return
-		_show_loading()
+		# Не ставить _loading: net_begin от сервера иначе решит, что арена уже грузится, и хост зависнет.
+		_waiting_for_host = true
+		$HUD/MatchMenu.close()
+		$HUD/Lobby.show_loading()
+		$HUD/Lobby.set_loading_stage("Сервер готовит арену…")
 		net_request_start.rpc_id(1)
 		return
 	if _started or _loading or not Net.active or not multiplayer.is_server():
