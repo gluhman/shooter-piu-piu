@@ -3,6 +3,7 @@ extends AcceptDialog
 const REPOSITORY := "gluhman/shooter-piu-piu"
 const RELEASES := "https://api.github.com/repos/" + REPOSITORY + "/releases?per_page=100"
 const DOWNLOAD_PREFIX := "https://github.com/" + REPOSITORY + "/releases/download/"
+const DIALOG_SIZE := Vector2i(680, 420)
 
 var _choose: Button
 var _check: Button
@@ -17,7 +18,9 @@ var _download_version := ""
 
 func _ready() -> void:
 	title = "Обновление игры"
-	min_size = Vector2i(560, 185)
+	min_size = Vector2i(620, 220)
+	max_size = Vector2i(720, 700)
+	dialog_autowrap = true
 	ok_button_text = "Закрыть"
 	_choose = add_button("Выбрать .pck", true)
 	_check = add_button("Проверить GitHub", true)
@@ -44,7 +47,7 @@ func open() -> void:
 		_candidate.clear()
 		_download.hide()
 		dialog_text = "Текущая версия: %s\nGitHub: не проверен\n\nУстановка патча перезапустит игру." % ShooterRelease.version
-		popup_centered()
+		popup_centered(DIALOG_SIZE)
 
 
 func _picker_open() -> void:
@@ -80,7 +83,7 @@ func _find_update() -> void:
 	if not _candidate.is_empty():
 		message = "GitHub: доступен\nНайден патч %s · %s" % [_candidate.version, _format_bytes(_candidate.size)]
 		if not _candidate.notes.is_empty():
-			message += "\n\nЧто нового:\n" + _candidate.notes.left(700)
+			message += "\n\nЧто нового:\n" + _release_notes(_candidate.notes).left(700)
 		message += "\n\nПосле установки игра перезапустится."
 	_set_busy(false, message)
 
@@ -152,6 +155,16 @@ func _set_busy(busy: bool, message: String) -> void:
 	_check.disabled = busy
 	_download.disabled = busy
 	get_ok_button().disabled = busy
+	if visible:
+		call_deferred("_center_dialog")
+
+
+func _center_dialog() -> void:
+	popup_centered(Vector2i(DIALOG_SIZE.x, maxi(DIALOG_SIZE.y, size.y)))
+
+
+func _release_notes(notes: String) -> String:
+	return notes.replace("\n\nЧто нового:\n", "\n").trim_prefix("Что нового:\n").strip_edges()
 
 
 func _process(_delta: float) -> void:
