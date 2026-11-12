@@ -130,6 +130,7 @@ var _pump_wait := 0.0
 var _rest_pos := Vector3.ZERO
 var _aim_amount := 0.0
 var _run_carry := 0.0
+var _switch_left := 0.0
 var _aim_pose: Transform3D
 var _aim_depth_limit := 0.0
 var _scope_view := false
@@ -202,6 +203,7 @@ func equip(weapon_id: String, magazine: int = -1, reserve: int = -1, switching: 
 	_knife_windup = 0.0
 	_sprint_fire_queued = false
 	_cooldown = maxf(_cooldown, 0.22) if switching else 0.0
+	_switch_left = 0.22 if switching else 0.0
 	_reload_left = 0.0
 	_reloading = false
 	_kick_pos = Vector3.ZERO
@@ -264,6 +266,7 @@ func _process(delta: float) -> void:
 	if not _active or _match.round_finished():
 		return
 	_cooldown = maxf(_cooldown - delta, 0.0)
+	_switch_left = maxf(_switch_left - delta, 0.0)
 	_update_sprint_recovery(delta)
 	if _cooldown == 0.0 and (not _trigger_held or not _player._is_local()):
 		var balance: Dictionary = _stats.get("balance", {})
@@ -858,6 +861,10 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 		hip_basis = hip_basis.slerp(carry_basis.orthonormalized(), run_carry)
 	_view.position = hip_position.lerp(_aim_pose.origin + Vector3.BACK * _kick_pos.z, blend)
 	_view.basis = hip_basis.orthonormalized().slerp(_aim_pose.basis, blend)
+	if _switch_left > 0.0:
+		var switch_pose := _switch_left / 0.22
+		_view.position += Vector3(0.06 * switch_pose, -0.28 * switch_pose, 0.12 * switch_pose)
+		_view.basis = _view.basis * Basis.from_euler(Vector3(0.16 * switch_pose, 0.0, -0.24 * switch_pose))
 	var bot: bool = _player.is_in_group("bot")
 	if bot or blend < 1.0:
 		var reach_weight := 1.0 if bot else 1.0 - blend

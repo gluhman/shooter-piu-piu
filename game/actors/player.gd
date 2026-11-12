@@ -1063,6 +1063,13 @@ func _physics_process(delta: float) -> void:
 		_track_movement_audio(delta, false)
 		return
 	var accepts_input := accepts_gameplay_input()
+	if accepts_input:
+		var look := Vector2(Input.get_joy_axis(0, JOY_AXIS_RIGHT_X), Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y))
+		if look.length() > 0.18:
+			var stick_sensitivity := MOUSE_SENS * GameSettings.sensitivity * 95.0 * delta
+			rotate_y(-look.x * stick_sensitivity)
+			var stick_pitch_sign := 1.0 if GameSettings.invert_y else -1.0
+			_camera.rotation.x = clampf(_camera.rotation.x + look.y * stick_sensitivity * stick_pitch_sign, deg_to_rad(-80.0), deg_to_rad(80.0))
 	var jump_held := Input.is_action_pressed(&"jump")
 	var jump_pressed := jump_held and not _jump_held
 	_jump_held = jump_held

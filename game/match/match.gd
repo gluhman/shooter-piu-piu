@@ -225,25 +225,49 @@ func arena_width() -> float:
 
 
 func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
+	var candidates := $Map.respawn_points
 	if is_instance_valid(_breakwater):
-		return _choose_breakwater_spawn(actor.slot, actor, previous)
+		candidates = PackedVector3Array()
+		var team := ("a" if actor.slot % 2 == 0 else "b") if team_deathmatch else "ffa"
+		for marker in _breakwater.get_spawn_candidates(team):
+			candidates.append(_breakwater.spawn_feet(marker))
+	return _choose_safe_spawn(actor, previous, candidates)
+
+
+func _choose_safe_spawn(actor: Node3D, previous: Vector3, candidates: PackedVector3Array) -> Vector3:
 	var enemies: Array[Node3D] = []
+	var occupied: Array[Node3D] = []
 	for group in [&"player", &"bot"]:
 		for fighter in get_tree().get_nodes_in_group(group):
-			if fighter != actor and fighter.health > 0 and not same_team(actor.score_id(), fighter.score_id()):
+			if fighter == actor or fighter.health <= 0:
+				continue
+			occupied.append(fighter)
+			if not same_team(actor.score_id(), fighter.score_id()):
 				enemies.append(fighter)
 	var space := get_world_3d().direct_space_state
 	var ray := PhysicsRayQueryParameters3D.new()
 	ray.collision_mask = Balance.WORLD_MASK
+	var overlap := PhysicsShapeQueryParameters3D.new()
+	overlap.shape = PLAYER_CAPSULE
+	overlap.collision_mask = Balance.WORLD_AND_CAPSULES
+	overlap.exclude = [actor.get_rid()]
 	var best := previous
 	var best_score := -INF
 	var visibility_radius := maxf(64.0, arena_width() * 0.65)
 	var distance_limit := visibility_radius + 8.0
-	for point: Vector3 in $Map.respawn_points:
+	for point: Vector3 in candidates:
+		var nearest_occupied := INF
+		for fighter in occupied:
+			nearest_occupied = minf(nearest_occupied, fighter.global_position.distance_to(point))
+		if nearest_occupied < 1.2:
+			continue
+		overlap.transform = Transform3D(Basis.IDENTITY, point + Vector3.UP * 0.93)
+		if not space.intersect_shape(overlap, 1).is_empty():
+			continue
 		var nearest := distance_limit
 		for enemy in enemies:
 			nearest = minf(nearest, enemy.global_position.distance_to(point))
-		var score := nearest
+		var score := nearest + nearest_occupied * 0.15
 		if nearest < MIN_RESPAWN_DISTANCE:
 			score -= 1000.0
 		if point.distance_squared_to(previous) < 0.1:
@@ -265,22 +289,6 @@ func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
 			best_score = score
 			best = point
 	return best
-
-
-func _choose_breakwater_spawn(slot: int, actor: CharacterBody3D = null,
-		previous: Vector3 = Vector3.INF) -> Vector3:
-	var occupied: Array[Node3D] = []
-	var enemies: Array[Node3D] = []
-	for fighter in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
-		if fighter == actor or fighter.get_parent() != self or fighter.health <= 0:
-			continue
-		occupied.append(fighter)
-		if fighter.control_enabled and (not team_deathmatch or fighter.team_id() != slot % 2):
-			enemies.append(fighter)
-	var team := ("a" if slot % 2 == 0 else "b") if team_deathmatch else "ffa"
-	var excluded := actor.get_rid() if actor else RID()
-	return _breakwater.select_spawn(team, PLAYER_CAPSULE, 1.65, enemies, occupied, excluded,
-		Balance.WORLD_MASK, Balance.WORLD_AND_CAPSULES, previous)
 
 
 func can_restart() -> bool:

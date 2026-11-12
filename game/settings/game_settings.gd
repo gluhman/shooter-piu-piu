@@ -49,6 +49,22 @@ const ACTIONS := {
 	&"cover_right": ["Наклон вправо", KEY_E],
 	&"throw_smoke": ["Бросить дымовую", KEY_T],
 }
+const MOVEMENT_ALTERNATES := {
+	&"move_forward": KEY_UP,
+	&"move_back": KEY_DOWN,
+	&"move_left": KEY_LEFT,
+	&"move_right": KEY_RIGHT,
+}
+const GAMEPAD_BUTTONS := {
+	&"fire": JOY_BUTTON_RIGHT_SHOULDER,
+	&"aim_sights": JOY_BUTTON_LEFT_SHOULDER,
+	&"jump": JOY_BUTTON_A,
+	&"reload_weapon": JOY_BUTTON_X,
+	&"interact": JOY_BUTTON_Y,
+	&"select_primary": JOY_BUTTON_DPAD_UP,
+	&"select_secondary": JOY_BUTTON_DPAD_RIGHT,
+	&"select_knife": JOY_BUTTON_DPAD_DOWN,
+}
 
 var sensitivity := 1.0
 var invert_y := false
@@ -173,6 +189,19 @@ func _set_binding(action: StringName, code: int) -> void:
 		var mouse := InputEventMouseButton.new()
 		mouse.button_index = -code
 		InputMap.action_add_event(action, mouse)
+	if MOVEMENT_ALTERNATES.has(action) and code != MOVEMENT_ALTERNATES[action]:
+		var alternate := InputEventKey.new()
+		alternate.physical_keycode = MOVEMENT_ALTERNATES[action]
+		InputMap.action_add_event(action, alternate)
+	if GAMEPAD_BUTTONS.has(action):
+		var gamepad := InputEventJoypadButton.new()
+		gamepad.button_index = GAMEPAD_BUTTONS[action]
+		InputMap.action_add_event(action, gamepad)
+	if action in [&"move_left", &"move_right", &"move_forward", &"move_back"]:
+		var stick := InputEventJoypadMotion.new()
+		stick.axis = JOY_AXIS_LEFT_X if action in [&"move_left", &"move_right"] else JOY_AXIS_LEFT_Y
+		stick.axis_value = -1.0 if action in [&"move_left", &"move_forward"] else 1.0
+		InputMap.action_add_event(action, stick)
 
 
 func _left_modifier(action: StringName, code: int) -> bool:

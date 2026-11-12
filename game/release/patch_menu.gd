@@ -44,8 +44,6 @@ func open() -> void:
 		_candidate.clear()
 		_download.hide()
 		dialog_text = "Текущая версия: %s\nGitHub: не проверен\n\nУстановка патча перезапустит игру." % ShooterRelease.version
-		if not ShooterRelease.patch_notice.is_empty():
-			dialog_text += "\n" + ShooterRelease.patch_notice
 		popup_centered()
 
 
@@ -80,7 +78,10 @@ func _find_update() -> void:
 	_download.visible = not _candidate.is_empty()
 	var message := "GitHub: доступен\nБаза: %s\n\nНовых патчей нет." % ShooterRelease.base_version
 	if not _candidate.is_empty():
-		message = "GitHub: доступен\nНайден патч %s · %s\n\nПосле установки игра перезапустится." % [_candidate.version, _format_bytes(_candidate.size)]
+		message = "GitHub: доступен\nНайден патч %s · %s" % [_candidate.version, _format_bytes(_candidate.size)]
+		if not _candidate.notes.is_empty():
+			message += "\n\nЧто нового:\n" + _candidate.notes.left(700)
+		message += "\n\nПосле установки игра перезапустится."
 	_set_busy(false, message)
 
 
@@ -102,7 +103,7 @@ func _latest_patch(releases: Array) -> Dictionary:
 			var target := parsed.get_string(1)
 			var revision := int(parsed.get_string(2))
 			if ShooterRelease.can_install_version(target) and revision > best.get("revision", -1):
-				best = {"version": target, "revision": revision, "pck": urls[name].url, "cfg": urls[name + ".cfg"].url, "size": urls[name].size}
+				best = {"version": target, "revision": revision, "pck": urls[name].url, "cfg": urls[name + ".cfg"].url, "size": urls[name].size, "notes": str(release.get("body", "")).strip_edges()}
 	return best
 
 
