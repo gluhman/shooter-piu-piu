@@ -17,6 +17,7 @@ var _setup: VBoxContainer
 var _sidearm_picker: OptionButton
 var _grenade_picker: OptionButton
 var _primary := ""
+var _for_respawn := false
 var _cards: Dictionary[String, Button] = {}
 var _armory_player: Node
 var _active_style: StyleBoxFlat
@@ -33,8 +34,16 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
-func show_select() -> void:
-	_title.text = "Снаряжение"
+func show_respawn_selection() -> void:
+	var player := _local_player()
+	if not is_instance_valid(player) or not player._dead or _match().round_finished():
+		return
+	show_select(true)
+
+
+func show_select(for_respawn := false) -> void:
+	_for_respawn = for_respawn
+	_title.text = "Снаряжение для возрождения" if for_respawn else "Снаряжение"
 	_note.text = "Выбери специализацию, затем оружие и гранаты."
 	_close_button.hide()
 	_panel.custom_minimum_size.x = 860
@@ -56,6 +65,18 @@ func show_select() -> void:
 			_sidearm_picker.add_item(WEAPON.WEAPONS[id].name)
 			_sidearm_picker.set_item_metadata(_sidearm_picker.item_count - 1, id)
 	_sidearm_picker.select(0)
+	if for_respawn:
+		var player := _local_player()
+		var specialization := WEAPON.specialization(player._spawn_loadout)
+		if _class_buttons.has(specialization) and _class_buttons[specialization].visible:
+			_choose_specialization(specialization)
+			_primary = player._spawn_loadout
+		for index in _sidearm_picker.item_count:
+			if _sidearm_picker.get_item_metadata(index) == player._spawn_sidearm:
+				_sidearm_picker.select(index)
+		var grenade_index: int = ARSENAL.GRENADE_IDS.find(player._spawn_grenade)
+		if grenade_index >= 0:
+			_grenade_picker.select(grenade_index)
 	_refresh_cards()
 	_set_open(true)
 	var player := _local_player()
@@ -293,7 +314,14 @@ func _confirm_loadout() -> void:
 		_set_open(false)
 		get_parent().get_node("Hint").show()
 		var sidearm: String = _sidearm_picker.get_selected_metadata()
-		player.choose_loadout(_primary, sidearm, ARSENAL.GRENADE_IDS[_grenade_picker.selected])
+		var grenade: String = ARSENAL.GRENADE_IDS[_grenade_picker.selected]
+		if _for_respawn:
+			player.choose_respawn_loadout(_primary, sidearm, grenade)
+			_for_respawn = false
+			if player._dead:
+				get_parent().get_node("Crosshair").hide()
+		else:
+			player.choose_loadout(_primary, sidearm, grenade)
 		MenuFeedback.confirm()
 
 

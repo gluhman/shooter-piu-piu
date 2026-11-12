@@ -823,6 +823,9 @@ func _solid(center: Vector3, size: Vector3, material: Material, obstacle: bool =
 	var masonry: bool = material is StandardMaterial3D and material.albedo_texture == _stone.albedo_texture
 	var surface := "concrete" if masonry else "wood"
 	var body: StaticBody3D = _map._add_box(center, size, material, rad_to_deg(yaw), surface, _batch(material))
+	if surface == "wood":
+		body.set_meta(&"ballistic_size", size)
+		body.set_meta(&"ballistic_resistance", 0.30)
 	if obstacle:
 		_map._occupied.append(_bounds(body.transform, Vector2(size.x, size.z)))
 

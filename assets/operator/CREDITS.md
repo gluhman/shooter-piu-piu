@@ -5,3 +5,5 @@
 The Godot project uses the [glTF edition from 3d-fps](https://github.com/cktang88/3d-fps/blob/main/public/assets/models/characters/soldier_tac.glb), which packs the textures as WebP. The game supplies its own pose, controls local visibility, and omits the misplaced headset.
 
 The 2K uniform, vest and pouch maps preserve the original UV layout and use woven detail from [Fabric 030](https://ambientcg.com/view?id=Fabric030) by ambientCG, [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+
+The blue and red team albedos are 2K color variants of the operator textures above. Both keep the original UVs, rig and fabric normal maps.

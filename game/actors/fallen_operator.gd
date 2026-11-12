@@ -28,6 +28,7 @@ var _simulator: PhysicalBoneSimulator3D
 var _bodies: Array[PhysicalBone3D] = []
 var _indices: PackedInt32Array
 var _simulating := false
+var _team := -1
 
 
 func build(has_armor: bool, state: Dictionary, animate: bool) -> void:
@@ -36,7 +37,8 @@ func build(has_armor: bool, state: Dictionary, animate: bool) -> void:
 	avatar.scale = Vector3.ONE * 0.96
 	avatar.position = Vector3(0.169, 0.0, -0.041)
 	add_child(avatar)
-	OperatorPose.apply_textures(avatar)
+	_team = int(state.get("team", -1))
+	OperatorPose.apply_textures(avatar, _team)
 	avatar.find_child(OperatorPose.VEST_MESH, true, false).visible = has_armor
 	avatar.find_child("Object_111", true, false).hide()
 	_skeleton = avatar.find_child("Skeleton3D", true, false) as Skeleton3D
@@ -124,7 +126,7 @@ func snapshot() -> Dictionary:
 	var pose: Array[Transform3D] = []
 	for index in _skeleton.get_bone_count():
 		pose.append(_skeleton.get_bone_pose(index))
-	var state := {"pose": pose, "settled": _body_pose()}
+	var state := {"pose": pose, "settled": _body_pose(), "team": _team}
 	if _simulating:
 		var motion := PackedVector3Array()
 		for body in _bodies:

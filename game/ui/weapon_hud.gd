@@ -140,3 +140,14 @@ func set_reload_progress(progress: float) -> void:
 func _refresh_reload_prompt() -> void:
 	if _reload_prompt:
 		_status.text = "%s — перезарядить" % GameSettings.binding_label(&"reload_weapon")
+
+
+func hud_values() -> Dictionary:
+	var capacity := int(_capacity.text.trim_prefix("/ ")) if _counts.visible else 0
+	var reloading := _meter.accessibility_name == "Ход перезарядки" and _meter.visible
+	return {
+		"weapon_name": _title.text, "fire_mode": _mode.text, "weapon_status": _status.text,
+		"accuracy": _accuracy.text if _accuracy.visible else "",
+		"magazine": int(_magazine.text), "reserve": int(_reserve.text), "magazine_max": capacity,
+		"reloading": reloading, "reload_progress": _meter.value / 100.0 if reloading else 0.0,
+	}

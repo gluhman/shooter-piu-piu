@@ -134,6 +134,7 @@ func drop_combatant(actor: Node, impact: Dictionary) -> void:
 	for index in skeleton.get_bone_count():
 		pose.append(skeleton.get_bone_pose(index))
 	body_state["pose"] = pose
+	body_state["team"] = actor.team_id() if _match.team_deathmatch else -1
 	_add_drop(Kind.BODY, "", ceili(actor.armor), actor.global_position, actor.rotation.y, true, body_state)
 	var items: Array[Dictionary] = []
 	var inventory: Dictionary[String, Vector2i] = actor.inventory_stock()

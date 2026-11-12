@@ -44,10 +44,14 @@ var _latest_damage_event := 0
 var _server_clock_offset := 0.0
 var _server_clock_synced := false
 var team_deathmatch := false
+var random_map_each_match := false
+var blue_bot_count := -1
+var _previous_match_map := -1
 var _team_score := Vector2i.ZERO
 var _bot_slots := PackedInt32Array()
 var map_id := 0
 var map_size := MAP.DEFAULT_SIZE
+var lobby_map_size := MAP.DEFAULT_SIZE
 var weapon_set := 0
 var bot_difficulty := 1
 var time_option := 4
@@ -369,7 +373,7 @@ func _start_round_on_map(arena: int) -> void:
 	else:
 		var bot_count := _solo_bot_count if Net.solo else lan_bot_count
 		_clear_match_map()
-		await start_solo(bot_count, bot_difficulty, weapon_set, arena, Vector2i(time_option, kill_option), map_size, team_deathmatch)
+		await start_solo(bot_count, bot_difficulty, weapon_set, arena, Vector2i(time_option, kill_option), lobby_map_size, team_deathmatch, random_map_each_match, blue_bot_count)
 
 
 @rpc("authority", "reliable")
@@ -425,13 +429,56 @@ func restart_round() -> void:
 		return
 	if not _started or not (Net.solo or (Net.active and multiplayer.is_server())):
 		return
-	if map_id == MAP.BREAKWATER_ID:
+	if random_map_each_match or map_id == MAP.BREAKWATER_ID:
 		if not is_loading():
 			await _start_round_on_map(map_id)
 		return
 	for peer in _ready_peers:
 		net_restart.rpc_id(peer)
 	net_restart()
+
+
+func exit_to_lobby() -> void:
+	if not _started or is_loading():
+		return
+	if Net.active and not multiplayer.is_server():
+		if room_owner == Net.local_id():
+			net_request_lobby.rpc_id(1)
+		else:
+			leave_round()
+		return
+	_map_revision += 1
+	for peer in player_slots:
+		if peer > 1:
+			net_return_to_lobby.rpc_id(peer, _map_revision)
+	_return_to_lobby()
+	if Net.active:
+		_send_room_state()
+		_write_room_status()
+
+
+@rpc("any_peer", "reliable")
+func net_request_lobby() -> void:
+	if multiplayer.is_server() and multiplayer.get_remote_sender_id() == room_owner:
+		exit_to_lobby()
+
+
+@rpc("authority", "call_remote", "reliable")
+func net_return_to_lobby(revision: int) -> void:
+	if revision > _map_revision:
+		_map_revision = revision
+		_return_to_lobby()
+
+
+func _return_to_lobby() -> void:
+	_clear_match_map()
+	_waiting_for_host = false
+	_loading = false
+	get_tree().paused = false
+	GameSettings.set_match_audio_enabled(false)
+	if not Net.dedicated:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		$HUD/Lobby.return_from_match()
 
 
 func leave_round() -> void:
@@ -484,46 +531,94 @@ func net_restart() -> void:
 
 
 @rpc("authority", "reliable")
-func net_score_snapshot(scores: Dictionary) -> void:
+func net_score_snapshot(scores: Dictionary, team_score := Vector2i.ZERO) -> void:
+	_team_score = team_score
 	$HUD.apply_score_snapshot(scores)
 
 
-func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limits: Vector2i, size: int, teams: bool = false) -> void:
+func _map_for_match(selected: int) -> int:
+	if random_map_each_match:
+		var choices: Array[int] = []
+		for arena in MAP_NAMES.size():
+			if arena != MAP.TEST_RANGE_ID and arena != _previous_match_map:
+				choices.append(arena)
+		selected = choices.pick_random()
+	_previous_match_map = selected
+	return selected
+
+
+func move_lobby_player(peer: int, team: int, swap_peer := 0) -> void:
+	if Net.active and not multiplayer.is_server():
+		if room_owner == Net.local_id():
+			net_move_lobby_player.rpc_id(1, peer, team, swap_peer)
+		return
+	if _started or _loading or team not in [0, 1] or peer <= 0:
+		return
+	if Net.active and not team_deathmatch:
+		return
+	var from := player_slots.find(peer)
+	if from < 0 or from % 2 == team:
+		return
+	if swap_peer > 0:
+		var to := player_slots.find(swap_peer)
+		if to >= 0 and to % 2 == team:
+			player_slots[from] = swap_peer
+			player_slots[to] = peer
+			_send_room_state()
+		return
+	for to in range(team, player_slots.size(), 2):
+		if player_slots[to] == 0:
+			player_slots[from] = 0
+			player_slots[to] = peer
+			_send_room_state()
+			return
+
+
+@rpc("any_peer", "reliable")
+func net_move_lobby_player(peer: int, team: int, swap_peer: int) -> void:
+	if multiplayer.is_server() and multiplayer.get_remote_sender_id() == room_owner:
+		move_lobby_player(peer, team, swap_peer)
+
+
+func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limits: Vector2i, size: int, teams: bool = false, random_map := false, blue_bots := -1) -> void:
 	if _started or _loading or Net.active:
 		return
 	_show_loading()
 	Net.play_solo()
 	team_deathmatch = teams
+	random_map_each_match = random_map
+	blue_bot_count = clampi(blue_bots, -1, MAX_BOTS)
 	_set_limits(limits)
 	weapon_set = weapons
-	map_id = arena
-	map_size = _selected_map_size(arena, size)
+	map_id = _map_for_match(arena)
+	lobby_map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
+	map_size = _selected_map_size(map_id, lobby_map_size)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	_solo_bot_count = clampi(bot_count, 0, MAX_BOTS)
 	_reserve_bot_slots(_solo_bot_count)
 	await _load_arena(randi(), _solo_bot_count, bot_difficulty)
 	_started = true
 	if map_id != MAP.BREAKWATER_ID:
-		_spawn_player(1, 0)
+		_spawn_player(1, player_slots.find(1))
 	await _finish_loading()
 
 
-func update_host_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
+func update_host_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1) -> void:
 	if Net.active and not multiplayer.is_server():
 		if room_owner != multiplayer.get_unique_id():
 			return
-		net_request_rules.rpc_id(1, weapons, arena, limits, difficulty, bot_count, size, teams)
+		net_request_rules.rpc_id(1, weapons, arena, limits, difficulty, bot_count, size, teams, random_map, blue_bots)
 		return
 	if _started or _loading or not Net.active or not multiplayer.is_server():
 		return
-	_apply_room_rules(weapons, arena, limits, difficulty, bot_count, size, teams)
+	_apply_room_rules(weapons, arena, limits, difficulty, bot_count, size, teams, random_map, blue_bots)
 	_send_room_state()
 
 
-func create_internet_room(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
+func create_internet_room(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1) -> void:
 	if not Net.internet or multiplayer.is_server() or room_owner != 0 or _started or _loading:
 		return
-	net_create_room.rpc_id(1, weapons, arena, limits, difficulty, bot_count, size, teams)
+	net_create_room.rpc_id(1, weapons, arena, limits, difficulty, bot_count, size, teams, random_map, blue_bots)
 
 
 func start_host_match() -> void:
@@ -540,6 +635,8 @@ func start_host_match() -> void:
 	if _started or _loading or not Net.active or not multiplayer.is_server():
 		return
 	var token := _load_token
+	map_id = _map_for_match(map_id)
+	map_size = _selected_map_size(map_id, lobby_map_size)
 	_show_loading()
 	for peer in player_slots:
 		if peer > 1:
@@ -551,7 +648,7 @@ func start_host_match() -> void:
 		return
 	for peer in player_slots:
 		if peer > 1:
-			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size, team_deathmatch, _bot_slots)
+			_send_begin(peer)
 	if not Net.dedicated and player_slots.count(0) == Net.MAX_PLAYERS - 1:
 		$HUD.show_host_ip(Net.lan_addresses())
 	if Net.dedicated:
@@ -559,11 +656,14 @@ func start_host_match() -> void:
 		_write_room_status()
 
 
-func _apply_room_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
+func _apply_room_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1) -> void:
 	team_deathmatch = teams
+	random_map_each_match = random_map
+	blue_bot_count = clampi(blue_bots, -1, MAX_BOTS)
 	weapon_set = clampi(weapons, 0, WEAPON_SET_NAMES.size() - 1)
 	map_id = clampi(arena, 0, MAP_NAMES.size() - 1)
-	map_size = _selected_map_size(map_id, size)
+	lobby_map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
+	map_size = _selected_map_size(map_id, lobby_map_size)
 	_set_limits(limits)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	lan_bot_count = clampi(bot_count, 0, MAX_BOTS)
@@ -574,11 +674,11 @@ func _send_room_state() -> void:
 		$HUD/Lobby.refresh_room()
 	for peer in player_slots:
 		if peer > 1:
-			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _display_names, map_size, room_owner, team_deathmatch)
+			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _display_names, lobby_map_size, room_owner, team_deathmatch, random_map_each_match, blue_bot_count)
 
 
 @rpc("any_peer", "reliable")
-func net_create_room(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
+func net_create_room(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1) -> void:
 	if not Net.dedicated or not multiplayer.is_server() or _started or _loading:
 		return
 	var sender := multiplayer.get_remote_sender_id()
@@ -588,16 +688,16 @@ func net_create_room(weapons: int, arena: int, limits: Vector2i, difficulty: int
 		_send_room_state()
 		return
 	room_owner = sender
-	_apply_room_rules(weapons, arena, limits, difficulty, bot_count, size, teams)
+	_apply_room_rules(weapons, arena, limits, difficulty, bot_count, size, teams, random_map, blue_bots)
 	print("Комнату создал игрок %d: %s." % [sender, MAP_NAMES[map_id]])
 	_send_room_state()
 
 
 @rpc("any_peer", "reliable")
-func net_request_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
+func net_request_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1) -> void:
 	if not Net.dedicated or not multiplayer.is_server() or multiplayer.get_remote_sender_id() != room_owner:
 		return
-	update_host_rules(weapons, arena, limits, difficulty, bot_count, size, teams)
+	update_host_rules(weapons, arena, limits, difficulty, bot_count, size, teams, random_map, blue_bots)
 
 
 @rpc("any_peer", "reliable")
@@ -634,7 +734,7 @@ func net_room_owner(owner: int) -> void:
 
 @rpc("authority", "reliable")
 func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: Vector2i,
-		difficulty: int, bot_count: int, names: Dictionary[int, String], size: int, owner: int, teams: bool) -> void:
+		difficulty: int, bot_count: int, names: Dictionary[int, String], size: int, owner: int, teams: bool, random_map: bool, blue_bots: int) -> void:
 	if _started or _loading:
 		return
 	var editing: bool = Net.internet and owner == 0 and $HUD/Lobby.is_editing_setup()
@@ -643,9 +743,12 @@ func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: 
 		_display_names = names
 	else:
 		team_deathmatch = teams
+		random_map_each_match = random_map
+		blue_bot_count = blue_bots
 		weapon_set = weapons
 		map_id = arena
-		map_size = _selected_map_size(arena, size)
+		lobby_map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
+		map_size = _selected_map_size(arena, lobby_map_size)
 		player_slots = roster
 		_set_limits(limits)
 		bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
@@ -670,7 +773,8 @@ func net_wait_for_arena() -> void:
 
 @rpc("authority", "reliable")
 func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int, limits: Vector2i,
-		difficulty: int, bot_count: int, revision: int, size: int, teams: bool, bot_slots: PackedInt32Array) -> void:
+		difficulty: int, bot_count: int, revision: int, size: int, teams: bool, bot_slots: PackedInt32Array,
+		random_map: bool, preferred_size: int, blue_bots: int) -> void:
 	if revision < _map_revision:
 		return
 	if revision > _map_revision:
@@ -685,10 +789,19 @@ func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: 
 	player_slots = roster
 	team_deathmatch = teams
 	_bot_slots = bot_slots
+	random_map_each_match = random_map
+	lobby_map_size = preferred_size
+	blue_bot_count = blue_bots
 	_show_loading()
 	await _begin_network_match(weapons, arena, layout_seed, limits, difficulty, bot_count, size)
 	if not _reloading and Net.active:
 		net_ready.rpc_id(1, revision)
+
+
+func _send_begin(peer: int) -> void:
+	net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option),
+		bot_difficulty, lan_bot_count, _map_revision, map_size, team_deathmatch, _bot_slots,
+		random_map_each_match, lobby_map_size, blue_bot_count)
 
 
 func _load_current(token: int) -> bool:
@@ -974,6 +1087,8 @@ func _reserve_bot_slots(count: int) -> void:
 			team_sizes[team] += 1
 	for _index in mini(count, open_slots[0].size() + open_slots[1].size()):
 		var team := 0 if team_sizes.x <= team_sizes.y else 1
+		if team_deathmatch and blue_bot_count >= 0:
+			team = 0 if _index < blue_bot_count else 1
 		if open_slots[team].is_empty():
 			team = 1 - team
 		_bot_slots.append(open_slots[team][0])
@@ -1041,16 +1156,13 @@ func allows_damage(attacker: int, victim: int) -> bool:
 
 
 func announce(killer_id: int, victim_id: int) -> void:
-	for peer in _ready_peers:
-		net_frag.rpc_id(peer, killer_id, victim_id)
-	net_frag(killer_id, victim_id)
-	var limit: int = KILL_LIMITS[kill_option]
-	var score: int = $HUD.kills_for(killer_id)
 	var killer := combatant(killer_id)
-	if team_deathmatch and killer != null and killer_id != victim_id:
-		var team: int = killer.team_id()
-		_team_score[team] += 1
-		score = _team_score[team]
+	var team: int = killer.team_id() if team_deathmatch and killer and killer_id != victim_id else -1
+	for peer in _ready_peers:
+		net_frag.rpc_id(peer, killer_id, victim_id, team)
+	net_frag(killer_id, victim_id, team)
+	var limit: int = KILL_LIMITS[kill_option]
+	var score: int = _team_score[team] if team >= 0 else $HUD.kills_for(killer_id)
 	if killer_id != victim_id and limit > 0 and score >= limit:
 		_finish_round.call_deferred("Достигнут лимит убийств")
 
@@ -1084,7 +1196,9 @@ func net_damage_event(event: Dictionary) -> void:
 
 
 @rpc("authority", "reliable")
-func net_frag(killer_id: int, victim_id: int) -> void:
+func net_frag(killer_id: int, victim_id: int, team := -1) -> void:
+	if team in [0, 1]:
+		_team_score[team] += 1
 	$HUD.on_frag(killer_id, victim_id)
 
 
@@ -1361,7 +1475,7 @@ func _welcome(id: int) -> void:
 		print("Подключился игрок %d. В комнате %d." % [id, _connected_players()])
 	if _started:
 		_send_slot(slot, id, id)
-		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size, team_deathmatch, _bot_slots)
+		_send_begin(id)
 	else:
 		_send_room_state()
 
@@ -1387,7 +1501,7 @@ func net_ready(revision: int) -> void:
 	$Grenades.send_state(id)
 	for player in get_tree().get_nodes_in_group("player"):
 		player.send_status_to(id)
-	net_score_snapshot.rpc_id(id, $HUD.score_snapshot())
+	net_score_snapshot.rpc_id(id, $HUD.score_snapshot(), _team_score)
 	net_clock.rpc_id(id, _display_seconds)
 	if round_finished():
 		net_finish.rpc_id(id, _finish_reason, _final_rows)
@@ -1398,7 +1512,7 @@ func _on_peer_disconnected(id: int) -> void:
 	if not Net.active or not multiplayer.is_server():
 		return
 	var slot := player_slots.find(id)
-	if slot < 0 or (slot == 0 and not Net.dedicated):
+	if slot < 0 or (id == 1 and not Net.dedicated):
 		return
 	_ready_peers.erase(id)
 	_display_names.erase(id)
@@ -1471,7 +1585,9 @@ func _load_match_room() -> bool:
 		int(cfg.get_value("room", "difficulty", 1)),
 		int(cfg.get_value("room", "bots", 1)),
 		int(cfg.get_value("room", "size", 2)),
-		bool(cfg.get_value("room", "teams", false))
+		bool(cfg.get_value("room", "teams", false)),
+		bool(cfg.get_value("room", "random_map", false)),
+		int(cfg.get_value("room", "blue_bots", -1))
 	)
 	DirAccess.remove_absolute(Net.room_file)
 	_write_room_status()
@@ -1485,6 +1601,7 @@ func _write_room_status() -> void:
 	status.set_value("room", "ready", true)
 	status.set_value("room", "players", _connected_players())
 	status.set_value("room", "playing", _started)
+	status.set_value("room", "arena", map_id)
 	status.save(Net.room_status_path)
 
 
