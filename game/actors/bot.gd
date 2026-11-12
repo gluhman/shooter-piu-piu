@@ -57,6 +57,7 @@ var _cover_travel_left := 0.0
 var _cover_hold_left := 0.0
 var _holding_cover := false
 var _cover_cooldown := 0.0
+var _training_pose_left := 0.0
 var _sight_ray := PhysicsRayQueryParameters3D.new()
 
 @onready var _loot := get_parent().get_node("Loot")
@@ -143,6 +144,7 @@ func _reset_behavior() -> void:
 	_cover_hold_left = 0.0
 	_holding_cover = false
 	_cover_cooldown = 0.0
+	_training_pose_left = 0.0
 
 
 func _physics_process(delta: float) -> void:
@@ -150,6 +152,15 @@ func _physics_process(delta: float) -> void:
 		super._physics_process(delta)
 		return
 	if _dead or not control_enabled or get_parent().is_loading() or get_parent().round_finished():
+		return
+	if get_parent().is_training_range():
+		_training_pose_left -= delta
+		if _training_pose_left <= 0.0:
+			_training_pose_left = randf_range(1.2, 3.0)
+			_update_crouch(randf() < 0.22)
+			aiming = randf() < 0.45
+			_camera.rotation.x = randf_range(-0.12, 0.12) if aiming else 0.0
+		velocity = Vector3.ZERO
 		return
 
 	_loot_scan -= delta

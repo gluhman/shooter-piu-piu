@@ -28,6 +28,7 @@ const ARENA_WEATHER := {
 	MAP.TEST_RANGE_ID: {"hour": 13.0, "wind": Vector2(0, 0.2)},
 }
 const MIN_RESPAWN_DISTANCE := 12.0
+const TRAINING_RESPAWN_DELAY := 0.75
 const DIFFICULTY_NAMES := ["Легко", "Обычно", "Сложно"]
 const WEAPON_SETS := [
 	["deagle", "shotgun", "ak47", "m1911", "mac10", "mp5", "m700", "tec9", "lever", "m14", "launcher", "m249", "m1"],
@@ -234,7 +235,17 @@ func _selected_map_size(arena: int, size: int) -> int:
 	return MAP.DEFAULT_SIZE if arena == MAP.TEST_RANGE_ID else clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 
 
+func is_training_range() -> bool:
+	return map_id == MAP.TEST_RANGE_ID
+
+
+func training_respawn_delay() -> float:
+	return TRAINING_RESPAWN_DELAY
+
+
 func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
+	if is_training_range():
+		return actor.spawn_position
 	var candidates: PackedVector3Array = $Map.respawn_points
 	if is_instance_valid(_breakwater):
 		candidates = _breakwater_spawn_candidates(actor.slot)

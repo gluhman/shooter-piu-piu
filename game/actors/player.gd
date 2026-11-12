@@ -865,6 +865,8 @@ func _next_respawn_weapon() -> String:
 
 
 func _respawn_delay() -> float:
+	if get_parent().is_training_range():
+		return get_parent().training_respawn_delay()
 	return float(Balance.MATCH.respawn_delay_s)
 
 
