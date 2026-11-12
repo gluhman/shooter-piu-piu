@@ -58,8 +58,8 @@ var _crouch_weight := 0.0
 var _torso_angles := Vector3.ZERO
 var _head := -1
 var _spine := -1
-var _right_reach: float
-var _left_reach: float
+var _right_reach: Vector2
+var _left_reach: Vector2
 var aim_pitch := 0.0
 
 
@@ -162,6 +162,10 @@ func update_locomotion(delta: float, crouched: bool, vertical_speed: float) -> v
 	_locomotion.advance(delta)
 
 
+func weapon_carry_anchor() -> Vector3:
+	return _animated_shoulder(_right_arm).lerp(_animated_shoulder(_left_arm), 0.5)
+
+
 func weapon_reach_correction(two_handed: bool) -> Vector3:
 	var right_shoulder := _animated_shoulder(_right_arm)
 	if not two_handed:
@@ -175,8 +179,8 @@ func weapon_reach_correction(two_handed: bool) -> Vector3:
 
 
 func weapon_reach_along(axis: Vector3) -> float:
-	var right := _reach_along(right_wrist.global_position, _animated_shoulder(_right_arm), _right_reach, axis)
-	var left := _reach_along(left_wrist.global_position, _animated_shoulder(_left_arm), _left_reach, axis)
+	var right := _reach_along(right_wrist.global_position, _animated_shoulder(_right_arm), _right_reach.y, axis)
+	var left := _reach_along(left_wrist.global_position, _animated_shoulder(_left_arm), _left_reach.y, axis)
 	return maxf(right, left)
 
 
@@ -206,16 +210,21 @@ func _torso_rotation(skeleton: Skeleton3D) -> Basis:
 	return axes * Basis.from_euler(angles) * axes.transposed()
 
 
-func _arm_reach(skeleton: Skeleton3D, chain: PackedInt32Array) -> float:
+func _arm_reach(skeleton: Skeleton3D, chain: PackedInt32Array) -> Vector2:
 	var shoulder := skeleton.to_global(skeleton.get_bone_global_rest(chain[0]).origin)
 	var elbow := skeleton.to_global(skeleton.get_bone_global_rest(chain[1]).origin)
 	var wrist := skeleton.to_global(skeleton.get_bone_global_rest(chain[2]).origin)
-	return shoulder.distance_to(elbow) + elbow.distance_to(wrist) - 0.024
+	var upper := shoulder.distance_to(elbow)
+	var lower := elbow.distance_to(wrist)
+	return Vector2(absf(upper - lower) + 0.015, upper + lower - 0.024)
 
 
-func _reach_offset(wrist: Vector3, shoulder: Vector3, reach: float) -> Vector3:
+func _reach_offset(wrist: Vector3, shoulder: Vector3, reach: Vector2) -> Vector3:
 	var away := wrist - shoulder
-	return away.limit_length(reach) - away
+	var distance := away.length()
+	if distance < 0.0001:
+		return -actor.global_basis.z * reach.x
+	return away * (clampf(distance, reach.x, reach.y) / distance - 1.0)
 
 
 func _process_modification_with_delta(delta: float) -> void:
@@ -346,7 +355,9 @@ func _pose_fingers(skeleton: Skeleton3D, chains: Array[PackedInt32Array], curls:
 
 
 func _pose_arm(skeleton: Skeleton3D, chain: PackedInt32Array, wrist: Marker3D, side: float) -> void:
-	var pole := skeleton.to_local(actor.to_global(Vector3(side * 0.35, 1.15, 0.15) + stance_offset))
+	var shoulder := skeleton.get_bone_global_pose(chain[0]).origin
+	var actor_to_rig := skeleton.global_basis.inverse() * actor.global_basis
+	var pole := shoulder + actor_to_rig * Vector3(side * 0.13, -0.34, 0.16)
 	var goal := skeleton.global_transform.affine_inverse() * wrist.global_transform
 	goal.basis = goal.basis.orthonormalized()
 	_solve(skeleton, chain, goal, pole, true)

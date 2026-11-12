@@ -544,6 +544,10 @@ func set_support_grip(reload_blend: float) -> void:
 	_pose.support_grip = reload_blend
 
 
+func weapon_carry_anchor() -> Vector3:
+	return _pose.weapon_carry_anchor()
+
+
 func weapon_reach_correction(two_handed: bool) -> Vector3:
 	return _pose.weapon_reach_correction(two_handed)
 

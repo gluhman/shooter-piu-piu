@@ -243,6 +243,7 @@ var _bob_t := 0.0
 var _pump_wait := 0.0
 var _rest_pos := Vector3.ZERO
 var _aim_amount := 0.0
+var _run_carry := 0.0
 var _aim_pose: Transform3D
 var _aim_depth_limit := 0.0
 var _scope_view := false
@@ -793,6 +794,9 @@ func update_pose(delta: float) -> void:
 func _apply_view(delta: float) -> void:
 	if _view == null:
 		return
+	var speed: float = _player.visual_speed()
+	var carry_target := smoothstep(2.65, 3.9, speed) if not _player.crouched else 0.0
+	_run_carry = move_toward(_run_carry, carry_target, delta * 7.0)
 	if _weapon_id == "knife":
 		_apply_knife_view()
 		return
@@ -804,7 +808,6 @@ func _apply_view(delta: float) -> void:
 		if _weapon_id in ["m700", "m1"]:
 			_set_scope_view(blend >= 0.96)
 			_model.visible = not _scope_view
-	var speed: float = _player.visual_speed()
 	_bob_t += delta * speed * 1.7
 	var sway := minf(speed / 5.0, 1.0)
 	var bob := Vector3(sin(_bob_t * 2.0) * 0.008, absf(cos(_bob_t * 2.0)) * 0.01, 0.0) * sway
@@ -814,11 +817,24 @@ func _apply_view(delta: float) -> void:
 	var aim_offset := (clampf(_camera.rotation.x, -0.78, 0.78) - _camera.rotation.x) * reload_pose
 	var pitch := Basis(Vector3.RIGHT, aim_offset)
 	var reload_roll := -0.56 if _weapon_id == "shotgun" else -0.40
-	var sprint_carry := smoothstep(5.6, 7.2, speed) * (1.0 - reload_pose)
-	var hip_position := pitch * (_rest_pos + bob + _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose)
-	var hip_basis := pitch * Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose, 0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
-	hip_position += Vector3(0.018, -0.065, 0.065) * sprint_carry
-	hip_basis *= Basis.from_euler(Vector3(-0.19 + 0.025 * sin(_bob_t * 2.0), 0.04, -0.12) * sprint_carry)
+	var handling_offset := _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose
+	var handling_rotation := Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose,
+		0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
+	var hip_position := pitch * (_rest_pos + bob + handling_offset)
+	var hip_basis := pitch * handling_rotation
+	var run_carry := smoothstep(0.0, 1.0, _run_carry)
+	if run_carry > 0.0:
+		# Follow the lowered torso through the run cycle and limit how far the weapon follows head pitch.
+		var carry_pitch := -0.31 + clampf(_camera.rotation.x, -0.22, 0.22) * 0.5
+		var carry_rotation := Basis.from_euler(Vector3(carry_pitch, 0.14, -0.10))
+		var carry_offset := Vector3(_rest_pos.x + 0.025, -0.10, _rest_pos.z - 0.09)
+		if _loads_one_round():
+			carry_offset.z -= 0.10 * reload_pose
+		var body_basis: Basis = _player.global_basis
+		var carry_origin: Vector3 = _player.weapon_carry_anchor() + body_basis * (carry_offset + bob * 0.55 + handling_offset)
+		var carry_basis := _camera.global_basis.inverse() * body_basis * carry_rotation * handling_rotation
+		hip_position = hip_position.lerp(_camera.to_local(carry_origin), run_carry)
+		hip_basis = hip_basis.slerp(carry_basis, run_carry)
 	_view.position = hip_position.lerp(_aim_pose.origin + Vector3.BACK * _kick_pos.z, blend)
 	_view.basis = hip_basis.slerp(_aim_pose.basis, blend)
 	if not _player._is_local() or blend < 1.0:
