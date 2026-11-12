@@ -30,6 +30,17 @@ var _ends: PackedInt32Array
 var _centers: Dictionary[String, Area3D]
 
 
+func _enter_tree() -> void:
+	if is_instance_valid(_skeleton):
+		_skeleton.skeleton_updated.connect(update_pose)
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(_skeleton) and _skeleton.skeleton_updated.is_connected(update_pose):
+		_skeleton.skeleton_updated.disconnect(update_pose)
+	reset_history()
+
+
 func setup(skeleton: Skeleton3D) -> void:
 	_skeleton = skeleton
 	for segment in SEGMENTS:
@@ -57,8 +68,9 @@ func setup(skeleton: Skeleton3D) -> void:
 		_areas.append(area)
 		_shapes.append(collision.shape)
 		_centers[segment[0]] = area
-	update_pose()
-	skeleton.skeleton_updated.connect(update_pose)
+	if is_inside_tree():
+		update_pose()
+		skeleton.skeleton_updated.connect(update_pose)
 
 
 func set_active(active: bool) -> void:
@@ -71,10 +83,20 @@ func center(zone: String) -> Vector3:
 
 
 func update_pose() -> void:
+	if not is_inside_tree() or not is_instance_valid(_skeleton) or not _skeleton.is_inside_tree():
+		return
+	var actor := get_parent() as Node3D
+	if not actor or not actor.is_inside_tree():
+		return
+	var actor_basis := actor.global_basis.orthonormalized()
+	var skeleton_transform := _skeleton.global_transform
 	for index in _areas.size():
+		var area := _areas[index]
+		if not area.is_inside_tree():
+			continue
 		var segment: Array = SEGMENTS[index]
-		var start := _skeleton.to_global(_skeleton.get_bone_global_pose(_starts[index]).origin)
-		var end := _skeleton.to_global(_skeleton.get_bone_global_pose(_ends[index]).origin)
+		var start := skeleton_transform * _skeleton.get_bone_global_pose(_starts[index]).origin
+		var end := skeleton_transform * _skeleton.get_bone_global_pose(_ends[index]).origin
 		var from := start.lerp(end, segment[4])
 		var to := start.lerp(end, segment[5])
 		var axis := to - from
@@ -90,8 +112,7 @@ func update_pose() -> void:
 			if not is_equal_approx(shape.height, height):
 				shape.height = height
 		var swing := Basis(Quaternion(Vector3.UP, axis / length)) if length > 0.0001 else Basis.IDENTITY
-		var basis: Basis = swing * get_parent().global_basis.orthonormalized()
-		_areas[index].global_transform = Transform3D(basis, (from + to) * 0.5)
+		area.global_transform = Transform3D(swing * actor_basis, (from + to) * 0.5)
 
 
 func reset_history() -> void:

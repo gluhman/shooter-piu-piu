@@ -1,5 +1,5 @@
 extends SceneTree
-## Start host and two clients with -- host|shooter|observer SHARED_DIR UDP_PORT.
+## Start host and two clients with -- host|shooter|observer SHARED_DIR UDP_PORT [cover].
 
 var mode: String
 var shared_dir: String
@@ -15,9 +15,10 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var args := OS.get_cmdline_user_args()
-	if args.size() != 3:
-		_finish(false, "expected role, shared directory and port")
+	if args.size() not in [3, 4]:
+		_finish(false, "expected role, shared directory, port and optional cover case")
 		return
+	var cover_case := args.size() == 4 and args[3] == "cover"
 	mode = args[0]
 	shared_dir = args[1]
 	var transport := ENetMultiplayerPeer.new()
@@ -65,6 +66,9 @@ func _run() -> void:
 		arena._ready_peers.assign([peers[1], peers[2]])
 	var victim := actors[0]
 	var shooter := actors[1]
+	var map := arena.get_node("Map")
+	if cover_case:
+		map._add_steel_panel(Vector3(0, 1.2, -5), Vector3(3, 3, 0.12), StandardMaterial3D.new(), 0.0)
 	shooter.gun._aim_amount = 1.0
 	_write(mode + ".ready", "yes")
 	if not await _wait_file("host.ready") or not await _wait_file("shooter.ready") or not await _wait_file("observer.ready"):
@@ -81,12 +85,15 @@ func _run() -> void:
 			return
 		await create_timer(0.35).timeout
 		var good: bool = event_count == 1 and shooter.gun.ammo_counts().x == 29 and victim.health < 100.0 and victim.health > 65.0
+		if cover_case:
+			good = good and victim.health > 77.5 and map._perforated[0].points.size() == 1
 		_write("server.result", "%f,%d" % [victim.health, shooter.gun.ammo_counts().x])
 		if not await _wait_file("observer.checked") or not await _wait_file("shooter.checked"):
 			_finish(false, "clients did not confirm authoritative state")
 			return
 		_finish(good and _read("observer.checked") == "true" and _read("shooter.checked") == "true",
-			"three ENet peers agree on one accepted shot, one ammo spent and one damage event")
+			"three ENet peers agree on one shot, one ammo spent and one damage event"
+			+ (" after a replicated steel perforation" if cover_case else ""))
 		return
 
 	if mode == "shooter":
@@ -106,6 +113,8 @@ func _run() -> void:
 		return
 	var server := _read("server.result").split(",")
 	var good: bool = event_count == 1 and is_equal_approx(float(victim.health), float(server[0])) and victim.health < 100.0
+	if cover_case:
+		good = good and map._perforated[0].points.size() == 1
 	if mode == "shooter":
 		good = good and local == shooter.score_id() and shooter.gun.ammo_counts().x == int(server[1])
 	_write(mode + ".checked", str(good))

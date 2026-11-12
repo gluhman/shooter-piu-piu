@@ -186,10 +186,165 @@ func _run() -> void:
 	_check("Live tracer initialization", starts_hidden and tracer.visible
 		and _near(tracer.global_basis.z.length(), profile.trail))
 
+	await _check_aim_alignment()
+	await _check_projectile_flight()
+	_check_hurtbox_lifetime()
 	arena.queue_free()
 	await process_frame
 	print("Combat balance test failures: ", failures)
 	quit(0 if failures == 0 else 1)
+
+
+func _check_hurtbox_lifetime() -> void:
+	var hurtboxes: Node3D = target._hurtboxes
+	var skeleton: Skeleton3D = target._skeleton
+	var offset := Vector3(2.0, 0.0, 1.0)
+	var center: Vector3 = hurtboxes.center("chest")
+	arena.remove_child(target)
+	var disconnected := not skeleton.skeleton_updated.is_connected(hurtboxes.update_pose)
+	skeleton.skeleton_updated.emit()
+	hurtboxes.update_pose()
+	target.position += offset
+	arena.add_child(target)
+	skeleton.skeleton_updated.emit()
+	var reconnected := skeleton.skeleton_updated.is_connected(hurtboxes.update_pose)
+	_check("Hurtboxes detach and resume tracking on re-entry", disconnected and reconnected
+		and (hurtboxes.center("chest") as Vector3).is_equal_approx(center + offset))
+
+
+func _check_aim_alignment() -> void:
+	target.position.x += 8.0
+	shooter.rotation.y = 0.0
+	var camera: Camera3D = shooter._camera
+	camera.rotation = Vector3.ZERO
+	var gun: Node3D = shooter.gun
+	var aligned := true
+	for distance: float in [0.32, 0.85, 2.0, 12.0]:
+		var point := camera.global_position + Vector3.FORWARD * distance
+		var wall := _wall(point + Vector3.FORWARD * 0.05, Vector3(3.0, 3.0, 0.1))
+		await _flush_physics()
+		for id: String in weapons:
+			if id == "knife":
+				continue
+			gun.equip(id)
+			for aim: float in [0.0, 0.5, 1.0]:
+				shooter.aiming = aim > 0.0
+				gun._aim_amount = aim
+				gun.update_pose(0.0)
+				var barrel: Transform3D = gun._muzzle.global_transform
+				var forward := -barrel.basis.z.normalized()
+				var hit: Dictionary = ballistics.combat_ray(shooter, barrel.origin, barrel.origin + forward * 20.0)
+				var correct: bool = hit.get("collider") == wall and point.distance_to(hit.get("position", Vector3.INF)) < 0.001
+				if not correct:
+					print("Aim mismatch: ", id, " at ", distance, " m, ADS ", aim, " hit ", hit.get("position"))
+				aligned = aligned and correct
+		wall.queue_free()
+		await _flush_physics()
+	_check("Barrel and centered aim at near and distant walls", aligned)
+
+	shooter.aiming = false
+	gun.equip("ak47")
+	var point := camera.global_position + Vector3.FORWARD * 0.85
+	var wall := _wall(point + Vector3.FORWARD * 0.05, Vector3(3.0, 3.0, 0.1))
+	await _flush_physics()
+	gun._try_fire()
+	var shot: Dictionary = ballistics._pending.back() if not ballistics._pending.is_empty() else {}
+	if shot.is_empty():
+		_check("Live shot uses the aligned barrel", false)
+	else:
+		var barrel: Transform3D = shot.barrel
+		var direction: Vector3 = shot.directions[0]
+		var centered := (point - barrel.origin).normalized().dot(-barrel.basis.z.normalized())
+		_check("Live shot uses the aligned barrel", centered > 0.99999
+			and direction.dot(-barrel.basis.z.normalized()) >= cos(deg_to_rad(4.2)))
+	ballistics._pending.clear()
+	wall.queue_free()
+
+
+func _check_projectile_flight() -> void:
+	arena.team_deathmatch = false
+	_reset_target()
+	var map := arena.get_node("Map")
+	var muzzle := Vector3(0.0, 1.3, -0.55)
+	var material := StandardMaterial3D.new()
+	var steel: StaticBody3D = map._add_steel_panel(Vector3(0, 1.2, -5), Vector3(3, 3, 0.12), material, 0.0)
+	await _flush_physics()
+	_fire_at_chest(Vector3(0, 1.5, 0), muzzle)
+	var redirected: bool = ballistics._shots.size() == 1 and ballistics._shots.values()[0].penetrated_metal
+	for step in 3:
+		ballistics._physics_process(1.0 / 60.0)
+	var steel_holes: PackedVector4Array = map._perforated.back().points
+	_check("Thin steel perforation and reduced damage", redirected and steel_holes.size() == 1
+		and target.health > 77.5 and target.health < 100.0)
+	steel.collision_layer = 0
+
+	_reset_target()
+	var thick := _wall(Vector3(0, 1.2, -5), Vector3(3, 3, 0.8))
+	thick.set_meta(&"impact_surface", "metal")
+	thick.set_meta(&"ballistic_size", Vector3(3, 3, 0.8))
+	await _flush_physics()
+	_fire_at_chest(Vector3(0, 1.5, 0), muzzle)
+	_check("Thick steel stops the projectile", ballistics._shots.is_empty() and _near(target.health, 100.0))
+	thick.queue_free()
+
+	map._add_wood_cover(Vector3(0, 1.2, -5), Vector3(3, 3, 0.16), material, 0.68)
+	await _flush_physics()
+	_fire_at_chest(Vector3(0, 1.5, 0), muzzle)
+	for step in 3:
+		ballistics._physics_process(1.0 / 60.0)
+	var fence = map._perforated.back()
+	_check("Thin wooden fence perforates", fence.points.size() == 1 and target.health > 77.5 and target.health < 100.0)
+	fence.body.collision_layer = 0
+	_reset_target()
+
+	var loot := arena.get_node("Loot")
+	var placements: Array[Transform3D] = [Transform3D(Basis.IDENTITY, Vector3(0.0, 1.1, -5.0))]
+	loot.build_crates(placements)
+	await _flush_physics()
+	_fire_at_chest(Vector3(0, 1.5, 0), muzzle)
+	var crossed_crate: bool = ballistics._shots.size() == 1 and ballistics._shots.values()[0].penetrated_wood
+	for step in 3:
+		ballistics._physics_process(1.0 / 60.0)
+	_check("Rifle penetrates the supply crate", crossed_crate and target.health > 77.5 and target.health < 100.0)
+
+	_reset_target()
+	await _flush_physics()
+	var gun: Node3D = shooter.gun
+	gun.equip("shotgun")
+	var next_id: int = ballistics._next_id
+	gun._launch_projectiles(Transform3D(Basis.IDENTITY, muzzle), Basis.IDENTITY, 0.0, Vector3(0, 1.5, 0))
+	ballistics._physics_process(1.0 / 240.0)
+	var eight_pellets: bool = ballistics._next_id == next_id + 8 and ballistics._shots.size() == 8
+	for step in 3:
+		ballistics._physics_process(1.0 / 60.0)
+	_check("Eight separate pellets stop at wood", eight_pellets and ballistics._shots.is_empty() and _near(target.health, 100.0))
+	loot.clear_map()
+
+	var grazing_panel := _wall(Vector3(0.80, 1.3, -4.0), Vector3(0.12, 3, 4.0))
+	grazing_panel.set_meta(&"impact_surface", "metal")
+	await _flush_physics()
+	var tangent := Vector3(0.22, 0.0, -0.975).normalized()
+	ballistics.queue_shot("deagle", weapons.deagle, shooter, Transform3D(Basis.IDENTITY, muzzle),
+		0.15, Vector3(0, 1.5, 0), PackedVector3Array([tangent]))
+	ballistics._physics_process(1.0 / 60.0)
+	var ricochet: bool = ballistics._shots.size() == 1 and ballistics._shots.values()[0].ricocheted
+	_check("Low-energy grazing hit ricochets off steel", ricochet
+		and ballistics._shots.values()[0].velocity.x < 0.0 and ballistics._shots.values()[0].damage_scale < 1.0)
+	grazing_panel.queue_free()
+	ballistics.reset_round()
+
+	shooter.velocity = Vector3(4.0, 0.0, 0.0)
+	await _flush_physics()
+	ballistics.queue_shot("ak47", weapons.ak47, shooter, Transform3D(Basis.IDENTITY, muzzle),
+		0.5, Vector3(0, 1.5, 0), PackedVector3Array([Vector3.FORWARD]))
+	ballistics._physics_process(1.0 / 240.0)
+	var flew: bool = ballistics._shots.size() == 1
+	if flew:
+		var projectile = ballistics._shots.values()[0]
+		flew = (projectile.position.x > muzzle.x and projectile.position.y < muzzle.y
+			and absf(projectile.velocity.z) < float(ballistics.AMMO.ak47.speed) and projectile.remaining > 0.0)
+	_check("Flight inherits movement and integrates gravity and drag", flew)
+	ballistics.reset_round()
 
 
 func _spawn(at: Vector3, peer: int) -> CharacterBody3D:

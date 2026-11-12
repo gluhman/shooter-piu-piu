@@ -548,12 +548,12 @@ func _register_perforated_cover(body: StaticBody3D) -> void:
 	_perforated.append(cover)
 
 
-func add_bullet_hole(id: int, entry: Vector3, axis: Vector3, profile: String) -> void:
+func add_bullet_hole(id: int, entry: Vector3, axis: Vector3, profile: String, force: float = 1.0) -> void:
 	if id < 0 or id >= _perforated.size():
 		return
 	var cover := _perforated[id]
 	var wood: bool = cover.body.get_meta(&"impact_surface") == "wood"
-	var radius := 0.049 if wood else 0.035
+	var radius := (0.049 if wood else 0.035) * sqrt(clampf(force, 0.32, 1.45))
 	if profile == "deagle":
 		radius *= 0.85
 	if cover.points.size() == HOLES_PER_PANEL:
@@ -582,8 +582,10 @@ func send_bullet_holes(peer: int) -> void:
 			net_bullet_holes.rpc_id(peer, id, cover.points, cover.axes)
 
 
-@rpc("authority", "reliable")
+@rpc("authority", "call_remote", "reliable", 3)
 func net_bullet_holes(id: int, points: PackedVector4Array, axes: PackedVector3Array) -> void:
+	if id < 0 or id >= _perforated.size():
+		return
 	var cover := _perforated[id]
 	cover.points = points
 	cover.axes = axes

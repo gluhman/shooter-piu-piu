@@ -1,6 +1,7 @@
 extends RefCounted
 
 # Generated from fps_balance_config.json, Combat Balance v1.0.0.
+# Projectile travel and penetration are enabled for this game.
 const DATA := {
 	"schema_version": "1.0.0",
 	"design_intent": "Fast, modern, CoD-like arcade military FPS for 2-10 LAN players; original tuning, not official CoD values.",
@@ -158,10 +159,10 @@ const DATA := {
 		"death_when_hp_lte_zero": true,
 		"hit_reaction_does_not_interrupt_automatic_fire": true,
 		"damage_from_explosion_bypasses_vest": true,
-		"hitscan_firearms": true,
+		"hitscan_firearms": false,
 		"pellet_damage_separate_hit_queries": true,
 		"shots_stop_at_first_nonpenetrable_surface": true,
-		"wall_penetration_enabled": false,
+		"wall_penetration_enabled": true,
 		"headshots_ignore_vests": true,
 		"melee": {
 			"range_m": 2.0,
