@@ -445,6 +445,20 @@ func world_query() -> PhysicsRayQueryParameters3D:
 	return query
 
 
+func ray_through_glass(space: PhysicsDirectSpaceState3D, query: PhysicsRayQueryParameters3D) -> Dictionary:
+	var hit := space.intersect_ray(query)
+	if hit.is_empty() or not hit.collider.has_meta(&"village_glass"):
+		return hit
+	var original := query.exclude
+	var excluded := original.duplicate()
+	while not hit.is_empty() and hit.collider.has_meta(&"village_glass"):
+		excluded.append(hit.rid)
+		query.exclude = excluded
+		hit = space.intersect_ray(query)
+	query.exclude = original
+	return hit
+
+
 func _ray(space: PhysicsDirectSpaceState3D, query: PhysicsRayQueryParameters3D, from: Vector3, to: Vector3) -> Dictionary:
 	if from.is_equal_approx(to):
 		return {}

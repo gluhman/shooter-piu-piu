@@ -73,6 +73,7 @@ var _passages: Array[Transform3D] = []
 var _wood_floors: Array[Rect2] = []
 var _initial_spawns := PackedVector3Array()
 var respawn_points := PackedVector3Array()
+var market_supply_count := 0
 var _patrol: Array[Vector3] = []
 var _half_extent := 35.0
 var _district_origin := Vector3.ZERO
@@ -164,8 +165,15 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 		_half_extent = village_width * 0.5
 		var layout := VILLAGE.new(self)
 		var supplies := layout.build(village_width, rng)
+		market_supply_count = layout.market_supply_count
 		_build_respawn_grid(floori((_half_extent - 1.0) / 5.6), 5.6, _half_extent, layout.ground_height)
 		_patrol.assign(respawn_points)
+		# Keep respawn candidates out of the contested market.
+		var outer_candidates := PackedVector3Array()
+		for point in respawn_points:
+			if absf(point.x) >= 6.0 or absf(point.z) >= 6.0:
+				outer_candidates.append(point)
+		respawn_points = outer_candidates
 		return supplies
 
 	_build_spawn_ring(_half_extent - (2.25 if width == 70.0 else 1.35))
@@ -324,6 +332,7 @@ func clear_map() -> void:
 	_wood_floors.clear()
 	_initial_spawns.clear()
 	respawn_points.clear()
+	market_supply_count = 0
 	_patrol.clear()
 	_district_origin = Vector3.ZERO
 	_district_yaw = 0.0

@@ -11,8 +11,7 @@ class Door:
 	var leaf: StaticBody3D
 	var shape: BoxShape3D
 	var center: Vector3
-	var opened := true
-	var starts_open: bool
+	var opened := false
 
 class WindowPane:
 	var sill: Transform3D
@@ -29,10 +28,9 @@ var _glass: StandardMaterial3D
 @onready var _match := get_parent().get_parent()
 
 
-func add_door(portal: Transform3D, width: float, height: float, wood: Material, iron: Material, starts_open: bool) -> void:
+func add_door(portal: Transform3D, width: float, height: float, wood: Material, iron: Material) -> void:
 	var door := Door.new()
 	door.portal = portal
-	door.starts_open = starts_open
 	door.hinge = Node3D.new()
 	add_child(door.hinge)
 	var leaf_width := width - 0.11
@@ -55,7 +53,7 @@ func add_door(portal: Transform3D, width: float, height: float, wood: Material, 
 		_box(door.leaf, Vector3(leaf_width - 0.13, 1.04, side * 0.068), Vector3(0.12, 0.17, 0.045), iron)
 		_box(door.leaf, Vector3(leaf_width - 0.16, 1.04, side * 0.104), Vector3(0.15, 0.043, 0.043), iron)
 	_doors.append(door)
-	_apply_door(door, true)
+	_apply_door(door, false)
 
 
 func add_window(sill: Transform3D, width: float, height: float) -> void:
@@ -244,7 +242,7 @@ func _break_window(window: WindowPane) -> void:
 func reset_round() -> void:
 	_requests.clear()
 	for door in _doors:
-		_apply_door(door, door.starts_open)
+		_apply_door(door, false)
 	for window in _windows:
 		window.broken = false
 		window.pane.collision_layer = Balance.WORLD_MASK
@@ -253,11 +251,15 @@ func reset_round() -> void:
 
 func send_state(peer: int) -> void:
 	for id in _doors.size():
-		if _doors[id].opened != _doors[id].starts_open:
-			net_fixture.rpc_id(peer, _match._map_revision, false, id, _doors[id].opened)
+		net_fixture.rpc_id(peer, _match._map_revision, false, id, _doors[id].opened)
 	for id in _windows.size():
 		if _windows[id].broken:
 			net_fixture.rpc_id(peer, _match._map_revision, true, id, true)
+
+
+func set_door_collision(enabled: bool) -> void:
+	for door in _doors:
+		door.leaf.collision_layer = Balance.WORLD_MASK if enabled else 0
 
 
 @rpc("authority", "call_remote", "reliable")

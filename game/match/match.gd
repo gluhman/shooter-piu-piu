@@ -289,6 +289,7 @@ func _choose_safe_spawn(actor: Node3D, slot: int, previous: Vector3,
 	var best_score := -INF
 	var visibility_radius := maxf(64.0, arena_width() * 0.65)
 	var distance_limit := visibility_radius + 8.0
+	var village := map_id == MAP.VILLAGE_ID
 	for point: Vector3 in candidates:
 		var nearest_occupied := INF
 		for fighter in occupied:
@@ -301,22 +302,25 @@ func _choose_safe_spawn(actor: Node3D, slot: int, previous: Vector3,
 		var nearest := distance_limit
 		for enemy in enemies:
 			nearest = minf(nearest, enemy.global_position.distance_to(point))
-		var score := nearest + nearest_occupied * 0.15
+		var score := nearest + minf(nearest_occupied, distance_limit) * 0.15
 		if nearest < MIN_RESPAWN_DISTANCE:
 			score -= 1000.0
 		if point.distance_squared_to(previous) < 0.1:
 			score -= 6.0
 		if score <= best_score:
 			continue
-		if nearest >= MIN_RESPAWN_DISTANCE:
+		if village or nearest >= MIN_RESPAWN_DISTANCE:
 			ray.to = point + Vector3.UP * 1.4
 			for enemy in enemies:
 				var distance := enemy.global_position.distance_to(point)
-				if distance > visibility_radius:
+				if not village and distance > visibility_radius:
 					continue
 				ray.from = enemy.aim_center()
-				if space.intersect_ray(ray).is_empty():
-					score -= 25.0 * (1.0 - distance / distance_limit)
+				var hit: Dictionary = $Ballistics.ray_through_glass(space, ray) if village else space.intersect_ray(ray)
+				if hit.is_empty():
+					score -= 400.0 if village else 25.0 * (1.0 - distance / distance_limit)
+					if village:
+						break
 				if score <= best_score:
 					break
 		if score > best_score:
@@ -809,7 +813,8 @@ func _build_arena(layout_seed: int) -> void:
 		var wind: Vector2 = weather.wind
 		$WorldEnvironment.wind_direction = deg_to_rad(wind.x)
 		$WorldEnvironment.wind_speed = wind.y
-		$Loot.build_crates($Map.build(map_id, layout_seed, arena_width()))
+		var supplies: Array[Transform3D] = $Map.build(map_id, layout_seed, arena_width())
+		$Loot.build_crates(supplies, $Map.market_supply_count)
 	_apply_graphics()
 	if not Net.dedicated:
 		var bounds := _breakwater.get_arena_bounds() if is_instance_valid(_breakwater) else Rect2()
@@ -837,7 +842,13 @@ func _build_arena(layout_seed: int) -> void:
 			var bake_height := 7.1 if village else 2.8
 			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, bake_bottom, -width * 0.5), Vector3(width, bake_height, width))
 		var geometry := NavigationMeshSourceGeometryData3D.new()
+		var fixtures := $Map.get_node_or_null("VillageFixtures")
+		# Bots can open doors on their path. Bake the openings as traversable.
+		if fixtures:
+			fixtures.set_door_collision(false)
 		NavigationServer3D.parse_source_geometry_data(mesh, geometry, self)
+		if fixtures:
+			fixtures.set_door_collision(true)
 		_navigation_pending = true
 		NavigationServer3D.bake_from_source_geometry_data_async(mesh, geometry, _on_navigation_baked.bind(mesh, _load_token))
 
@@ -979,7 +990,8 @@ func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
 		if team_deathmatch and player_slots[_bot_slots[index]] != 0:
 			continue
 		var slot := _bot_slots[index] if team_deathmatch else 0
-		var team_start := team_deathmatch and map_id == MAP.WORKSHOP_ID and arena_width() >= 40.0
+		var team_start := team_deathmatch and (
+			map_id == MAP.VILLAGE_ID or (map_id == MAP.WORKSHOP_ID and arena_width() >= 40.0))
 		var spawn_index := slot if team_start else Net.MAX_PLAYERS + index
 		var bot := _add_bot(index, slot, difficulty, $Map.initial_spawn(spawn_index))
 		if not Net.active or multiplayer.is_server():

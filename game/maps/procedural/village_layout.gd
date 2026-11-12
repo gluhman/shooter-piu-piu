@@ -18,6 +18,7 @@ var _batches: Dictionary[Material, SurfaceTool] = {}
 var _lots: Array[Rect2] = []
 var _terrain_pads: Array[Rect2] = []
 var _supplies: Array[Transform3D] = []
+var market_supply_count := 0
 var _trim: Material
 var _fence: Material
 var _gable: StandardMaterial3D
@@ -175,6 +176,9 @@ func _market() -> void:
 	_fence_panel(Vector2(5.42, 0.29), 8.6, true, 2.3)
 	_barrel(Vector3(-4.6, 0, -2.8), 0.4)
 	_barrel(Vector3(4.1, 0, 3.5), 1.2)
+	for point in [Vector2(-4.0, -1.45), Vector2(4.2, 1.4), Vector2(4.2, -0.85), Vector2(-4.0, 0.85)]:
+		_add_supply(point)
+	market_supply_count = _supplies.size()
 
 
 func _well(at: Vector3) -> void:
@@ -341,6 +345,7 @@ func _start_area(center: Vector2, is_gate: bool) -> void:
 	var size := Vector2(6.35, 5.8)
 	var siding := _stone if is_gate else _fence
 	_lot(frame, size + Vector2.ONE * 2.0)
+	_lot(frame.translated_local(Vector3(0, 0, 5.45)), Vector2(9.3, 6.4))
 	_floor(frame, size)
 	_open_wall(frame, 2.9, size.x, 0.0, 3.5, 0.0, 4.24, 0.0, 2.85, siding)
 	_piece(frame, Vector3(0, 1.75, -2.9), Vector3(size.x, 3.5, WALL), siding)
@@ -364,6 +369,8 @@ func _start_area(center: Vector2, is_gate: bool) -> void:
 	_lantern(frame, Vector3(2.54, 1.96, 2.98))
 	_crate(frame * Vector3(2.48, 0, 3.84), 0.3)
 	_barrel(frame * Vector3(-2.55, 0, 5.65 if is_gate else 4.08), 1.1)
+	# Screen the starts from the market while leaving routes around both ends.
+	_piece(frame, Vector3(0.65, 1.20, 6.0), Vector3(5.10, 2.40, 0.32), siding)
 
 
 func _build_spawns(barn: Vector2, gate: Vector2) -> void:
@@ -378,7 +385,7 @@ func _landmark(frame: Transform3D, size: Vector2, material: Material, height: fl
 	_floor(frame, size)
 	var front := size.y * 0.5
 	_open_wall(frame, front, size.x, 0.0, height, 0.0, 1.28, 0.0, 2.16, material)
-	_house_door(frame, Vector3(0, 0, front), 1.28, 2.16, 1.0, frame.origin.x < 0.0)
+	_house_door(frame, Vector3(0, 0, front), 1.28, 2.16, 1.0)
 	_piece(frame, Vector3(0, height * 0.5, -front), Vector3(size.x, height, WALL), material)
 	for side in [-1.0, 1.0]:
 		var flank := frame * Transform3D(Basis(Vector3.UP, side * PI * 0.5),
@@ -456,12 +463,12 @@ func _door_frame(frame: Transform3D, at: Vector3, width: float, height: float) -
 	_paint(frame * (at + Vector3.UP * (height + 0.05)), Vector3(width + 0.34, 0.16, 0.40), _trim, 0, yaw)
 
 
-func _house_door(frame: Transform3D, at: Vector3, width: float, height: float, outside: float, starts_open := true) -> void:
+func _house_door(frame: Transform3D, at: Vector3, width: float, height: float, outside: float) -> void:
 	_door_frame(frame, at, width, height)
 	var portal := frame.translated_local(at)
 	if outside < 0.0:
 		portal.basis *= Basis(Vector3.UP, PI)
-	_fixtures.add_door(portal, width, height, _fence, _iron, starts_open)
+	_fixtures.add_door(portal, width, height, _fence, _iron)
 
 
 func _window(frame: Transform3D, at: Vector3, width: float, height: float) -> void:

@@ -28,9 +28,12 @@ func _run() -> void:
 			if NavigationServer3D.map_get_closest_point_owner(nav, Vector3.ZERO) == region.get_rid():
 				break
 		_check_layout(map, nav, width)
+		await _check_respawn(arena)
 		if selected_size == 0:
 			await _check_stairs(arena)
 			await _check_fixtures(arena)
+			await _check_blast_damage(arena)
+			_check_market_loot(arena)
 		arena._clear_match_map()
 		await process_frame
 	arena.queue_free()
@@ -68,6 +71,9 @@ func _check_layout(map: Node3D, nav: RID, width: float) -> void:
 	_check("Terrain has hills and depressions with walkable grades (%.2f to %.2f m)" % [low, high],
 		low < -0.24 and high > 0.30 and steepest > cos(deg_to_rad(42.0)))
 	var fixtures := map.get_node("VillageFixtures")
+	_check("Every village door starts closed", fixtures._doors.all(func(door): return not door.opened))
+	_check("Respawn candidates stay out of the market", Array(map.respawn_points).all(
+		func(point: Vector3): return absf(point.x) >= 6.0 or absf(point.z) >= 6.0))
 	var homes := 7 if width > 40.0 else 5
 	var thresholds_clear := true
 	for door in fixtures._doors:
@@ -85,8 +91,18 @@ func _check_layout(map: Node3D, nav: RID, width: float) -> void:
 	var square := Vector3(2.4, 0.2, 0)
 	var from_barn := _route(nav, barn, square)
 	var from_gate := _route(nav, gate, square)
-	_check("Barn and gate reach the square within 4 m of each other",
+	_check("Barn and gate reach the square within 4 m of each other (%.2f, %.2f)" % [from_barn, from_gate],
 		is_finite(from_barn) and is_finite(from_gate) and absf(from_barn - from_gate) <= 4.0)
+	var spawn_ray := PhysicsRayQueryParameters3D.new()
+	spawn_ray.collision_mask = BALANCE.WORLD_MASK
+	var exposed := 0
+	for point in map._initial_spawns:
+		spawn_ray.to = point + Vector3.UP * 1.4
+		for approach in [Vector3(0, 1.6, 0), Vector3(-2.2, 1.6, -4), Vector3(2.2, 1.6, 4)]:
+			spawn_ray.from = approach
+			if space.intersect_ray(spawn_ray).is_empty():
+				exposed += 1
+	_check("Barn and gate starts are screened from the market approaches (%d exposed rays)" % exposed, exposed == 0)
 	_check("Both side exits have a direct route to the yards",
 		_route(nav, barn, Vector3(-7.2, 0.2, barn.z + 0.05)) < 7.0
 		and _route(nav, gate, Vector3(7.2, 0.2, width * 0.5 - 3.2)) < 7.0)
@@ -116,7 +132,33 @@ func _route(nav: RID, from: Vector3, to: Vector3) -> float:
 	return distance
 
 
+func _check_respawn(arena: Node3D) -> void:
+	var map := arena.get_node("Map")
+	var enemy: CharacterBody3D = arena.combatant(1)
+	var initial := enemy.global_position
+	enemy._apply_equip("ak47")
+	enemy.global_position = Vector3(2.35, 0.15, 0.5)
+	enemy.velocity = Vector3.ZERO
+	await physics_frame
+	var at: Vector3 = arena._choose_safe_spawn(null, 0, Vector3.INF, map.respawn_points)
+	var covered := false
+	if at.is_finite():
+		var query := PhysicsRayQueryParameters3D.create(enemy.aim_center(),
+			at + Vector3.UP * 1.4, BALANCE.WORLD_MASK)
+		var space := arena.get_world_3d().direct_space_state
+		covered = not arena.get_node("Ballistics").ray_through_glass(space, query).is_empty()
+	_check("Respawn selects a clear site behind cover and at least 12 m from a market enemy",
+		at.is_finite() and covered and at.distance_to(enemy.global_position) >= 12.0)
+	enemy.global_position = initial
+	enemy.velocity = Vector3.ZERO
+	await physics_frame
+
+
 func _check_stairs(arena: Node3D) -> void:
+	var fixtures := arena.get_node("Map/VillageFixtures")
+	for door in fixtures._doors:
+		fixtures._apply_door(door, true)
+	await physics_frame
 	var walker := CharacterBody3D.new()
 	walker.collision_layer = 0
 	walker.collision_mask = BALANCE.WORLD_MASK
@@ -157,6 +199,8 @@ func _check_stairs(arena: Node3D) -> void:
 	else:
 		_check("Player capsule can reach the yard hill", false)
 	walker.queue_free()
+	fixtures.reset_round()
+	await physics_frame
 
 
 func _check_fixtures(arena: Node3D) -> void:
@@ -173,16 +217,16 @@ func _check_fixtures(arena: Node3D) -> void:
 	_interact()
 	for frame in 9:
 		await physics_frame
-	var closed: bool = not door.opened
+	var opened: bool = door.opened
 	var ray := PhysicsRayQueryParameters3D.create(door.portal * Vector3(0, 1.1, 0.8),
 		door.portal * Vector3(0, 1.1, -0.7), BALANCE.WORLD_MASK)
 	var space := arena.get_world_3d().direct_space_state
-	var blocks: bool = space.intersect_ray(ray).get("collider") == door.leaf
+	var clear: bool = space.intersect_ray(ray).is_empty()
 	_interact()
 	for frame in 9:
 		await physics_frame
-	_check("Interact closes and reopens the door and updates its collision",
-		closed and blocks and door.opened and space.intersect_ray(ray).is_empty())
+	_check("Interact opens and closes the door and updates its collision",
+		opened and clear and not door.opened and space.intersect_ray(ray).get("collider") == door.leaf)
 
 	var window = fixtures._windows[2]
 	var sill: Transform3D = window.sill
@@ -215,8 +259,8 @@ func _check_fixtures(arena: Node3D) -> void:
 		(sill.affine_inverse() * actor.position).z < -0.40)
 	fixtures.reset_round()
 	await physics_frame
-	_check("Round restart restores the pane and closes the designated house doors",
-		not window.broken and pane.visible and not fixtures._doors[5].opened)
+	_check("Round restart restores the pane and shuts every door",
+		not window.broken and pane.visible and fixtures._doors.all(func(entry): return not entry.opened))
 
 	actor.position = sill * Vector3(0, -0.66, 0.76)
 	actor.velocity = Vector3.ZERO
@@ -258,6 +302,61 @@ func _check_fixtures(arena: Node3D) -> void:
 	_check("A blast at an oblique angle breaks glass visible past the jamb", window.broken)
 	grenades.reset_round()
 	fixtures.reset_round()
+
+
+func _check_blast_damage(arena: Node3D) -> void:
+	var fixtures := arena.get_node("Map/VillageFixtures")
+	var actor: CharacterBody3D = arena.combatant(1)
+	var grenades := arena.get_node("Grenades")
+	var door = fixtures._doors[4]
+	var portal: Transform3D = door.portal
+	actor._apply_respawn("ak47", portal * Vector3(0, 0.04, -1.5), actor._spawn_revision + 1)
+	var outside := portal * Vector3(0, 1.24, 2.1)
+	await physics_frame
+	grenades._launch("frag", actor, outside, Vector3.ZERO, 0.0, 0)
+	for frame in 3:
+		await physics_frame
+	_check("A closed door shields the player from a grenade", is_equal_approx(actor.health, 100.0))
+	fixtures._apply_door(door, true)
+	await physics_frame
+	grenades._launch("frag", actor, outside, Vector3.ZERO, 0.0, 0)
+	for frame in 3:
+		await physics_frame
+	_check("An open doorway lets the same grenade damage the player", actor.health < 100.0)
+	fixtures.reset_round()
+	var window = fixtures._windows[2]
+	var sill: Transform3D = window.sill
+	actor._apply_respawn("ak47", sill * Vector3(0, -0.66, -1.45), actor._spawn_revision + 1)
+	outside = sill * Vector3(0, 0.87, 2.15)
+	await physics_frame
+	grenades._launch("frag", actor, outside, Vector3.ZERO, 0.0, 0)
+	for frame in 3:
+		await physics_frame
+	var glazed_damage: float = 100.0 - actor.health
+	_check("A grenade damages the player through intact glass and shatters the pane", glazed_damage > 0.0 and window.broken)
+	actor.health = 100.0
+	grenades._launch("frag", actor, outside, Vector3.ZERO, 0.0, 0)
+	for frame in 3:
+		await physics_frame
+	_check("An already broken window passes the same blast damage", glazed_damage > 0.0
+		and is_equal_approx(100.0 - actor.health, glazed_damage))
+	fixtures.reset_round()
+
+
+func _check_market_loot(arena: Node3D) -> void:
+	var loot := arena.get_node("Loot")
+	var actor: Node = arena.combatant(1)
+	var rewards := []
+	for index in loot._market_crate_count:
+		var at: Vector3 = loot._crates[index].position + Vector3.UP * 0.63
+		var id: int = loot._next_id
+		loot._open_crate(actor, index, at)
+		var drop: Dictionary = loot._drops[id]
+		rewards.append([drop.kind, drop.weapon, drop.amount])
+	_check("Market crates provide a launcher, machine gun, vest and two medkits",
+		rewards == [[loot.Kind.WEAPON, "launcher", 1], [loot.Kind.WEAPON, "m249", 75],
+			[loot.Kind.ARMOR, "", 1], [loot.Kind.MEDKIT, "", 2]])
+	loot.reset_round()
 
 
 func _face(actor: CharacterBody3D, direction: Vector3) -> void:

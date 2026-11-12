@@ -326,7 +326,7 @@ func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) ->
 		query.from = at
 		for target: Vector3 in actor.blast_samples():
 			query.to = target
-			if at.is_equal_approx(target) or space.intersect_ray(query).is_empty():
+			if at.is_equal_approx(target) or _ballistics.ray_through_glass(space, query).is_empty():
 				clear += 1
 		if clear == 0:
 			continue
