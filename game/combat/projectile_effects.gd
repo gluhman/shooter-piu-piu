@@ -3,7 +3,7 @@ extends Node3D
 const Classic := preload("res://game/combat/classic_weapons.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const SpatialAudio := preload("res://addons/spatial_audio_3d/spatial_audio_3d.gd")
-const BLAST_FOG := preload("res://game/combat/blast_fog.gdshader")
+const GRENADE_EXPLOSION := preload("res://game/combat/grenade_explosion.tscn")
 const SHOT_HEARING_DISTANCE := 125.0
 const SHOT_DISTANCE_LOSS_DB := 16.0
 
@@ -48,7 +48,6 @@ var _trace_meshes: Dictionary = {}
 var _marks: Array[MeshInstance3D] = []
 var _mark_meshes: Dictionary[bool, QuadMesh] = {}
 var _flash_mesh: QuadMesh
-var _explosion_mesh: QuadMesh
 var _burst_pool: Array[CPUParticles3D] = []
 var _active_bursts := 0
 var _burst_gradients: Dictionary[Color, Gradient] = {}
@@ -69,10 +68,6 @@ func _ready() -> void:
 	material.emission_energy_multiplier = 2.2
 	material.emission_texture = _flare
 	_flash_mesh.material = material
-	_explosion_mesh = QuadMesh.new()
-	var core := _sprite(_flare, Color(1.0, 0.52, 0.17))
-	core.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_explosion_mesh.material = core
 
 
 func prepare_acoustics() -> void:
@@ -292,51 +287,40 @@ func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> v
 		return
 	var scale := radius / 5.0 * (0.82 if launcher else 1.0)
 	var center := at + Vector3.UP * 0.38 * scale
-	var core := MeshInstance3D.new()
-	core.mesh = _flash_mesh if flash else _explosion_mesh
-	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	core.position = center
-	core.scale = Vector3.ONE * (1.35 if flash else 2.2 * scale)
-	add_child(core)
 	var light := OmniLight3D.new()
+	light.position = center
 	light.light_color = Color(0.85, 0.91, 1.0) if flash else Color(1.0, 0.66, 0.30)
 	light.light_energy = 6.4 if flash else 10.0 * scale
 	light.omni_range = 12.0 if flash else radius * 2.4 * scale
 	light.shadow_enabled = not flash and camera.global_position.distance_squared_to(at) < 28.0 * 28.0
-	core.add_child(light)
-	var fade := core.create_tween()
-	fade.tween_property(core, "transparency", 1.0, 0.14)
-	fade.parallel().tween_property(core, "scale", core.scale * 1.55, 0.14)
-	fade.parallel().tween_property(light, "light_energy", 0.0, 0.16)
-	fade.tween_callback(core.queue_free)
+	add_child(light)
+	var light_fade := light.create_tween()
+	var light_decay := light_fade.tween_property(light, "light_energy", 0.0, 0.16 if flash else 0.27)
+	if not flash:
+		light_decay.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	light_fade.tween_callback(light.queue_free)
 	_burst(center, Vector3.UP, Color(1.0, 0.74, 0.29), 10 if flash else (32 if launcher else 44),
 		0.52, 13.0 * scale, 125.0, 0.062 * scale, Vector3.DOWN * 9.8, "spark", 1.2)
-	if not flash:
-		_blast_volume(center, scale)
-		_burst(at + Vector3.UP * 0.18, Vector3.UP, Color(0.53, 0.45, 0.34, 0.60),
-			18, 0.94, 6.3 * scale, 115.0, 1.05 * scale, Vector3.UP * 0.40, "smoke")
-		_burst(center, Vector3.UP, Color(0.28, 0.27, 0.25, 0.67),
-			24, 2.4, 3.7 * scale, 67.0, 1.55 * scale, Vector3.UP * 0.65, "smoke")
-
-
-func _blast_volume(center: Vector3, scale: float) -> void:
-	if RenderingServer.get_current_rendering_method() != "forward_plus":
+	if flash:
+		var core := MeshInstance3D.new()
+		core.mesh = _flash_mesh
+		core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		core.position = center
+		core.scale = Vector3.ONE * 1.35
+		add_child(core)
+		var fade := core.create_tween().set_parallel(true)
+		fade.tween_property(core, "transparency", 1.0, 0.14)
+		fade.tween_property(core, "scale", core.scale * 1.55, 0.14)
+		fade.chain().tween_callback(core.queue_free)
 		return
-	var cloud := FogVolume.new()
-	cloud.size = Vector3(2.1, 1.6, 2.1) * scale
-	var material := ShaderMaterial.new()
-	material.shader = BLAST_FOG
-	cloud.material = material
-	add_child(cloud)
-	cloud.global_position = center
-	var fade := cloud.create_tween().set_parallel(true)
-	fade.tween_method(func(heat: float) -> void: material.set_shader_parameter(&"heat", heat),
-		1.0, 0.0, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-	fade.tween_method(func(thickness: float) -> void: material.set_shader_parameter(&"thickness", thickness),
-		1.35, 0.0, 2.05).set_delay(0.16).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-	fade.tween_property(cloud, "size", Vector3(6.4, 4.0, 6.4) * scale, 2.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	fade.tween_property(cloud, "position:y", cloud.position.y + 1.1 * scale, 2.2)
-	fade.chain().tween_callback(cloud.queue_free)
+	var explosion := GRENADE_EXPLOSION.instantiate() as GPUParticles3D
+	explosion.position = center
+	explosion.scale = Vector3.ONE * scale
+	explosion.finished.connect(explosion.queue_free)
+	add_child(explosion)
+	explosion.emitting = true
+	_burst(at + Vector3.UP * 0.18, Vector3.UP, Color(0.53, 0.45, 0.34, 0.35),
+		12, 0.94, 6.3 * scale, 115.0, 0.85 * scale, Vector3.UP * 0.40, "smoke")
 
 
 func tracer(ammo: Dictionary) -> MeshInstance3D:

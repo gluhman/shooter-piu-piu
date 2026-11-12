@@ -1,0 +1,61 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Shader" path="res://game/combat/explosion_flipbook.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" path="res://assets/explosion_vfx/smoke_flipbook.png" id="2_smoke"]
+[ext_resource type="Texture2D" path="res://assets/explosion_vfx/normal_positive.png" id="3_positive"]
+[ext_resource type="Texture2D" path="res://assets/explosion_vfx/normal_negative.png" id="4_negative"]
+
+[sub_resource type="Gradient" id="Gradient_flame"]
+offsets = PackedFloat32Array(0.02, 0.38, 0.46, 0.55, 0.62)
+colors = PackedColorArray(0, 0, 0, 1, 1, 0.94, 0.8, 1, 1, 0.66, 0.25, 1, 0.68, 0.12, 0.02, 1, 0, 0, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_flame"]
+gradient = SubResource("Gradient_flame")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_explosion"]
+shader = ExtResource("1_shader")
+shader_parameter/smoke_flipbook = ExtResource("2_smoke")
+shader_parameter/normal_positive = ExtResource("3_positive")
+shader_parameter/normal_negative = ExtResource("4_negative")
+shader_parameter/flame_ramp = SubResource("GradientTexture1D_flame")
+
+[sub_resource type="Curve" id="Curve_expansion"]
+max_value = 1.4
+_data = [Vector2(0, 0.7), 0.0, 1.8, 0, 0, Vector2(0.48, 1.16), 0.0, 0.0, 0, 0, Vector2(1, 1.28), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_expansion"]
+curve = SubResource("Curve_expansion")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_explosion"]
+emission_shape = 1
+emission_sphere_radius = 0.24
+direction = Vector3(0, 1, 0)
+spread = 105.0
+initial_velocity_min = 0.65
+initial_velocity_max = 2.8
+gravity = Vector3(0, 0.48, 0)
+damping_min = 0.7
+damping_max = 1.35
+scale_min = 0.72
+scale_max = 1.24
+scale_curve = SubResource("CurveTexture_expansion")
+
+[sub_resource type="QuadMesh" id="QuadMesh_explosion"]
+material = SubResource("ShaderMaterial_explosion")
+size = Vector2(3.5, 3.5)
+
+[node name="GrenadeExplosion" type="GPUParticles3D"]
+cast_shadow = 0
+emitting = false
+amount = 14
+lifetime = 1.85
+one_shot = true
+explosiveness = 0.96
+randomness = 0.55
+fixed_fps = 60
+visibility_aabb = AABB(-7, -6, -7, 14, 13, 14)
+local_coords = true
+draw_order = 2
+process_material = SubResource("ParticleProcessMaterial_explosion")
+draw_pass_1 = SubResource("QuadMesh_explosion")
