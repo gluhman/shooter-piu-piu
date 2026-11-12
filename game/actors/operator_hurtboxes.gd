@@ -22,6 +22,7 @@ const SEGMENTS := [
 ]
 
 var _skeleton: Skeleton3D
+var _operator_pose: SkeletonModifier3D
 var _areas: Array[Area3D]
 var _shapes: Array[Shape3D]
 var _history: Array[Dictionary]
@@ -31,18 +32,19 @@ var _centers: Dictionary[String, Area3D]
 
 
 func _enter_tree() -> void:
-	if is_instance_valid(_skeleton):
-		_skeleton.skeleton_updated.connect(update_pose)
+	if is_instance_valid(_operator_pose):
+		_operator_pose.modification_processed.connect(update_pose)
 
 
 func _exit_tree() -> void:
-	if is_instance_valid(_skeleton) and _skeleton.skeleton_updated.is_connected(update_pose):
-		_skeleton.skeleton_updated.disconnect(update_pose)
+	if is_instance_valid(_operator_pose) and _operator_pose.modification_processed.is_connected(update_pose):
+		_operator_pose.modification_processed.disconnect(update_pose)
 	reset_history()
 
 
-func setup(skeleton: Skeleton3D) -> void:
+func setup(skeleton: Skeleton3D, operator_pose: SkeletonModifier3D) -> void:
 	_skeleton = skeleton
+	_operator_pose = operator_pose
 	for segment in SEGMENTS:
 		var area := Area3D.new()
 		area.collision_layer = 0
@@ -70,7 +72,7 @@ func setup(skeleton: Skeleton3D) -> void:
 		_centers[segment[0]] = area
 	if is_inside_tree():
 		update_pose()
-		skeleton.skeleton_updated.connect(update_pose)
+		operator_pose.modification_processed.connect(update_pose)
 
 
 func set_active(active: bool) -> void:

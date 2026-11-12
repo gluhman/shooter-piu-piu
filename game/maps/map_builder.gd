@@ -1,6 +1,7 @@
 extends Node3D
 
 const BULLET_HOLE_SHADER := preload("res://game/combat/bullet_holes.gdshader")
+const STACK_CONTAINER_SCENE := "res://assets/arena_props/oxygen/stacked_containers.glb"
 const HOLES_PER_PANEL := 32
 
 class PerforatedCover:
@@ -13,6 +14,7 @@ const GRASS := preload("res://assets/arena_props/grass.glb")
 const SHRUBS := preload("res://assets/arena_props/shrubs.glb")
 const VILLAGE := preload("res://game/maps/village_layout.gd")
 const DUST2 := preload("res://game/maps/dust2_layout.gd")
+const WORKSHOP := preload("res://game/maps/workshop_layout.gd")
 
 const CONTAINER_HEIGHT := 2.59
 const CONTAINER_WIDTH := 2.44
@@ -28,6 +30,7 @@ const SIZE_NAMES := ["Маленькая", "Средняя", "Большая"]
 const DEFAULT_SIZE := 2
 const VILLAGE_ID := 3
 const DUST2_ID := 4
+const WORKSHOP_ID := 5
 
 class Cover:
 	var center: Vector2
@@ -40,7 +43,7 @@ const COLOR_GREEN := Color(0.28, 0.52, 0.34)
 const COLOR_ORANGE := Color(0.95, 0.48, 0.14)
 const COLOR_GREY := Color(0.72, 0.74, 0.72)
 
-const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II"]
+const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3"]
 
 const PATROL_ROUTES := [
 	[
@@ -60,6 +63,7 @@ const PATROL_ROUTES := [
 ]
 
 var _perforated: Array[PerforatedCover] = []
+var _stack_meshes: Dictionary[String, Mesh] = {}
 var _occupied: Array[Rect2] = []
 var _cover: Array[Cover] = []
 var _passages: Array[Transform3D] = []
@@ -80,6 +84,11 @@ const ARENA_TEXTURES := {
 	"corrugated": ["color", "normal", "roughness", "ao", "metalness"],
 }
 
+const DUST2_TEXTURES := {
+	"dust2/sandstone": ["color", "normal", "roughness"],
+	"dust2/sand": ["color", "normal", "roughness"],
+}
+
 var _textures: Dictionary[String, Texture2D] = {}
 
 
@@ -87,12 +96,21 @@ func patrol_route() -> Array[Vector3]:
 	return _patrol
 
 
-func preload_textures() -> void:
+func preload_textures(map_id: int) -> void:
+	var materials := ARENA_TEXTURES.duplicate()
+	if map_id == DUST2_ID:
+		materials.merge(DUST2_TEXTURES)
+	else:
+		for material in DUST2_TEXTURES:
+			for kind in DUST2_TEXTURES[material]:
+				_textures.erase(_texture_path(material, kind))
+	if map_id == WORKSHOP_ID:
+		return
 	var pending: Array[String] = []
-	for material in ARENA_TEXTURES:
-		for kind in ARENA_TEXTURES[material]:
+	for material in materials:
+		for kind in materials[material]:
 			var path := _texture_path(material, kind)
-			if ResourceLoader.load_threaded_request(path, "Texture2D") == OK:
+			if not _textures.has(path) and ResourceLoader.load_threaded_request(path, "Texture2D") == OK:
 				pending.append(path)
 	while not pending.is_empty():
 		for index in range(pending.size() - 1, -1, -1):
@@ -117,6 +135,8 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = layout_seed
 	_half_extent = width * 0.5
+	if map_id == WORKSHOP_ID:
+		return WORKSHOP.new(self).build(width)
 	if map_id == DUST2_ID:
 		var dust2 := DUST2.new(self)
 		var supplies := dust2.build(width)
@@ -179,7 +199,28 @@ func _build_small_yard(map_id: int) -> void:
 			_add_crate(Vector3(-3.2, 0.55, 5.1))
 
 
+func minimap_outline() -> Array[PackedVector2Array]:
+	var outline: Array[PackedVector2Array] = []
+	for body in get_children():
+		if not body is StaticBody3D:
+			continue
+		for collider in body.get_children():
+			if not collider is CollisionShape3D or not collider.shape is BoxShape3D:
+				continue
+			var transform: Transform3D = body.transform * collider.transform
+			var half: Vector3 = collider.shape.size * 0.5
+			if transform.origin.y + half.y <= 0.65 or transform.origin.y - half.y >= 1.4:
+				continue
+			var polygon := PackedVector2Array()
+			for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+				var point := transform * Vector3(corner.x * half.x, 0.0, corner.y * half.z)
+				polygon.append(Vector2(point.x, point.z))
+			outline.append(polygon)
+	return outline
+
+
 func clear_map() -> void:
+	get_viewport().use_occlusion_culling = false
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
@@ -269,6 +310,7 @@ func _add_container(center: Vector3, size_x: float, size_z: float, color: Color,
 	var half := size * 0.5
 	var along_x := size_x >= size_z
 	var door_panel: StaticBody3D
+	var panels: Array[StaticBody3D] = []
 	for side in [-1.0, 1.0]:
 		var x_wall := Vector3(side * (half.x - t * 0.5), 0, 0)
 		var side_panel := _add_steel_panel(center + x_wall.rotated(Vector3.UP, yaw),
@@ -280,9 +322,12 @@ func _add_container(center: Vector3, size_x: float, size_z: float, color: Color,
 			Vector3(size.x - t * 2, size.y, t), material, yaw_deg)
 		if not along_x and side > 0.0:
 			door_panel = end_panel
-		_add_steel_panel(center + Vector3.UP * side * (half.y - t * 0.5),
+		var horizontal_panel := _add_steel_panel(center + Vector3.UP * side * (half.y - t * 0.5),
 			Vector3(size.x - t * 2, t, size.z - t * 2), material, yaw_deg)
+		panels.append_array([side_panel, end_panel, horizontal_panel])
 
+	if center.y > CONTAINER_HEIGHT and _replace_stack_visuals(panels, center, size, color, along_x):
+		return
 	var door := MeshInstance3D.new()
 	var door_mesh := BoxMesh.new()
 	if along_x:
@@ -295,6 +340,31 @@ func _add_container(center: Vector3, size_x: float, size_z: float, color: Color,
 	door.mesh = door_mesh
 	door.position = door_panel.to_local(center + door.position.rotated(Vector3.UP, yaw))
 	door_panel.add_child(door)
+
+
+func _replace_stack_visuals(panels: Array[StaticBody3D], center: Vector3, size: Vector3,
+		color: Color, along_x: bool) -> bool:
+	if _stack_meshes.is_empty() and ResourceLoader.exists(STACK_CONTAINER_SCENE, "PackedScene"):
+		var scene := load(STACK_CONTAINER_SCENE) as PackedScene
+		var asset := scene.instantiate()
+		for mesh: MeshInstance3D in asset.find_children("*", "MeshInstance3D", true, false):
+			_stack_meshes[String(mesh.name)] = mesh.mesh
+		asset.free()
+	var variant := "red" if color == COLOR_RED else ("orange" if color == COLOR_ORANGE else "black")
+	var faces := ["x_neg", "z_neg", "y_neg", "x_pos", "z_pos", "y_pos"] if along_x else [
+		"z_neg", "x_pos", "y_neg", "z_pos", "x_neg", "y_pos"]
+	for face: String in faces:
+		if not _stack_meshes.has(variant + "_" + face):
+			return false
+	var model_size := Vector3(maxf(size.x, size.z) / 10.0, size.y / 4.2, minf(size.x, size.z) / 4.0)
+	for index in panels.size():
+		var panel := panels[index]
+		var visual := panel.get_child(0) as MeshInstance3D
+		visual.mesh = _stack_meshes[variant + "_" + faces[index]]
+		visual.position = panel.to_local(center - Vector3.UP * size.y * 0.5)
+		visual.rotation.y = 0.0 if along_x else PI * 0.5
+		visual.scale = model_size
+	return true
 
 
 func _add_crate(center: Vector3) -> void:
@@ -607,7 +677,9 @@ func _apply_bullet_holes(cover: PerforatedCover) -> void:
 			material.set_shader_parameter("texture_scale", source.uv1_scale)
 			material.set_shader_parameter("blend_sharpness", source.uv1_triplanar_sharpness)
 			material.set_shader_parameter("metalness", source.metallic)
-			material.set_shader_parameter("normal_strength", source.normal_scale)
+			material.set_shader_parameter("normal_strength", source.normal_scale if source.normal_enabled else 0.0)
+			material.set_shader_parameter("use_mesh_uv", not source.uv1_triplanar)
+			material.set_shader_parameter("roughness_factor", source.roughness if not source.uv1_triplanar else 1.0)
 			mesh.material_override = material
 			cover.materials.append(material)
 	var points := cover.points.duplicate()
@@ -621,7 +693,8 @@ func _apply_bullet_holes(cover: PerforatedCover) -> void:
 
 
 func _add_box(center: Vector3, size: Vector3, material: Material, yaw_deg: float = 0.0,
-		surface: String = "concrete", mesh_batch: SurfaceTool = null) -> StaticBody3D:
+		surface: String = "concrete", mesh_batch: SurfaceTool = null,
+		visual: Node3D = null) -> StaticBody3D:
 	if center.y - size.y * 0.5 < 0.72 and center.y + size.y * 0.5 > 1.4:
 		var cover := Cover.new()
 		cover.center = Vector2(center.x, center.z)
@@ -632,15 +705,18 @@ func _add_box(center: Vector3, size: Vector3, material: Material, yaw_deg: float
 	body.set_meta(&"impact_surface", surface)
 	body.position = center
 	body.rotation.y = deg_to_rad(yaw_deg)
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	if mesh_batch:
-		mesh_batch.append_from(mesh, 0, body.transform)
+	if visual:
+		body.add_child(visual)
 	else:
-		var mesh_instance := MeshInstance3D.new()
-		mesh.material = material
-		mesh_instance.mesh = mesh
-		body.add_child(mesh_instance)
+		var mesh := BoxMesh.new()
+		mesh.size = size
+		if mesh_batch:
+			mesh_batch.append_from(mesh, 0, body.transform)
+		else:
+			var mesh_instance := MeshInstance3D.new()
+			mesh.material = material
+			mesh_instance.mesh = mesh
+			body.add_child(mesh_instance)
 	var collision := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = size

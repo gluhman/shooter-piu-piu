@@ -338,6 +338,7 @@ func _build_audio(column: VBoxContainer) -> void:
 	_audio_volume_row(match_audio, "Шаги", &"footstep_volume")
 	_audio_volume_row(match_audio, "Выстрелы", &"gunfire_volume")
 	_audio_volume_row(match_audio, "Гранаты и взрывы", &"explosion_volume")
+	_audio_volume_row(match_audio, "Звуки окружения", &"ambience_volume")
 
 
 func _audio_volume_row(column: VBoxContainer, title: String, setting: StringName) -> void:
@@ -457,36 +458,75 @@ func _build_display(column: VBoxContainer) -> void:
 
 func _build_graphics(column: VBoxContainer) -> void:
 	var quality := UI.card(column, "Качество изображения")
-	var scale := OptionButton.new()
-	var scales := [0.5, 0.67, 0.75, 0.8, 1.0]
-	for index in scales.size():
-		scale.add_item("%d%%" % roundi(scales[index] * 100.0))
-		if is_equal_approx(GameSettings.render_scale, scales[index]):
-			scale.select(index)
-	scale.item_selected.connect(func(index: int) -> void:
-		_update_graphics(&"render_scale", scales[index])
+	_graphics_choice(quality, "Масштаб 3D", &"render_scale",
+		["50%", "67%", "75%", "80%", "85%", "90%", "95%", "100%"],
+		[0.5, 0.67, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0])
+	var advanced := GameSettings.supports_advanced_graphics()
+	var upscaler := _graphics_choice(quality, "Масштабирование", &"upscaling",
+		["Билинейное", "FSR 1.0", "FSR 2.2"], [0, 1, 2])
+	var aa := _graphics_choice(quality, "Сглаживание", &"antialiasing",
+		["Выкл.", "2× MSAA", "4× MSAA", "FXAA", "TAA"], [0, 1, 2, 3, 4])
+	aa.disabled = GameSettings.uses_fsr2()
+	if aa.disabled:
+		aa.select(0)
+	aa.set_item_disabled(4, not advanced)
+	upscaler.set_item_disabled(1, not advanced)
+	upscaler.set_item_disabled(2, not advanced)
+	if not advanced:
+		upscaler.select(0)
+	upscaler.item_selected.connect(func(_index: int) -> void:
+		aa.disabled = GameSettings.uses_fsr2()
+		aa.select(0 if aa.disabled else GameSettings.antialiasing)
 	)
-	UI.row(quality, "Масштаб рендера", scale)
-	var msaa := OptionButton.new()
-	for name in ["Выкл.", "2× MSAA", "4× MSAA"]:
-		msaa.add_item(name)
-	msaa.select(GameSettings.antialiasing)
-	msaa.item_selected.connect(func(index: int) -> void:
-		_update_graphics(&"antialiasing", index)
-	)
-	UI.row(quality, "Сглаживание", msaa)
+	_graphics_choice(quality, "Фильтрация текстур", &"anisotropy",
+		["Обычная", "2×", "4×", "8×", "16×"], [0, 1, 2, 3, 4])
+
 	var lighting := UI.card(column, "Освещение")
-	_graphics_toggle(lighting, "Тени", &"shadows")
-	_graphics_toggle(lighting, "Фоновое затенение (SSAO)", &"ambient_occlusion")
+	var shadows_toggle := _graphics_toggle(lighting, "Тени солнца", &"shadows")
+	var shadow_distance := _graphics_choice(lighting, "Дальность теней", &"shadow_distance",
+		["24 м", "36 м", "52 м", "75 м"], GameSettings.SHADOW_DISTANCES)
+	var shadow_detail := _graphics_choice(lighting, "Детализация теней", &"shadow_cascades",
+		["Обычная (2 каскада)", "Высокая (4 каскада)"], [0, 1])
+	shadow_distance.disabled = not GameSettings.shadows
+	shadow_detail.disabled = not GameSettings.shadows
+	shadows_toggle.toggled.connect(func(enabled: bool) -> void:
+		shadow_distance.disabled = not enabled
+		shadow_detail.disabled = not enabled
+	)
+	var ao_toggle := _graphics_toggle(lighting, "Фоновое затенение (SSAO)", &"ambient_occlusion")
+	var ao := _graphics_choice(lighting, "Качество SSAO", &"ssao_quality",
+		["Низкое", "Среднее", "Высокое"], [0, 1, 2])
+	ao_toggle.disabled = not advanced
+	ao.disabled = not advanced or not GameSettings.ambient_occlusion
+	ao_toggle.toggled.connect(func(enabled: bool) -> void:
+		ao.disabled = not enabled
+	)
+
+	var effects := UI.card(column, "Эффекты")
+	_graphics_choice(effects, "Частицы и взрывы", &"effects_detail",
+		["Меньше частиц", "Полная детализация"], [0, 1])
 
 
-func _graphics_toggle(parent: VBoxContainer, title: String, option: StringName) -> void:
+func _graphics_choice(parent: Control, title: String, option: StringName, labels: Array, values: Array) -> OptionButton:
+	var control := OptionButton.new()
+	for label: String in labels:
+		control.add_item(label)
+	control.select(values.find(GameSettings.get(option)))
+	control.item_selected.connect(func(index: int) -> void:
+		_update_graphics(option, values[index])
+	)
+	UI.row(parent, title, control)
+	return control
+
+
+func _graphics_toggle(parent: Control, title: String, option: StringName) -> CheckButton:
 	var toggle := CheckButton.new()
 	toggle.button_pressed = GameSettings.get(option)
 	toggle.toggled.connect(func(enabled: bool) -> void:
 		_update_graphics(option, enabled)
 	)
 	UI.row(parent, title, toggle)
+	return toggle
 
 
 func _update_graphics(option: StringName, value: Variant) -> void:

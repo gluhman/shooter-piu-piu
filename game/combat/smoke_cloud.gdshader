@@ -1,8 +1,10 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, shadows_disabled, depth_draw_never;
 
+uniform sampler2D scene_depth : hint_depth_texture, repeat_disable, filter_nearest;
 uniform float density : hint_range(0.0, 1.0) = 1.0;
 uniform vec4 tint : source_color = vec4(0.67, 0.70, 0.69, 1.0);
+instance uniform float puff_seed = 0.0;
 
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -27,10 +29,17 @@ void vertex() {
 
 void fragment() {
 	vec2 p = UV * 2.0 - 1.0;
-	float seed = fract(NODE_POSITION_WORLD.x * 0.81 + NODE_POSITION_WORLD.z * 0.77);
-	vec2 flow = p * 3.8 + vec2(seed * 18.0, -TIME * 0.29);
-	float billows = noise(flow) * 0.62 + noise(flow * 2.13 + TIME * 0.1) * 0.26 + noise(flow * 4.28) * 0.12;
+	vec2 flow = p * 3.8 + vec2(puff_seed * 18.0, -TIME * 0.29);
+	float billows = noise(flow) * 0.71 + noise(flow * 2.13 + TIME * 0.1) * 0.29;
 	float edge = 1.0 - smoothstep(0.12, 0.91, length(p) + (billows - 0.5) * 0.30);
 	ALBEDO = tint.rgb * mix(0.55, 1.20, billows);
-	ALPHA = density * edge * mix(0.32, 0.81, billows);
+	float opacity = edge * mix(0.36, 0.85, billows);
+	float depth = texture(scene_depth, SCREEN_UV).r;
+	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, depth);
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	ndc.z = depth * 2.0 - 1.0;
+#endif
+	vec4 surface = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
+	float soft_edge = smoothstep(0.0, 0.60, -surface.z / surface.w + VERTEX.z);
+	ALPHA = density * opacity * (1.55 - 0.55 * opacity) * soft_edge;
 }

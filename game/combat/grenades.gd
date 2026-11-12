@@ -13,6 +13,10 @@ const LAUNCH_SPEED := 29.0
 const ROUND_FUSE := 3.0
 const SMOKE_RADIUS: float = Balance.GRENADES.smoke.radius_m
 const SMOKE_TIME: float = Balance.GRENADES.smoke.time_to_full_density_s + Balance.GRENADES.smoke.full_density_duration_s + Balance.GRENADES.smoke.fade_out_s
+const SMOKE_PUFFS := 16
+const SMOKE_MAX_DRIFT := 4.0
+const SMOKE_WIND_COUPLING := 0.65
+const SMOKE_CENTER_HEIGHT := 1.45
 const ROUND_RADIUS := 5.0
 
 class Flight:
@@ -29,6 +33,7 @@ class Flight:
 
 class Cloud:
 	var at: Vector3
+	var wind: Vector3
 	var left: float
 	var age: float
 	var node: Node3D
@@ -40,13 +45,13 @@ var _flights: Dictionary[int, Flight] = {}
 var _clouds: Array[Cloud] = []
 var _requests: Array[Array] = []
 var _cooking: Dictionary[int, float] = {}
-var _detonated: Dictionary[int, bool] = {}
 var _next_id := 1
 var _sync_left := 0.0
 var _puff := QuadMesh.new()
 
 @onready var _match := get_parent()
 @onready var _hud := get_node("../HUD")
+@onready var _sky := get_node("../WorldEnvironment")
 
 
 func request_throw(actor: Node, kind: String, released: bool = false) -> void:
@@ -108,7 +113,6 @@ func reset_round() -> void:
 	_clouds.clear()
 	_requests.clear()
 	_cooking.clear()
-	_detonated.clear()
 
 
 func send_state(peer: int) -> void:
@@ -120,7 +124,7 @@ func send_state(peer: int) -> void:
 
 func obscures(from: Vector3, to: Vector3) -> bool:
 	for cloud in _clouds:
-		var center := cloud.at + Vector3.UP * 1.45
+		var center := _smoke_position(cloud) + Vector3.UP * SMOKE_CENTER_HEIGHT
 		var closest := Geometry3D.get_closest_point_to_segment(center, from, to)
 		var radius := SMOKE_RADIUS * _smoke_growth(cloud.age)
 		if cloud.age >= float(Balance.GRENADES.smoke.time_to_full_density_s) and cloud.left > 1.0 and center.distance_squared_to(closest) < radius * radius:
@@ -167,14 +171,20 @@ func _process(delta: float) -> void:
 			_clouds.remove_at(i)
 			continue
 		cloud.age += delta
-		var growth := _smoke_growth(cloud.age)
-		cloud.material.set_shader_parameter("density", minf(1.0, cloud.left / float(Balance.GRENADES.smoke.fade_out_s)) * growth)
-		for j in cloud.offsets.size():
-			var puff := cloud.node.get_child(j) as MeshInstance3D
-			var offset := cloud.offsets[j] * growth
-			offset.y += sin(cloud.age * 0.85 + j * 1.7) * 0.36 + 0.36
-			puff.position = offset
-			puff.scale = Vector3.ONE * cloud.sizes[j] * growth
+		_update_cloud_visuals(cloud)
+
+
+func _update_cloud_visuals(cloud: Cloud) -> void:
+	var growth := _smoke_growth(cloud.age)
+	cloud.node.global_position = _smoke_position(cloud)
+	cloud.material.set_shader_parameter("density", minf(1.0, cloud.left / float(Balance.GRENADES.smoke.fade_out_s)) * growth)
+	for j in cloud.offsets.size():
+		var puff := cloud.node.get_child(j) as MeshInstance3D
+		var offset := cloud.offsets[j] * growth
+		offset.y += sin(cloud.age * 0.85 + j * 1.7) * 0.36 + 0.36
+		offset += cloud.wind.limit_length(2.0) * (cloud.offsets[j].y - SMOKE_CENTER_HEIGHT) * growth * 0.25
+		puff.position = offset
+		puff.scale = Vector3.ONE * cloud.sizes[j] * growth
 
 
 func _throw(actor: Node, kind: String, released: bool, space: PhysicsDirectSpaceState3D) -> void:
@@ -224,6 +234,8 @@ func _launch(kind: String, actor: Node, at: Vector3, velocity: Vector3, time: fl
 
 @rpc("authority", "reliable")
 func net_launch(id: int, kind: String, at: Vector3, velocity: Vector3, time: float, shooter: int) -> void:
+	if _flights.has(id):
+		return
 	var flight := Flight.new()
 	flight.id = id
 	flight.kind = kind
@@ -283,7 +295,7 @@ func _step(flight: Flight, delta: float, space: PhysicsDirectSpaceState3D, autho
 
 
 func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) -> void:
-	if not _flights.has(id) or _detonated.has(id):
+	if not _flights.has(id):
 		return
 	net_detonate(id, kind, at)
 	for peer in _match.match_peers():
@@ -327,12 +339,10 @@ func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) ->
 
 @rpc("authority", "reliable")
 func net_detonate(id: int, kind: String, at: Vector3) -> void:
-	if _match.round_finished() or _detonated.has(id):
+	if _match.round_finished() or not _flights.has(id):
 		return
-	_detonated[id] = true
-	if _flights.has(id):
-		_flights[id].model.queue_free()
-		_flights.erase(id)
+	_flights[id].model.queue_free()
+	_flights.erase(id)
 	var effects := _match.get_node("Ballistics")
 	if kind == "smoke":
 		net_smoke(at, SMOKE_TIME, 0.0)
@@ -351,31 +361,55 @@ func net_detonate(id: int, kind: String, at: Vector3) -> void:
 
 @rpc("authority", "reliable")
 func net_smoke(at: Vector3, left: float, age: float) -> void:
+	_clouds.append(_make_smoke(at, left, age))
+
+
+func warm_smoke() -> void:
+	var camera := get_viewport().get_camera_3d()
+	if not camera:
+		return
+	var at := camera.global_position - camera.global_basis.z * 5.0 - Vector3.UP
+	var cloud := _make_smoke(at, SMOKE_TIME, 1.8)
+	await RenderingServer.frame_post_draw
+	await get_tree().process_frame
+	cloud.node.queue_free()
+
+
+func _make_smoke(at: Vector3, left: float, age: float) -> Cloud:
 	var cloud := Cloud.new()
 	cloud.node = Node3D.new()
 	cloud.at = at
+	var heading: float = _sky.wind_direction
+	cloud.wind = Vector3(-sin(heading), 0.0, cos(heading)) * _sky.wind_speed
 	cloud.left = left
 	cloud.age = age
 	add_child(cloud.node)
-	cloud.node.global_position = at
 	cloud.material = ShaderMaterial.new()
 	cloud.material.shader = SMOKE_SHADER
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(at)
-	for i in 29:
+	for i in SMOKE_PUFFS:
 		var a := i * 2.399963
-		var r := sqrt(float(i) / 28.0) * 3.0
+		var r := sqrt(float(i) / (SMOKE_PUFFS - 1)) * 3.0
 		cloud.offsets.append(Vector3(cos(a) * r, rng.randf_range(0.55, 2.45), sin(a) * r))
-		cloud.sizes.append(rng.randf_range(3.5, 5.3))
+		cloud.sizes.append(rng.randf_range(3.9, 5.5))
 		var puff := MeshInstance3D.new()
 		puff.mesh = _puff
 		puff.material_override = cloud.material
+		puff.set_instance_shader_parameter("puff_seed", fposmod(float(hash(at)) * 0.001 + i * 0.618, 1.0))
 		puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		puff.extra_cull_margin = 5.0
 		puff.scale = Vector3.ONE * 0.01
 		cloud.node.add_child(puff)
-	_clouds.append(cloud)
+	_update_cloud_visuals(cloud)
+	return cloud
 
 
 func _smoke_growth(age: float) -> float:
 	return maxf(0.05, smoothstep(0.0, float(Balance.GRENADES.smoke.time_to_full_density_s), age))
+
+
+func _smoke_position(cloud: Cloud) -> Vector3:
+	var speed := cloud.wind.length() * SMOKE_WIND_COUPLING
+	var distance := SMOKE_MAX_DRIFT * (1.0 - exp(-speed * cloud.age / SMOKE_MAX_DRIFT))
+	return cloud.at + cloud.wind.normalized() * distance

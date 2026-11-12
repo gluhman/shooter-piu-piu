@@ -1,0 +1,17 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/pyrolux_fx/nodes_3d/pyrolux_explosion_3d.gd" id="1"]
+
+[node name="FragExplosion" type="Node3D"]
+script = ExtResource("1")
+radius = 1.25
+fireball = 21
+smoke = 16
+sparks = 32
+debris = 10
+smoke_time = 2.6
+smoke_opacity = 0.62
+scorch = false
+light_energy = 5.5
+light_range = 9.0
+use_global_wind = false

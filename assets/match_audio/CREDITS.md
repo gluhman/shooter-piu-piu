@@ -1,4 +1,4 @@
-# Звуки движения и попаданий
+# Звуки матча
 
 Основа — [Impact Sounds 1.0 от Kenney](https://kenney.nl/assets/impact-sounds), [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
 
@@ -7,3 +7,5 @@
 Звуки осколочной и светошумовой гранат синтезированы для игры.
 
 Усиленный взрыв использует [запись Explosion #2](../arsenal/CREDITS.md) с добавленными низкочастотным ударом и затуханием.
+
+Фон Dust II использует [Looping Gentle Wind Ambience on an Open Desert Plain](https://freesound.org/people/dhallcomposer/sounds/697217/) от dhallcomposer, [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Стереозапись отфильтрована, зациклена с плавным стыком и сохранена в Ogg Vorbis.

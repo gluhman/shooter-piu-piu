@@ -64,6 +64,10 @@ func _run() -> void:
 		actors.append(_spawn(peers[index], index))
 	if mode == "host":
 		arena._ready_peers.assign([peers[1], peers[2]])
+	var hud := arena.get_node("HUD")
+	if mode == "observer":
+		hud.attach_local(actors[2])
+		hud.set_minimap_layout(arena.get_node("Map"), arena.arena_width())
 	var victim := actors[0]
 	var shooter := actors[1]
 	var map := arena.get_node("Map")
@@ -117,10 +121,12 @@ func _run() -> void:
 		good = good and map._perforated[0].points.size() == 1
 	if mode == "shooter":
 		good = good and local == shooter.score_id() and shooter.gun.ammo_counts().x == int(server[1])
+	if mode == "observer":
+		good = good and hud._minimap._shots.has(shooter.score_id())
 	_write(mode + ".checked", str(good))
 	# Leave transport open until both clients have completed their assertions.
 	await create_timer(0.4).timeout
-	_finish(good, "authoritative health%s replicated" % (" and ammo" if mode == "shooter" else ""))
+	_finish(good, "authoritative health%s replicated" % (" and ammo" if mode == "shooter" else " and minimap shot marker"))
 
 
 func _spawn(peer: int, index: int) -> CharacterBody3D:
@@ -163,5 +169,5 @@ func _finish(good: bool, result: String) -> void:
 	print("PASS " if good else "FAIL ", mode, " ", result)
 	if arena:
 		arena.queue_free()
-		await process_frame
+		await create_timer(0.25).timeout
 	quit(0 if good else 1)

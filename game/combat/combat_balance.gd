@@ -37,6 +37,7 @@ const DATA := {
 		"transport": "ENetMultiplayerPeer",
 		"tick_hz": 60,
 		"snapshot_hz": 30,
+		"pose_recovery_window_s": 0.60,
 		"remote_interpolation_delay_s": 0.05,
 		"hitbox_history_s": 0.25,
 		"max_lag_compensation_s": 0.12,

@@ -3,6 +3,13 @@
 /android/
 /Shooter.app/
 
+# Versioned project instructions override the user-wide ignore rule.
+!AGENTS.md
+
 .DS_Store
 
 /.shooter-build/
+/releases/
+/assets/arena_props/psx/
+/assets/arena_props/oxygen/
+/assets/animations/local/

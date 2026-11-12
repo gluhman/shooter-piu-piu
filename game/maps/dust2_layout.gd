@@ -3,6 +3,8 @@ extends RefCounted
 const WIDTH := 120.0
 const WALL_THICKNESS := 0.65
 const FLOOR_BASE := -3.0
+const MESH_CELL_SIZE := 12.0
+const SCRAP_SKIP_MESH_SIZE := Vector3(1.805, 0.8825, 1.265)
 
 class Sector:
 	var bounds: Rect2
@@ -50,6 +52,8 @@ var _trim: StandardMaterial3D
 var _wood: StandardMaterial3D
 var _shade: StandardMaterial3D
 var _patrol: Array[Vector3] = []
+var _shell: Array[StaticBody3D] = []
+var _occluder_walls: Array[StaticBody3D] = []
 
 
 func _init(map: Node3D) -> void:
@@ -57,13 +61,15 @@ func _init(map: Node3D) -> void:
 
 
 func build(width: float) -> Array[Transform3D]:
-	_stone = _map._world_mat("concrete", Color(0.89, 0.73, 0.52), 0.0, 0.58, 0.66, false)
-	_ground = _map._world_mat("concrete", Color(0.83, 0.71, 0.51), 0.0, 0.62, 0.8, false)
+	_stone = _map._world_mat("dust2/sandstone", Color(1.0, 0.96, 0.89), 0.0, 0.34, 0.76, false)
+	_ground = _map._world_mat("dust2/sand", Color(0.95, 1.0, 1.0), 0.0, 0.38, 0.52, false)
 	_trim = _map._world_mat("concrete", Color(0.93, 0.81, 0.62), 0.0, 0.75, 0.6, false)
 	_shade = _map._world_mat("concrete", Color(0.65, 0.55, 0.41), 0.0, 0.7, 0.8, false)
 	_wood = _map._world_mat("planks", Color(0.64, 0.49, 0.32), 0.0, 0.86, 0.85, true)
 	if width < 70.0:
-		return _build_compact(width)
+		var compact_supplies := _build_compact(width)
+		_batch_shell()
+		return compact_supplies
 	_add_sectors()
 	for sector in _sectors:
 		_floor(sector)
@@ -82,6 +88,8 @@ func build(width: float) -> Array[Transform3D]:
 	for point in PATROL:
 		_patrol.append(_position(point, 0.2))
 	_fit_full_layout(width, supplies)
+	_add_wall_occluder()
+	_batch_shell()
 	return supplies
 
 
@@ -209,7 +217,7 @@ func _floor(sector: Sector) -> void:
 	if sector.near_height == sector.far_height:
 		var height := sector.near_height - FLOOR_BASE
 		var center := sector.bounds.get_center()
-		_map._add_box(Vector3(center.x, FLOOR_BASE + height * 0.5, center.y),
+		_shell_box(Vector3(center.x, FLOOR_BASE + height * 0.5, center.y),
 			Vector3(sector.bounds.size.x, height, sector.bounds.size.y), _ground)
 		return
 	var top := PackedVector3Array()
@@ -271,14 +279,64 @@ func _wall(sector: Sector, axis: int, side: int, edge: float, start: float, end:
 	size[1 - axis] = end - start + WALL_THICKNESS
 	var top := maxf(sector.near_height, sector.far_height) + 4.8
 	var height := top - FLOOR_BASE
-	_map._add_box(Vector3(center.x, FLOOR_BASE + height * 0.5, center.y),
-		Vector3(size.x, height, size.y), _stone, 0.0, "brick")
+	var wall := _shell_box(Vector3(center.x, FLOOR_BASE + height * 0.5, center.y),
+		Vector3(size.x, height, size.y), _stone, "brick")
+	if end - start >= 4.0:
+		_occluder_walls.append(wall)
 	if end - start >= 5.0:
 		size[axis] += 0.18
-		_map._add_box(Vector3(center.x, top, center.y), Vector3(size.x, 0.18, size.y), _trim)
+		_shell_box(Vector3(center.x, top, center.y), Vector3(size.x, 0.18, size.y), _trim)
 		var band := size
 		band[axis] = WALL_THICKNESS + 0.1
-		_map._add_box(Vector3(center.x, top - 0.75, center.y), Vector3(band.x, 0.09, band.y), _trim)
+		_shell_box(Vector3(center.x, top - 0.75, center.y), Vector3(band.x, 0.09, band.y), _trim)
+
+
+func _shell_box(center: Vector3, size: Vector3, material: Material, surface := "concrete") -> StaticBody3D:
+	var body: StaticBody3D = _map._add_box(center, size, material, 0.0, surface)
+	_shell.append(body)
+	return body
+
+
+func _add_wall_occluder() -> void:
+	var vertices := PackedVector3Array()
+	var indices := PackedInt32Array()
+	for body in _occluder_walls:
+		var visual := body.get_child(0) as MeshInstance3D
+		var transform := body.transform * visual.transform
+		for vertex in visual.mesh.get_faces():
+			indices.append(vertices.size())
+			vertices.append(transform * (vertex * 0.98))
+	if indices.is_empty():
+		return
+	var occluder := ArrayOccluder3D.new()
+	occluder.set_arrays(vertices, indices)
+	var instance := OccluderInstance3D.new()
+	instance.occluder = occluder
+	_map.add_child(instance)
+	_map.get_viewport().use_occlusion_culling = true
+
+
+func _batch_shell() -> void:
+	var cells: Dictionary[Vector2i, Dictionary] = {}
+	for body in _shell:
+		var visual := body.get_child(0) as MeshInstance3D
+		var material := visual.mesh.surface_get_material(0)
+		var cell := Vector2i(floori(body.position.x / MESH_CELL_SIZE), floori(body.position.z / MESH_CELL_SIZE))
+		var surfaces: Dictionary = cells.get_or_add(cell, {})
+		if not surfaces.has(material):
+			var surface := SurfaceTool.new()
+			surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+			surface.set_material(material)
+			surfaces[material] = surface
+		var batch: SurfaceTool = surfaces[material]
+		batch.append_from(visual.mesh, 0, body.transform * visual.transform)
+		body.remove_child(visual)
+		visual.queue_free()
+	for surfaces in cells.values():
+		for surface: SurfaceTool in surfaces.values():
+			var mesh := MeshInstance3D.new()
+			mesh.mesh = surface.commit()
+			_map.add_child(mesh)
 
 
 func _landmarks() -> void:
@@ -328,10 +386,13 @@ func _site_b() -> void:
 
 
 func _long_approach() -> void:
-	var dumpster := _position(Vector2(37.9, 7.8), 0.9)
-	var blue: StandardMaterial3D = _map._container_mat(Color("#3e7692"))
-	_map._add_box(dumpster, Vector3(3.7, 1.8, 2.5), blue, 0.0, "metal")
-	_map._add_box(dumpster + Vector3.UP * 0.87, Vector3(3.85, 0.17, 2.65), blue, 0.0, "metal")
+	var dumpster_size := Vector3(3.7, 1.855, 2.5)
+	var scene := load("res://assets/arena_props/junkyard_scrap_skip_01.glb") as PackedScene
+	var dumpster := scene.instantiate() as Node3D
+	dumpster.scale = dumpster_size / SCRAP_SKIP_MESH_SIZE
+	dumpster.position.y = -dumpster_size.y * 0.5
+	var center := _position(Vector2(37.9, 7.8), dumpster_size.y * 0.5)
+	_map._add_box(center, dumpster_size, null, 0.0, "metal", null, dumpster)
 	_crate(Vector2(62.5, 4.2), Vector3(2.2, 1.47, 1.6))
 	_wall_sign(Vector2(42, 6.035), 3.0, "A →")
 

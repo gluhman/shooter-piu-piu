@@ -13,33 +13,34 @@ var _reserve: Label
 var _meter: ProgressBar
 var _fill: StyleBoxFlat
 var _status: Label
+var _accuracy: Label
 var _reload_prompt := false
 
 
 func _ready() -> void:
-	add_theme_stylebox_override(&"panel", UI.style(Color("#121916f2"), UI.LINE, 14, 11, 11))
+	add_theme_stylebox_override(&"panel", UI.style(Color("#111816eb"), UI.LINE, 8, 6, 7))
 	var layout := VBoxContainer.new()
 	layout.mouse_filter = MOUSE_FILTER_IGNORE
-	layout.add_theme_constant_override(&"separation", 4)
+	layout.add_theme_constant_override(&"separation", 2)
 	add_child(layout)
-	_title = UI.label(layout, "", 20, UI.INK, true)
+	_title = UI.label(layout, "", 16, UI.INK, true)
 	_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_mode = UI.label(layout, "", 13, UI.MUTED)
+	_mode = UI.label(layout, "", 12, UI.MUTED)
 
 	_counts = HBoxContainer.new()
 	_counts.mouse_filter = MOUSE_FILTER_IGNORE
-	_counts.add_theme_constant_override(&"separation", 16)
+	_counts.add_theme_constant_override(&"separation", 9)
 	layout.add_child(_counts)
-	_magazine = _add_counter("В магазине", 32, true)
+	_magazine = _add_counter("Магазин", 25, true)
 	var divider := VSeparator.new()
 	divider.mouse_filter = MOUSE_FILTER_IGNORE
 	_counts.add_child(divider)
-	_reserve = _add_counter("В запасе", 24)
+	_reserve = _add_counter("Запас", 19)
 
 	_meter = ProgressBar.new()
 	_meter.mouse_filter = MOUSE_FILTER_IGNORE
 	_meter.show_percentage = false
-	_meter.custom_minimum_size.y = 5
+	_meter.custom_minimum_size.y = 4
 	var track := UI.style(Color("#2f3b33"), Color.TRANSPARENT, 0, 0, 3)
 	track.set_border_width_all(0)
 	_fill = track.duplicate() as StyleBoxFlat
@@ -47,7 +48,9 @@ func _ready() -> void:
 	_meter.add_theme_stylebox_override(&"background", track)
 	_meter.add_theme_stylebox_override(&"fill", _fill)
 	layout.add_child(_meter)
-	_status = UI.label(layout, "", 13, UI.MUTED, true)
+	_accuracy = UI.label(layout, "", 11, UI.MUTED)
+	_accuracy.hide()
+	_status = UI.label(layout, "", 12, UI.MUTED, true)
 	minimum_size_changed.connect(_fit_to_content)
 	GameSettings.controls_changed.connect(_refresh_reload_prompt)
 
@@ -62,7 +65,7 @@ func _add_counter(caption: String, size: int, with_capacity := false) -> Label:
 	column.size_flags_horizontal = SIZE_EXPAND_FILL
 	column.add_theme_constant_override(&"separation", 0)
 	_counts.add_child(column)
-	UI.label(column, caption, 12, UI.MUTED)
+	UI.label(column, caption, 11, UI.MUTED)
 	var numbers := HBoxContainer.new()
 	numbers.mouse_filter = MOUSE_FILTER_IGNORE
 	numbers.size_flags_vertical = SIZE_EXPAND_FILL
@@ -80,6 +83,8 @@ func _add_counter(caption: String, size: int, with_capacity := false) -> Label:
 
 func show_weapon(title: String, mode: String, loaded: int, reserve: int, capacity: int,
 		reload_progress: float, melee_range: float) -> void:
+	if _title.text != title or capacity == 0:
+		_accuracy.hide()
 	_title.text = title
 	_mode.text = mode.left(1).to_upper() + mode.substr(1)
 	_counts.visible = capacity > 0
@@ -117,6 +122,15 @@ func show_weapon(title: String, mode: String, loaded: int, reserve: int, capacit
 		_fill.bg_color = tone
 	_status.add_theme_color_override(&"font_color", UI.ACCENT if reload_progress >= 0.0 else tone)
 	_status.visible = not _status.text.is_empty()
+
+
+func show_accuracy(distance: float, spread: float, at_limit: bool) -> void:
+	var radius := roundi(tan(deg_to_rad(spread)) * distance * 100.0)
+	var caption := "Предел" if at_limit else "Цель"
+	var text := "%s %d м · ±%d см" % [caption, roundi(distance), radius]
+	if _accuracy.text != text:
+		_accuracy.text = text
+	_accuracy.show()
 
 
 func set_reload_progress(progress: float) -> void:

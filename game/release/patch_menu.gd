@@ -1,0 +1,146 @@
+extends AcceptDialog
+
+const REPOSITORY := "gluhman/shooter-piu-piu"
+const RELEASES := "https://api.github.com/repos/" + REPOSITORY + "/releases?per_page=100"
+const DOWNLOAD_PREFIX := "https://github.com/" + REPOSITORY + "/releases/download/"
+
+var _choose: Button
+var _check: Button
+var _download: Button
+var _picker: FileDialog
+var _http: HTTPRequest
+var _candidate: Dictionary = {}
+
+
+func _ready() -> void:
+	title = "Обновление игры"
+	min_size = Vector2i(500, 150)
+	ok_button_text = "Закрыть"
+	_choose = add_button("Выбрать .pck", true)
+	_check = add_button("Проверить GitHub", true)
+	_download = add_button("Скачать и установить", true)
+	_choose.pressed.connect(_picker_open)
+	_check.pressed.connect(_find_update)
+	_download.pressed.connect(_download_update)
+	_download.hide()
+	_picker = FileDialog.new()
+	_picker.title = "Выберите патч Shooter"
+	_picker.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_picker.access = FileDialog.ACCESS_FILESYSTEM
+	_picker.use_native_dialog = true
+	_picker.add_filter("*.pck", "Патч Shooter")
+	add_child(_picker)
+	_picker.file_selected.connect(_install_local)
+	_http = HTTPRequest.new()
+	_http.use_threads = true
+	add_child(_http)
+
+
+func open() -> void:
+	if not visible:
+		_candidate.clear()
+		_download.hide()
+		dialog_text = "Версия %s. Установка патча перезапустит игру." % ShooterRelease.version
+		if not ShooterRelease.patch_notice.is_empty():
+			dialog_text += "\n" + ShooterRelease.patch_notice
+		popup_centered()
+
+
+func _picker_open() -> void:
+	_picker.popup_centered_ratio(0.65)
+
+
+func _install_local(source: String) -> void:
+	_set_busy(true, "Проверяем файлы патча…")
+	await get_tree().process_frame
+	var path := ShooterRelease.make_patch_slot()
+	if path.is_empty():
+		_set_busy(false, "Не удалось создать папку патча.")
+		return
+	var error := ShooterRelease.copy_patch(source, path)
+	_finish_install(path, error)
+
+
+func _find_update() -> void:
+	_candidate.clear()
+	_download.hide()
+	_set_busy(true, "Ищем обновления на GitHub…")
+	var response := await _request(RELEASES, "", 16 * 1024 * 1024, 20.0)
+	if response.code != 200:
+		_set_busy(false, "Не удалось проверить GitHub. Можно выбрать файл патча вручную.")
+		return
+	var releases: Variant = JSON.parse_string(response.body.get_string_from_utf8())
+	if not releases is Array:
+		_set_busy(false, "GitHub вернул неожиданный ответ.")
+		return
+	_candidate = _latest_patch(releases)
+	_download.visible = not _candidate.is_empty()
+	var message := "На GitHub нет нового патча для сборки %s." % ShooterRelease.base_version
+	if not _candidate.is_empty():
+		message = "На GitHub доступна версия %s. После установки игра перезапустится." % _candidate.version
+	_set_busy(false, message)
+
+
+func _latest_patch(releases: Array) -> Dictionary:
+	var pattern := RegEx.create_from_string("^Shooter-" + ShooterRelease.base_version.replace(".", "\\.") + "-to-([0-9]+\\.[0-9]+\\.([0-9]+))\\.pck$")
+	var best: Dictionary = {}
+	for release: Variant in releases:
+		if not release is Dictionary or release.get("draft", false) or release.get("prerelease", false):
+			continue
+		var urls := {}
+		for asset: Variant in release.get("assets", []):
+			var url: String = asset.get("browser_download_url", "")
+			if url.begins_with(DOWNLOAD_PREFIX):
+				urls[asset.name] = url
+		for name: String in urls:
+			var parsed := pattern.search(name)
+			if parsed == null or not urls.has(name + ".cfg"):
+				continue
+			var target := parsed.get_string(1)
+			var revision := int(parsed.get_string(2))
+			if ShooterRelease.can_install_version(target) and revision > best.get("revision", -1):
+				best = {"version": target, "revision": revision, "pck": urls[name], "cfg": urls[name + ".cfg"]}
+	return best
+
+
+func _download_update() -> void:
+	_set_busy(true, "Скачиваем патч %s с GitHub…" % _candidate.version)
+	var path := ShooterRelease.make_patch_slot()
+	if path.is_empty():
+		_set_busy(false, "Не удалось создать папку патча.")
+		return
+	var response := await _request(_candidate.cfg, path + ".cfg", 64 * 1024, 30.0)
+	if response.code == 200:
+		response = await _request(_candidate.pck, path, 1024 * 1024 * 1024, 600.0)
+	if response.code != 200:
+		_finish_install(path, "Не удалось скачать патч. Попробуйте ещё раз.")
+		return
+	_set_busy(true, "Проверяем скачанный патч…")
+	await get_tree().process_frame
+	_finish_install(path, "")
+
+
+func _request(url: String, path: String, limit: int, timeout: float) -> Dictionary:
+	_http.download_file = path
+	_http.body_size_limit = limit
+	_http.timeout = timeout
+	if _http.request(url, ["Accept: application/vnd.github+json"] if path.is_empty() else []) != OK:
+		return {"code": 0}
+	var response: Array = await _http.request_completed
+	return {"code": response[1] if response[0] == HTTPRequest.RESULT_SUCCESS else 0, "body": response[3]}
+
+
+func _finish_install(path: String, error: String) -> void:
+	if error.is_empty():
+		error = ShooterRelease.activate_patch(path)
+	if not error.is_empty():
+		ShooterRelease.discard_patch_slot(path)
+		_set_busy(false, error)
+
+
+func _set_busy(busy: bool, message: String) -> void:
+	dialog_text = message
+	_choose.disabled = busy
+	_check.disabled = busy
+	_download.disabled = busy
+	get_ok_button().disabled = busy

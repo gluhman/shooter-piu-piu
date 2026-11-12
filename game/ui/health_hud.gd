@@ -1,5 +1,6 @@
 extends CanvasLayer
 
+const MINIMAP := preload("res://game/ui/minimap.gd")
 const INVENTORY_HUD := preload("res://game/ui/inventory_hud.gd")
 const UI := preload("res://game/ui/menu_ui.gd")
 const HEALTH_GOOD := Color("#b7d884")
@@ -13,6 +14,7 @@ var _health_fill: StyleBoxFlat
 var _health_value: Label
 var _health_notice: HBoxContainer
 var _medkit_hint: Label
+var _minimap: Control
 var _flash: ColorRect
 var _blind: ColorRect
 var _blind_time := 0.0
@@ -21,7 +23,7 @@ var _blind_peak := 0.0
 var _armor_value: Label
 var _armor_bar: ProgressBar
 var _death: Label
-var _score_panel: VBoxContainer
+var _score_panel: PanelContainer
 var _score: Label
 var _round_rules: HBoxContainer
 var _round_clock: Label
@@ -46,7 +48,9 @@ func _ready() -> void:
 func attach_local(player: Node) -> void:
 	if _player == player:
 		return
+	detach_local()
 	_player = player
+	_minimap.attach_player(player)
 	_last_health = player.health
 	_health_panel.show()
 	_score_panel.show()
@@ -58,7 +62,13 @@ func attach_local(player: Node) -> void:
 
 
 func detach_local() -> void:
+	if is_instance_valid(_player):
+		_player.health_changed.disconnect(_on_health)
+		_player.respawned.disconnect(_on_respawn)
+		_player.inventory_changed.disconnect(_refresh_medkit_hint)
 	_player = null
+	_minimap.attach_player(null)
+	_inventory_hud.attach_player(null)
 	_health_panel.hide()
 	_score_panel.hide()
 	_inventory_hud.hide()
@@ -66,6 +76,18 @@ func detach_local() -> void:
 	$Hint.hide()
 	$Crosshair.hide()
 	hide_host_ip()
+
+
+func set_minimap_layout(map: Node3D, width: float) -> void:
+	_minimap.set_layout(map, width)
+
+
+func record_minimap_shot(shooter: int, position: Vector3) -> void:
+	if not is_instance_valid(_player):
+		return
+	var local: int = _player.score_id()
+	if shooter != local and not get_parent().same_team(local, shooter):
+		_minimap.record_shot(shooter, position)
 
 
 func show_host_ip(addresses: PackedStringArray) -> void:
@@ -160,6 +182,7 @@ func on_frag(killer_id: int, victim_id: int) -> void:
 
 
 func reset_round() -> void:
+	_minimap.clear_shots()
 	_round_scores.clear()
 	_death.hide()
 	_loot_notice.hide()
@@ -226,7 +249,7 @@ func kills_for(id: int) -> int:
 
 func _refresh_score() -> void:
 	var score := _score_for(Net.local_id())
-	_score.text = "Убийства   %d        Смерти   %d" % [score.x, score.y]
+	_score.text = "Убийства %d  ·  Смерти %d" % [score.x, score.y]
 
 
 func _update_hint() -> void:
@@ -259,8 +282,9 @@ func _build() -> void:
 	add_child(_flash)
 
 	_build_health_panel()
-
 	_build_round_panel()
+	_minimap = MINIMAP.new()
+	add_child(_minimap)
 
 	_net_label = Label.new()
 	_net_label.visible = false
@@ -296,79 +320,89 @@ func _build() -> void:
 
 
 func _build_round_panel() -> void:
-	_score_panel = VBoxContainer.new()
+	_score_panel = PanelContainer.new()
 	_score_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_score_panel.offset_left = -210
-	_score_panel.offset_right = 210
 	_score_panel.offset_top = 16
-	_score_panel.add_theme_constant_override("separation", 4)
+	_score_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_score_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_score_panel.add_theme_stylebox_override(&"panel", UI.style(Color("#111816eb"), UI.LINE, 9, 5, 7))
 	_score_panel.hide()
 	add_child(_score_panel)
-	_score = _round_label(_score_panel, 22, UI.INK)
-
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_constant_override("separation", 12)
+	_score_panel.add_child(row)
+	_score = UI.label(row, "", 14, UI.INK, true)
 	_round_rules = HBoxContainer.new()
-	_round_rules.alignment = BoxContainer.ALIGNMENT_CENTER
-	_round_rules.add_theme_constant_override("separation", 22)
+	_round_rules.add_theme_constant_override("separation", 12)
 	_round_rules.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_round_rules.hide()
-	_score_panel.add_child(_round_rules)
-	_round_clock = _round_label(_round_rules, 18, UI.INK)
-	_kill_limit = _round_label(_round_rules, 17, UI.MUTED)
-
-
-func _round_label(parent: Control, font_size: int, color: Color) -> Label:
-	var label := UI.label(parent, "", font_size, color, true)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_color_override(&"font_outline_color", Color(0.0, 0.0, 0.0, 0.88))
-	label.add_theme_constant_override(&"outline_size", 5)
-	return label
+	row.add_child(_round_rules)
+	_round_clock = UI.label(_round_rules, "", 14, UI.ACCENT, true)
+	_kill_limit = UI.label(_round_rules, "", 13, UI.MUTED)
+	_score_panel.minimum_size_changed.connect(func() -> void:
+		var width := _score_panel.get_combined_minimum_size().x
+		_score_panel.offset_left = -width * 0.5
+		_score_panel.offset_right = width * 0.5
+	)
 
 
 func _build_health_panel() -> void:
 	_health_panel = PanelContainer.new()
-	_health_panel.position = Vector2(24, 24)
-	_health_panel.custom_minimum_size.x = 232
+	_health_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	_health_panel.offset_left = 16
+	_health_panel.offset_bottom = -16
+	_health_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_health_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_health_panel.add_theme_stylebox_override(&"panel", UI.style(Color(0.05, 0.07, 0.06, 0.94), UI.LINE, 12, 10))
+	_health_panel.add_theme_stylebox_override(&"panel", UI.style(Color("#111816eb"), UI.LINE, 8, 6, 7))
 	_health_panel.hide()
 	add_child(_health_panel)
 
 	var content := VBoxContainer.new()
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_theme_constant_override(&"separation", 7)
+	content.add_theme_constant_override(&"separation", 4)
 	_health_panel.add_child(content)
-	_health_value = _add_status_header(content, "Здоровье")
-	_health_bar = _add_status_bar(content, "Здоровье", Color("#34403a"), HEALTH_GOOD)
+	var stats := HBoxContainer.new()
+	stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stats.add_theme_constant_override(&"separation", 12)
+	content.add_child(stats)
+	var health := _status_column(stats)
+	_health_value = _add_status_header(health, "Здоровье")
+	_health_bar = _add_status_bar(health, "Здоровье", Color("#34403a"), HEALTH_GOOD)
 	_health_fill = _health_bar.get_theme_stylebox(&"fill") as StyleBoxFlat
-	_armor_value = _add_status_header(content, "Броня")
-	_armor_bar = _add_status_bar(content, "Броня", Color("#283745"), ARMOR_BLUE)
+	var armor := _status_column(stats)
+	_armor_value = _add_status_header(armor, "Броня")
+	_armor_bar = _add_status_bar(armor, "Броня", Color("#283745"), ARMOR_BLUE)
 
 	_health_notice = HBoxContainer.new()
 	_health_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_child(_health_notice)
-	var warning := UI.label(_health_notice, "Мало здоровья", 13, HEALTH_CRITICAL, true)
+	var warning := UI.label(_health_notice, "Мало здоровья", 12, HEALTH_CRITICAL, true)
 	warning.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_medkit_hint = UI.label(_health_notice, "", 13, UI.INK)
+	_medkit_hint = UI.label(_health_notice, "", 12, UI.INK)
 	_health_notice.hide()
-	_health_panel.minimum_size_changed.connect(_health_panel.reset_size)
+	_health_panel.minimum_size_changed.connect(func() -> void:
+		_health_panel.offset_top = _health_panel.offset_bottom - _health_panel.get_combined_minimum_size().y
+	)
+
+
+func _status_column(parent: HBoxContainer) -> VBoxContainer:
+	var column := VBoxContainer.new()
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.custom_minimum_size.x = 82
+	column.add_theme_constant_override(&"separation", 1)
+	parent.add_child(column)
+	return column
 
 
 func _add_status_header(content: VBoxContainer, title: String) -> Label:
-	var header := HBoxContainer.new()
-	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(header)
-	var name_label := UI.label(header, title, 15, UI.MUTED)
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var value := UI.label(header, "", 21, UI.INK, true)
-	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	return value
-
+	UI.label(content, title, 12, UI.MUTED)
+	return UI.label(content, "", 18, UI.INK, true)
 
 func _add_status_bar(content: VBoxContainer, title: String, track_color: Color, fill_color: Color) -> ProgressBar:
 	var bar := ProgressBar.new()
 	bar.accessibility_name = title
-	bar.custom_minimum_size.y = 10
+	bar.custom_minimum_size.y = 4
 	bar.show_percentage = false
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var track := UI.style(track_color, Color.TRANSPARENT, 0, 0, 3)

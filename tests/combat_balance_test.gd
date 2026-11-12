@@ -19,6 +19,7 @@ func _initialize() -> void:
 func _run() -> void:
 	arena = load("res://game/match/arena.tscn").instantiate()
 	root.add_child(arena)
+	arena.combat_seed = 45821
 	arena.set_process(false)
 	arena.set_physics_process(false)
 	ballistics = arena.get_node("Ballistics")
@@ -188,26 +189,27 @@ func _run() -> void:
 
 	await _check_aim_alignment()
 	await _check_projectile_flight()
+	await _check_ballistic_aim()
 	_check_hurtbox_lifetime()
 	arena.queue_free()
-	await process_frame
+	await create_timer(0.25).timeout
 	print("Combat balance test failures: ", failures)
 	quit(0 if failures == 0 else 1)
 
 
 func _check_hurtbox_lifetime() -> void:
 	var hurtboxes: Node3D = target._hurtboxes
-	var skeleton: Skeleton3D = target._skeleton
+	var pose: SkeletonModifier3D = target._pose
 	var offset := Vector3(2.0, 0.0, 1.0)
 	var center: Vector3 = hurtboxes.center("chest")
 	arena.remove_child(target)
-	var disconnected := not skeleton.skeleton_updated.is_connected(hurtboxes.update_pose)
-	skeleton.skeleton_updated.emit()
+	var disconnected := not pose.modification_processed.is_connected(hurtboxes.update_pose)
+	pose.modification_processed.emit()
 	hurtboxes.update_pose()
 	target.position += offset
 	arena.add_child(target)
-	skeleton.skeleton_updated.emit()
-	var reconnected := skeleton.skeleton_updated.is_connected(hurtboxes.update_pose)
+	pose.modification_processed.emit()
+	var reconnected := pose.modification_processed.is_connected(hurtboxes.update_pose)
 	_check("Hurtboxes detach and resume tracking on re-entry", disconnected and reconnected
 		and (hurtboxes.center("chest") as Vector3).is_equal_approx(center + offset))
 
@@ -219,6 +221,7 @@ func _check_aim_alignment() -> void:
 	camera.rotation = Vector3.ZERO
 	var gun: Node3D = shooter.gun
 	var aligned := true
+	var tighter_aim := true
 	for distance: float in [0.32, 0.85, 2.0, 12.0]:
 		var point := camera.global_position + Vector3.FORWARD * distance
 		var wall := _wall(point + Vector3.FORWARD * 0.05, Vector3(3.0, 3.0, 0.1))
@@ -227,11 +230,16 @@ func _check_aim_alignment() -> void:
 			if id == "knife":
 				continue
 			gun.equip(id)
+			var hip_spread: float = gun._current_spread()
 			for aim: float in [0.0, 0.5, 1.0]:
 				shooter.aiming = aim > 0.0
 				gun._aim_amount = aim
-				gun.update_pose(0.0)
-				var barrel: Transform3D = gun._muzzle.global_transform
+				gun._apply_view(0.0, false)
+				if aim == 1.0:
+					tighter_aim = tighter_aim and gun._current_spread() < hip_spread
+				var sight: Transform3D = camera.global_transform
+				var view: Transform3D = gun._converge_view(gun._view.global_transform, sight, gun._sight_target(sight))
+				var barrel: Transform3D = view * gun._muzzle.transform
 				var forward := -barrel.basis.z.normalized()
 				var hit: Dictionary = ballistics.combat_ray(shooter, barrel.origin, barrel.origin + forward * 20.0)
 				var correct: bool = hit.get("collider") == wall and point.distance_to(hit.get("position", Vector3.INF)) < 0.001
@@ -241,24 +249,64 @@ func _check_aim_alignment() -> void:
 		wall.queue_free()
 		await _flush_physics()
 	_check("Barrel and centered aim at near and distant walls", aligned)
+	_check("Aiming tightens the spread of every ranged weapon", tighter_aim)
 
-	shooter.aiming = false
 	gun.equip("ak47")
+	shooter.aiming = true
+	gun._aim_amount = 1.0
 	var point := camera.global_position + Vector3.FORWARD * 0.85
 	var wall := _wall(point + Vector3.FORWARD * 0.05, Vector3(3.0, 3.0, 0.1))
 	await _flush_physics()
+	var spread: float = gun._current_spread()
 	gun._try_fire()
 	var shot: Dictionary = ballistics._pending.back() if not ballistics._pending.is_empty() else {}
 	if shot.is_empty():
-		_check("Live shot uses the aligned barrel", false)
+		_check("Live ADS shot uses the aligned barrel", false)
 	else:
 		var barrel: Transform3D = shot.barrel
 		var direction: Vector3 = shot.directions[0]
 		var centered := (point - barrel.origin).normalized().dot(-barrel.basis.z.normalized())
-		_check("Live shot uses the aligned barrel", centered > 0.99999
-			and direction.dot(-barrel.basis.z.normalized()) >= cos(deg_to_rad(4.2)))
+		_check("Live ADS shot uses the aligned barrel", centered > 0.99999
+			and direction.dot(-barrel.basis.z.normalized()) >= cos(deg_to_rad(spread + 0.25)))
+	shooter.aiming = false
 	ballistics._pending.clear()
 	wall.queue_free()
+
+
+func _check_ballistic_aim() -> void:
+	var eye := Vector3(0.0, 2.4, 0.0)
+	var muzzle := Vector3(0.18, 2.25, -0.55)
+	for distance: float in [10.0, 35.0, 65.0]:
+		var point := eye + Vector3.FORWARD * distance
+		var wall := _wall(point + Vector3.FORWARD * 0.05, Vector3(10.0, 4.0, 0.1))
+		await _flush_physics()
+		for motion: Vector3 in [Vector3.ZERO, Vector3(4.0, 0.0, 0.0)]:
+			shooter.velocity = motion
+			var old_error := _ballistic_aim_error(eye, muzzle, point, (point - muzzle).normalized())
+			var direction: Vector3 = ballistics.aim_direction("ak47", muzzle, point, shooter.shot_motion())
+			var error := _ballistic_aim_error(eye, muzzle, point, direction)
+			print("AK-47 at ", distance, " m, lateral ", motion.x, " m/s: ",
+				snappedf(old_error * 100.0, 0.01), " → ", snappedf(error * 100.0, 0.01), " cm")
+			_check("Ballistic aim at %d m, lateral %d m/s" % [distance, motion.x], error < 0.01)
+		wall.queue_free()
+		await _flush_physics()
+	shooter.velocity = Vector3.ZERO
+
+
+func _ballistic_aim_error(eye: Vector3, muzzle: Vector3, point: Vector3, direction: Vector3) -> float:
+	var barrel := Transform3D(Basis.IDENTITY, muzzle)
+	var id: int = ballistics._next_id
+	ballistics.queue_shot("ak47", weapons.ak47, shooter, barrel, 0.15, eye, PackedVector3Array([direction]))
+	var step := 1.0 / Engine.physics_ticks_per_second
+	ballistics._launch(ballistics._pending.pop_front(), arena.get_world_3d().direct_space_state)
+	var projectile = ballistics._shots.get(id)
+	if projectile == null:
+		return INF
+	for iteration in 30:
+		ballistics._physics_process(step)
+		if not ballistics._shots.has(id):
+			return projectile.position.distance_to(point)
+	return INF
 
 
 func _check_projectile_flight() -> void:

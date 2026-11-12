@@ -1,5 +1,7 @@
 extends Node3D
 
+const ROUND_OVERVIEW := preload("res://game/ui/round_overview.gd")
+
 const MAX_BOTS := 10
 const PLAYER_SCENE := preload("res://game/actors/player.tscn")
 const CLASSIC_WEAPONS := preload("res://game/combat/classic_weapons.gd")
@@ -12,7 +14,9 @@ const TIME_LIMITS := [0, 60, 180, 300, 600, 900, 1200, 1800, 3600]
 const KILL_LIMITS := [0, 1, 5, 10, 15, 20, 30, 50, 100]
 const Balance := preload("res://game/combat/combat_balance.gd")
 const POSE_INTERVAL: float = 1.0 / Balance.NETWORK.snapshot_hz
-const ARENA_HOURS := [13.0, 9.5, 16.0, 15.5, 14.0]
+const ARENA_HOURS := [13.0, 9.5, 16.0, 15.5, 14.0, 15.0]
+const ARENA_WIND := [Vector2(25, 1.0), Vector2(-65, 0.75), Vector2(120, 1.2),
+	Vector2(-35, 0.9), Vector2(-105, 2.0), Vector2(60, 0.8)]
 const MIN_RESPAWN_DISTANCE := 12.0
 const DIFFICULTY_NAMES := ["Легко", "Обычно", "Сложно"]
 const WEAPON_SETS := [
@@ -65,6 +69,9 @@ var _room_password := ""
 var _owner_token := ""
 
 
+var _round_overview: Node3D
+
+
 func _ready() -> void:
 	if not Balance.validate():
 		push_error("Invalid combat balance preset")
@@ -95,8 +102,16 @@ func _ready() -> void:
 
 func _apply_graphics() -> void:
 	$WorldEnvironment/SunLight.shadow_enabled = GameSettings.shadows
+	$WorldEnvironment/SunLight.directional_shadow_max_distance = GameSettings.shadow_distance
+	$WorldEnvironment/SunLight.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS \
+		if GameSettings.shadow_cascades == 1 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	$WorldEnvironment/MoonLight.shadow_enabled = false
 	$WorldEnvironment.environment.ssao_enabled = GameSettings.ambient_occlusion
+
+
+func prepare_startup_resources() -> void:
+	await $Map.preload_textures(map_id)
+	await CLASSIC_WEAPONS.prepare(get_tree(), ["ak47"])
 
 
 func match_peers() -> Array[int]:
@@ -283,7 +298,12 @@ func net_prepare_next_map(revision: int) -> void:
 
 
 func _clear_match_map() -> void:
+	_stop_overview()
+	_load_token += 1
+	_navigation_pending = false
 	_started = false
+	$Ambience.stop()
+	$Ambience.stream = null
 	_ready_peers.clear()
 	$HUD/WeaponSelect.hide_for_results()
 	$HUD/MatchMenu.close()
@@ -338,6 +358,7 @@ func _reload_main_menu() -> void:
 
 @rpc("authority", "reliable")
 func net_restart() -> void:
+	_stop_overview()
 	$HUD/WeaponSelect.close_armory()
 	var finished := round_finished()
 	_finish_reason = ""
@@ -355,6 +376,7 @@ func net_restart() -> void:
 		bot.restart_round()
 	_reset_clock()
 	GameSettings.set_match_audio_enabled(true)
+	_play_ambience()
 	var local := combatant(Net.local_id())
 	if finished and local:
 		if local.control_enabled:
@@ -608,6 +630,8 @@ func _loading_stage(message: String) -> void:
 	else:
 		$HUD/Lobby.set_loading_stage(message)
 	await get_tree().process_frame
+	if not Net.dedicated and DisplayServer.get_name() != "headless":
+		await RenderingServer.frame_post_draw
 	await get_tree().process_frame
 
 
@@ -615,7 +639,7 @@ func _load_arena(layout_seed: int, bot_count: int, difficulty: int, token: int =
 	await _loading_stage("Подгружаем текстуры…")
 	if token >= 0 and not _load_current(token):
 		return
-	await $Map.preload_textures()
+	await $Map.preload_textures(map_id)
 	if token >= 0 and not _load_current(token):
 		return
 	await _loading_stage("Собираем карту…")
@@ -645,6 +669,7 @@ func _finish_loading() -> void:
 	await _loading_stage("Готовим первый кадр…")
 	if DisplayServer.get_name() != "headless":
 		await $Ballistics.warm_effects()
+		await $Grenades.warm_smoke()
 	warmup.queue_free()
 	props.queue_free()
 	if _reloading:
@@ -653,13 +678,27 @@ func _finish_loading() -> void:
 	GameSettings.set_match_audio_enabled(true)
 	_reset_clock()
 	$HUD/Lobby.hide_lobby()
+	_play_ambience()
 	$HUD/WeaponSelect.show_select()
+
+
+func _play_ambience() -> void:
+	if Net.dedicated or map_id != MAP.DUST2_ID or $Ambience.playing:
+		return
+	if $Ambience.stream == null:
+		$Ambience.stream = load("res://assets/match_audio/dust2_wind.ogg")
+	$Ambience.play()
 
 
 func _build_arena(layout_seed: int) -> void:
 	$WorldEnvironment.current_time = ARENA_HOURS[map_id]
+	var wind: Vector2 = ARENA_WIND[map_id]
+	$WorldEnvironment.wind_direction = deg_to_rad(wind.x)
+	$WorldEnvironment.wind_speed = wind.y
 	_apply_graphics()
 	$Loot.build_crates($Map.build(map_id, layout_seed, arena_width()))
+	if not Net.dedicated:
+		$HUD.set_minimap_layout($Map, arena_width())
 	if not Net.active or multiplayer.is_server():
 		var mesh := NavigationMesh.new()
 		mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
@@ -678,15 +717,15 @@ func _build_arena(layout_seed: int) -> void:
 		var geometry := NavigationMeshSourceGeometryData3D.new()
 		NavigationServer3D.parse_source_geometry_data(mesh, geometry, self)
 		_navigation_pending = true
-		NavigationServer3D.bake_from_source_geometry_data_async(mesh, geometry, _on_navigation_baked.bind(mesh))
+		NavigationServer3D.bake_from_source_geometry_data_async(mesh, geometry, _on_navigation_baked.bind(mesh, _load_token))
 
 
-func _on_navigation_baked(mesh: NavigationMesh) -> void:
-	_install_navigation.call_deferred(mesh)
+func _on_navigation_baked(mesh: NavigationMesh, token: int) -> void:
+	_install_navigation.call_deferred(mesh, token)
 
 
-func _install_navigation(mesh: NavigationMesh) -> void:
-	if not is_inside_tree() or _reloading:
+func _install_navigation(mesh: NavigationMesh, token: int) -> void:
+	if not is_inside_tree() or _reloading or token != _load_token:
 		return
 	_navigation_region = NavigationRegion3D.new()
 	_navigation_region.navigation_mesh = mesh
@@ -749,10 +788,21 @@ func net_finish(reason: String, rows: Array) -> void:
 	_finish_reason = reason
 	_final_rows = rows
 	GameSettings.set_match_audio_enabled(false)
+	$Ambience.stop()
 	_stop_round_effects.call_deferred()
 	$HUD/Lobby.hide_lobby()
 	$HUD/WeaponSelect.hide_for_results()
 	$HUD/MatchMenu.show_results(reason, rows)
+	if not Net.dedicated and DisplayServer.get_name() != "headless" and not is_instance_valid(_round_overview):
+		_round_overview = ROUND_OVERVIEW.new()
+		add_child(_round_overview)
+		_round_overview.start(arena_width())
+
+
+func _stop_overview() -> void:
+	if is_instance_valid(_round_overview):
+		_round_overview.stop()
+		_round_overview = null
 
 
 func _stop_round_effects() -> void:
@@ -812,7 +862,9 @@ func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
 		bot.combatant_id = -index
 		if team_deathmatch:
 			bot.slot = _team_bot_slots[index]
-		bot.position = $Map.initial_spawn(Net.MAX_PLAYERS + index)
+		var team_start := team_deathmatch and map_id == MAP.WORKSHOP_ID and arena_width() >= 40.0
+		var spawn_index: int = bot.slot if team_start else Net.MAX_PLAYERS + index
+		bot.position = $Map.initial_spawn(spawn_index)
 		bot.spawn_position = bot.position
 		bot.patrol_route = $Map.patrol_route()
 		bot.difficulty = difficulty
@@ -830,6 +882,13 @@ func same_team(first: int, second: int) -> bool:
 	var first_actor := combatant(first)
 	var second_actor := combatant(second)
 	return first_actor != null and second_actor != null and first_actor.team_id() == second_actor.team_id()
+
+
+func is_local_teammate(team: int) -> bool:
+	if not team_deathmatch or Net.dedicated:
+		return false
+	var local_slot := player_slots.find(Net.local_id())
+	return local_slot >= 0 and local_slot % 2 == team
 
 
 func allows_damage(attacker: int, victim: int) -> bool:
@@ -852,7 +911,7 @@ func announce(killer_id: int, victim_id: int) -> void:
 
 
 func publish_damage(attacker: int, victim: int, source: String, zone: String,
-		hp_damage: float, armor_damage: float, killed: bool) -> void:
+		hp_damage: float, armor_damage: float, killed: bool, reaction: Dictionary = {}) -> void:
 	_damage_sequence += 1
 	var event := {
 		"event_id": _damage_sequence, "server_tick": Engine.get_physics_frames(),
@@ -860,6 +919,8 @@ func publish_damage(attacker: int, victim: int, source: String, zone: String,
 		"source_id": source, "zone_id": zone, "hp_damage": hp_damage,
 		"armor_damage": armor_damage, "is_kill": killed,
 	}
+	if not reaction.is_empty():
+		event["reaction"] = reaction
 	net_damage_event(event)
 	for peer in _ready_peers:
 		net_damage_event.rpc_id(peer, event)
@@ -870,6 +931,10 @@ func net_damage_event(event: Dictionary) -> void:
 	if int(event.event_id) <= _latest_damage_event:
 		return
 	_latest_damage_event = int(event.event_id)
+	if event.has("reaction"):
+		var victim := combatant(int(event.victim_peer_id))
+		if victim:
+			victim.show_hit_reaction(event.reaction)
 	damage_resolved.emit(event)
 
 
@@ -973,14 +1038,17 @@ func apply_client_pose(player: Node, pose: PackedFloat32Array) -> bool:
 		if pose[12] <= previous[12]:
 			return pose[12] >= previous[12] - 8.0
 		origin = Vector3(previous[0], previous[1], previous[2])
-		elapsed = clampf(combat_time() - float(player._pose_received_at), 0.0, 0.25)
+		elapsed = clampf(combat_time() - float(player._pose_received_at), 0.0,
+			float(Balance.NETWORK.pose_recovery_window_s))
 		travel_budget = player._pose_travel_budget
 	var travel := destination - origin
 	var horizontal := Vector2(travel.x, travel.z).length()
-	travel_budget = minf(1.4, travel_budget + float(player.SPRINT_SPEED) * elapsed)
+	# A packet gap may span more travel than the normal burst allowance.
+	var elapsed_travel := float(player.SPRINT_SPEED) * elapsed
+	travel_budget = minf(maxf(1.4, elapsed_travel), travel_budget + elapsed_travel)
 	if horizontal > travel_budget:
 		return false
-	if absf(travel.y) > 22.0 * elapsed + 0.55:
+	if absf(travel.y) > 22.0 * minf(elapsed, 0.25) + 0.55:
 		return false
 	if travel.length_squared() > 0.0001:
 		var query := PhysicsRayQueryParameters3D.create(origin + Vector3.UP * 0.65, destination + Vector3.UP * 0.65, Balance.WORLD_MASK)
@@ -1227,7 +1295,6 @@ func _write_room_status() -> void:
 
 
 func _reset_dedicated_room() -> void:
-	_load_token += 1
 	room_owner = 0
 	_ready_peers.clear()
 	_display_names.clear()
@@ -1235,6 +1302,8 @@ func _reset_dedicated_room() -> void:
 	_final_rows.clear()
 	if _started or _loading:
 		_clear_match_map()
+	else:
+		_load_token += 1
 	_loading = false
 	_waiting_for_host = false
 	_started = false

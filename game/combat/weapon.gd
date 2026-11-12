@@ -293,7 +293,7 @@ func _process(delta: float) -> void:
 		_cross.update_pose(0.0, true, false, 0.0, false)
 		return
 
-	_cross.update_pose(aim_blend(), _reloading, _weapon_id == "knife", _current_spread(), _weapon_id in ["m700", "m1"])
+	_cross.update_pose(aim_blend(), _reloading, _weapon_id == "knife", _current_spread(), _weapon_id in ["m700", "m1"], _camera)
 	var shooting := _trigger_held
 	var repeat := bool(_stats.get("automatic", false)) and (_mag > 0 or _reserve > 0)
 	if _fire_requested or (shooting and repeat) or _sprint_fire_queued:
@@ -396,17 +396,20 @@ func net_knife_hit() -> void:
 func _shoot() -> void:
 	_apply_view(0.0, false)
 	var camera := _camera.global_transform
-	_view.global_transform = _converge_view(_view.global_transform, camera)
-	var barrel := _muzzle.global_transform
+	var target := _sight_target(camera)
+	var aligned := _converge_view(_view.global_transform, camera, target)
+	var barrel := aligned * _muzzle.transform
+	_view.global_transform = aligned.interpolate_with(_view.global_transform, aim_blend())
 	if _player._server_rules():
 		_player.cancel_spawn_protection()
-		_launch_projectiles(barrel, barrel.basis, _current_spread(), camera.origin)
+		_launch_sighted(barrel, camera, target)
 		_send_shot_visual(_weapon_id, barrel)
 	else:
 		var pose: PackedFloat32Array = _player.network_pose()
 		_last_fire_sequence = int(pose[12])
 		net_fire.rpc_id(1, _weapon_id, pose, _match.estimated_server_time())
-	_ballistics.muzzle_effect(_weapon_id, barrel, _player.shot_motion(), false)
+	if not _scope_view:
+		_ballistics.muzzle_effect(_weapon_id, _muzzle.global_transform, _player.shot_motion(), false)
 	_kick_pos = Vector3(randf_range(-0.008, 0.008), randf_range(0.0, 0.012), float(_stats.kick))
 	var recoil := float(_stats.recoil)
 	_kick_rot = -recoil * 1.4
@@ -422,12 +425,18 @@ func _shoot() -> void:
 		_pump_wait = 0.38
 
 
-func _converge_view(view: Transform3D, camera: Transform3D, rewind: float = -1.0) -> Transform3D:
+func _sight_target(camera: Transform3D, rewind: float = -1.0) -> Vector3:
 	var forward := -camera.basis.z.normalized()
 	var end := camera.origin + forward * float(_stats.range)
 	var hit: Dictionary = _ballistics.combat_ray(_player, camera.origin, end, rewind)
 	var target: Vector3 = hit.get("position", end)
+	if _player._is_local() and _ammo.visible and _weapon_id != "launcher":
+		_ammo.show_accuracy(camera.origin.distance_to(target), _current_spread(), hit.is_empty())
+	return target
 
+
+func _converge_view(view: Transform3D, camera: Transform3D, target: Vector3) -> Transform3D:
+	var forward := -camera.basis.z.normalized()
 	# Turn around the grip at hip fire and around the rear sight in ADS.
 	var pivot := view * (Vector3.ZERO.lerp(_rear_sight.position, aim_blend()))
 	var barrel := view * _muzzle.transform
@@ -515,6 +524,15 @@ func fire_bot(target: Vector3, aim_error: float) -> bool:
 	return true
 
 
+func _launch_sighted(barrel: Transform3D, camera: Transform3D, target: Vector3, rewind: float = -1.0) -> void:
+	var aim := barrel.basis
+	if _weapon_id != "launcher":
+		var direction: Vector3 = _ballistics.aim_direction(_weapon_id, barrel.origin, target, _player.shot_motion())
+		if not direction.is_zero_approx():
+			aim = Basis.looking_at(direction, camera.basis.y)
+	_launch_projectiles(barrel, aim, _current_spread(), camera.origin, rewind)
+
+
 func _launch_projectiles(barrel: Transform3D, aim: Basis, spread: float, eye: Vector3, rewind: float = -1.0) -> void:
 	var directions := PackedVector3Array()
 	var cone_edge := cos(deg_to_rad(spread))
@@ -555,8 +573,9 @@ func net_fire(weapon_name: String, pose: PackedFloat32Array, shot_time: float) -
 		_mag -= 1
 		_apply_view(0.0, false)
 		var view: Transform3D = _player.current_shot_transform(_view.global_transform)
-		shot_barrel = _converge_view(view, shot_camera, rewind) * _muzzle.transform
-		_launch_projectiles(shot_barrel, shot_barrel.basis, _current_spread(), shot_camera.origin, rewind)
+		var target := _sight_target(shot_camera, rewind)
+		shot_barrel = _converge_view(view, shot_camera, target) * _muzzle.transform
+		_launch_sighted(shot_barrel, shot_camera, target, rewind)
 		_add_bloom()
 		_send_ammo(sequence)
 	_play_remote_shot(weapon_name, shot_barrel)
@@ -606,6 +625,7 @@ func _play_remote_shot(weapon_name: String, barrel: Transform3D) -> void:
 	if weapon_name == "knife":
 		_knife_swing_left = KNIFE_SWING_TIME
 		return
+	_match.get_node("HUD").record_minimap_shot(_player.score_id(), barrel.origin)
 	_ballistics.muzzle_effect(weapon_name, barrel, _player.shot_motion(), true)
 	if weapon_name == "shotgun" or weapon_name in Classic.ACTIONS:
 		_pump_wait = 0.38
@@ -772,8 +792,9 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	if _view == null:
 		return
 	var speed: float = _player.visual_speed()
-	var carry_target := smoothstep(2.65, 3.9, speed) if not _player.crouched else 0.0
-	_run_carry = move_toward(_run_carry, carry_target, delta * 7.0)
+	var firing := _trigger_held or not _kick_pos.is_zero_approx() or not is_zero_approx(_kick_rot)
+	var carry_target := smoothstep(2.65, 3.9, speed) if not _player.crouched and not firing else 0.0
+	_run_carry = move_toward(_run_carry, carry_target, delta * (16.0 if firing else 7.0))
 	if _weapon_id == "knife":
 		_apply_knife_view()
 		return
@@ -827,7 +848,12 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	if _reloading:
 		_pose_reload(progress)
 	elif converge and not bot and not _player.sprinting:
-		_view.global_transform = _converge_view(_view.global_transform, _camera.global_transform)
+		var camera := _camera.global_transform
+		var target := _sight_target(camera)
+		# Near targets require a steeper bore angle than the visible sights.
+		if blend < 1.0:
+			var aligned := _converge_view(_view.global_transform, camera, target)
+			_view.global_transform = aligned.interpolate_with(_view.global_transform, blend)
 
 
 func _set_scope_view(active: bool) -> void:
@@ -914,7 +940,7 @@ func _build_viewmodel(weapon_id: String) -> void:
 			if weapon_id in ["m1911", "mac10", "tec9"]:
 				_rest_pos.z = -0.255
 			if weapon_id in ["mac10", "mp5", "tec9", "m700", "m14", "lever"]:
-				support.y -= 0.024
+				support.y -= 0.060 if weapon_id == "tec9" else 0.024
 				left_fingers = Vector3(0.25, 0.35, -1.0)
 				left_palm = Vector3(0.65, 0.75, 0.0)
 			_barrel_length = maxf(0.10, Classic.bone_point(model, &"FX_FIRE").z - (setup[0] as Vector3).z - 0.03)
@@ -951,11 +977,13 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 	var rear: Vector3
 	var front: Vector3
 	var eye_relief := 0.21
+	var sight_clearance := 0.004
 	match weapon_id:
 		"ak47":
 			rear = Vector3(0.0, 0.128, -0.104)
 			front = Vector3(0.0, 0.127, -0.586)
 			eye_relief = 0.23
+			sight_clearance = 0.006
 		"shotgun":
 			# This model has a bead and a receiver rib, so the rear line clears the rib.
 			rear = Vector3(2.201, 3.51, 0.0)
@@ -980,7 +1008,12 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 					eye_relief = 0.28
 				"lever":
 					eye_relief = 0.43
+					sight_clearance = 0.020
+				"tec9":
+					sight_clearance = 0.010
 				"mac10", "mp5", "m14":
+					if weapon_id == "mac10":
+						sight_clearance = 0.038
 					rear.y += 0.008 if weapon_id == "mp5" else 0.006
 					front.y += 0.002
 	_rear_sight = _marker(model.transform * rear)
@@ -989,15 +1022,13 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 	front_sight.name = "FrontSight"
 	var line := (front_sight.position - _rear_sight.position).normalized()
 	var basis := Basis.looking_at(line).inverse()
-	_aim_pose = Transform3D(basis, Vector3.FORWARD * eye_relief - basis * _rear_sight.position)
+	_aim_pose = Transform3D(basis, Vector3(0.0, -sight_clearance, -eye_relief) - basis * _rear_sight.position)
 	_aim_depth_limit = eye_relief - 0.10
 	match weapon_id:
 		"lever":
 			_aim_depth_limit = 0.11
 		"mp5":
 			_aim_depth_limit = 0.06
-		"m700":
-			_aim_depth_limit = 0.19
 
 
 func _hand_basis(fingers: Vector3, palm: Vector3) -> Basis:

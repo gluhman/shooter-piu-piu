@@ -81,6 +81,28 @@ func muzzle_effect(profile: String, barrel: Transform3D, motion: Vector3, spatia
 	_effects.muzzle(profile, barrel, motion, spatial_audio)
 
 
+func aim_direction(profile: String, muzzle: Vector3, target: Vector3, motion: Vector3) -> Vector3:
+	var ammo: Dictionary = AMMO[profile]
+	var step := 1.0 / Engine.physics_ticks_per_second
+	var decay := exp(-float(ammo.drag) * step)
+	var weight_limit := step * (1.0 + decay) / (2.0 * (1.0 - decay))
+	var terminal := GRAVITY * (step * decay / (1.0 - decay))
+	var displacement := target - muzzle
+	var aim := displacement
+	var speed: float = ammo.speed
+	# Invert the same fixed-step displacement used by _step, including a partial last segment.
+	for iteration in 4:
+		var weight := minf(aim.length() / speed, weight_limit * 0.95)
+		var steps := log(1.0 - weight / weight_limit) / log(decay)
+		var whole := floorf(steps)
+		var remaining := pow(decay, whole)
+		var whole_weight := weight_limit * (1.0 - remaining)
+		var fraction := (weight - whole_weight) / (step * (1.0 + decay) * 0.5 * remaining)
+		var time := (whole + fraction) * step
+		aim = displacement - motion * weight - terminal * (time - weight)
+	return aim.normalized()
+
+
 func queue_shot(profile: String, stats: Dictionary, source: CharacterBody3D, barrel: Transform3D,
 		barrel_length: float, eye: Vector3, directions: PackedVector3Array, rewind: float = -1.0) -> void:
 	if Net.active and not multiplayer.is_server():
@@ -98,11 +120,12 @@ func _physics_process(delta: float) -> void:
 		return
 	var authority := not Net.active or multiplayer.is_server()
 	var space := get_world_3d().direct_space_state
-	if authority:
+	if Net.active and authority:
 		var time := Time.get_ticks_usec() * 0.000001
 		for actor in _combatants():
 			if actor.control_enabled:
 				actor.record_hurtboxes(time)
+	if authority:
 		for shot in _pending:
 			if is_instance_valid(shot.source):
 				_launch(shot, space)

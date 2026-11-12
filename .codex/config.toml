@@ -1,0 +1,14 @@
+[mcp_servers.godot-mcp-toolkit]
+command = "npx"
+args = ["-y", "@npgamedev/godot-mcp-server@1.1.2"]
+
+[mcp_servers.godot-mcp-toolkit.env]
+GODOT_MCP_CONFIG_VERSION = "1"
+npm_config_prefer_offline = "true"
+
+[mcp_servers.godot-cli]
+command = "npx"
+args = ["-y", "@coding-solo/godot-mcp@0.1.1"]
+
+[mcp_servers.godot-cli.env]
+GODOT_PATH = "/Applications/Godot.app/Contents/MacOS/Godot"

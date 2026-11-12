@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    case "$remote_ref" in
+        refs/heads/main|refs/heads/master) ;;
+        *) continue ;;
+    esac
+
+    [[ "$local_ref" != "(delete)" ]] || continue
+    args=()
+    if [[ ! "$remote_sha" =~ ^0+$ ]]; then
+        if ! git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+            printf 'Не найден коммит целевой ветки. Выполни git fetch %s и повтори push.\n' "$1" >&2
+            exit 1
+        fi
+        args=(--base "$remote_sha")
+    fi
+    python3 "$hook_dir/check-release.py" ${args[@]+"${args[@]}"} "$local_sha"
+done

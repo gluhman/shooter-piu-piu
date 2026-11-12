@@ -5,6 +5,8 @@ enum Screen { MAIN, SOLO, HOST, GUEST, LOADING, SETUP, WAIT, BROWSER, JOIN }
 const UI := preload("res://game/ui/menu_ui.gd")
 const MENU_BACKGROUND := preload("res://assets/menu/container_yard.webp")
 const MENU_MUSIC := preload("res://assets/menu/yard_theme.ogg")
+const PatchMenu := preload("res://game/release/patch_menu.gd")
+const LOADING_LOGO := preload("res://game/ui/startup/shooter_boot.png")
 
 var _screen := Screen.MAIN
 var _backdrop: TextureRect
@@ -13,6 +15,8 @@ var _shade: TextureRect
 var _frame: MarginContainer
 var _panel: PanelContainer
 var _music: AudioStreamPlayer
+var _patch_menu: AcceptDialog
+var _patch_button: Button
 var _column: VBoxContainer
 var _status: Label
 var _loading_status: Label
@@ -49,6 +53,9 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme = UI.theme()
 	_build_layout()
+	if ShooterRelease.supports_patches():
+		_patch_menu = PatchMenu.new()
+		add_child(_patch_menu)
 	_music = AudioStreamPlayer.new()
 	_music.stream = MENU_MUSIC
 	_music.bus = &"Music"
@@ -69,11 +76,20 @@ func show_loading() -> void:
 		_music.stop()
 	_backdrop.hide()
 	_shade.hide()
-	_dim.color.a = 0.94
+	_dim.color.a = 1.0
 	_clear()
 	_set_panel(false, 440)
-	UI.label(_column, "Загрузка арены", 29, UI.INK, true)
-	_loading_status = UI.label(_column, "", 16, UI.MUTED)
+	var logo := TextureRect.new()
+	logo.texture = LOADING_LOGO
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.custom_minimum_size.y = 88
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_column.add_child(logo)
+	var title := UI.label(_column, "Загрузка арены", 29, UI.INK, true)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_loading_status = UI.label(_column, "Подготавливаем матч…", 16, UI.MUTED)
+	_loading_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var progress := ProgressBar.new()
 	progress.custom_minimum_size.y = 5
 	progress.indeterminate = true
@@ -81,7 +97,8 @@ func show_loading() -> void:
 	progress.add_theme_stylebox_override(&"background", UI.style(UI.CARD, UI.LINE, 0, 0, 3))
 	progress.add_theme_stylebox_override(&"fill", UI.style(UI.ACCENT, UI.ACCENT, 0, 0, 3))
 	_column.add_child(progress)
-	UI.reveal(_panel)
+	_panel.scale = Vector2.ONE
+	UI.reveal(_panel, 0.0, 1.0, false)
 
 
 func set_loading_stage(message: String) -> void:
@@ -390,6 +407,12 @@ func _show_main() -> void:
 	settings.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var exit := UI.button(actions, "Выйти из игры", _quit_game, &"MenuNav", true)
 	exit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var release_row := HBoxContainer.new()
+	_column.add_child(release_row)
+	var version_label := UI.label(release_row, "Версия %s" % ShooterRelease.version, 13, UI.MUTED)
+	version_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if _patch_menu:
+		_patch_button = UI.button(release_row, "Обновление", _patch_menu.open, &"MenuNav", true)
 	UI.reveal(brand, 0.0, 0.15, false)
 	UI.reveal(_solo_button, 0.04, 0.28, false)
 	UI.reveal(network.get_parent() as Control, 0.09, 0.25, false)
@@ -669,6 +692,8 @@ func _set_join_pending(pending: bool) -> void:
 	_host_button.disabled = pending
 	_internet_button.disabled = pending
 	_join_button.disabled = pending
+	if is_instance_valid(_patch_button):
+		_patch_button.disabled = pending
 	_ip.editable = not pending
 	_cancel_button.visible = pending
 

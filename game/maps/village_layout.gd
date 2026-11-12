@@ -1,6 +1,9 @@
 extends RefCounted
 
 const GROUND_SHADER := preload("res://game/maps/village_ground.gdshader")
+const VILLAGE_TREE := preload("res://assets/arena_props/village/village_tree.res")
+const CROSSROADS := preload("res://assets/arena_props/village/village_crossroads.res")
+const CROSSROADS_HALF := 16.0
 const ROAD_HALF_WIDTH := 4.0
 const WALL_HEIGHT := 3.4
 const WALL_THICKNESS := 0.25
@@ -41,12 +44,9 @@ func build(width: float, rng: RandomNumberGenerator) -> Array[Transform3D]:
 	_fence = _map._world_mat("planks", Color(0.57, 0.43, 0.33), 0.0, 0.9, 0.8, true)
 	_roof = _map._world_mat("corrugated", Color(0.40, 0.48, 0.49), 0.27, 0.55, 0.8, true)
 	_map._add_box(Vector3(0, -0.25, 0), Vector3(width + 2, 0.5, width + 2), ground)
-	_paint(Vector3(0, 0.011, 0), Vector3(ROAD_HALF_WIDTH * 2, 0.02, width), road)
+	_build_road(half, road)
 	for side in [-1.0, 1.0]:
 		var edge: float = side * (half + 0.2)
-		var road_length := half - ROAD_HALF_WIDTH
-		_paint(Vector3(side * (ROAD_HALF_WIDTH + road_length * 0.5), 0.011, 0),
-			Vector3(road_length, 0.02, ROAD_HALF_WIDTH * 2), road)
 		_solid(Vector3(0, 1.4, edge), Vector3(width + 0.8, 2.8, 0.4), _fence)
 		_solid(Vector3(edge, 1.4, 0), Vector3(0.4, 2.8, width), _fence)
 		for along in range(-floori(half) + 5, ceili(half), 5):
@@ -84,6 +84,27 @@ func build(width: float, rng: RandomNumberGenerator) -> Array[Transform3D]:
 		visual.material_override = material
 		_map.add_child(visual)
 	return _supplies
+
+
+func _build_road(half: float, material: Material) -> void:
+	var lane_width := ROAD_HALF_WIDTH * 2.0
+	if half <= CROSSROADS_HALF:
+		_paint(Vector3(0, 0.011, 0), Vector3(lane_width, 0.02, half * 2.0), material)
+		for side in [-1.0, 1.0]:
+			var span := half - ROAD_HALF_WIDTH
+			_paint(Vector3(side * (half - span * 0.5), 0.011, 0), Vector3(span, 0.02, lane_width), material)
+		return
+	var intersection := MeshInstance3D.new()
+	intersection.name = "VillageCrossroads"
+	intersection.mesh = CROSSROADS
+	intersection.position.y = 0.021
+	intersection.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_map.add_child(intersection)
+	var approach := half - CROSSROADS_HALF
+	for side in [-1.0, 1.0]:
+		var middle: float = side * (half - approach * 0.5)
+		_paint(Vector3(middle, 0.011, 0), Vector3(approach, 0.02, lane_width), material)
+		_paint(Vector3(0, 0.011, middle), Vector3(lane_width, 0.02, approach), material)
 
 
 func _driveway(house: Vector2, material: Material) -> void:
@@ -209,14 +230,15 @@ func _plant_forest(half: float) -> void:
 				var quadrant := int(point.x >= 0.0) + 2 * int(point.y >= 0.0)
 				groups[quadrant].append(placement)
 				var trunk_size := 0.47 * scale_factor
-				_solid(Vector3(point.x, 1.2 * scale_factor, point.y),
-					Vector3(trunk_size, 2.4 * scale_factor, trunk_size), bark)
+				_map._add_box(Vector3(point.x, 1.2 * scale_factor, point.y),
+					Vector3(trunk_size, 2.4 * scale_factor, trunk_size), bark, 0.0, "wood", null, Node3D.new())
+				_map._occupied.append(Rect2(point - Vector2.ONE * trunk_size * 0.5, Vector2.ONE * trunk_size))
 			elif roll < 0.53:
 				shrubs.append(_map._plant_transform(point, _rng, 0.8, 1.45))
 			elif roll < 0.72:
 				grass.append(_map._plant_transform(point, _rng, 0.8, 1.65))
 	for group in groups:
-		_tree_batch(canopy, group, true)
+		_tree_batch(VILLAGE_TREE, group, true)
 	var backdrop: Array[Transform3D] = []
 	for x in range(-17, 18):
 		for z in range(-17, 18):

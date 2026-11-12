@@ -12,10 +12,15 @@ const AUDIO_BUSES := {
 	&"footstep_volume": &"Footsteps",
 	&"gunfire_volume": &"Gunfire",
 	&"explosion_volume": &"Explosions",
+	&"ambience_volume": &"Ambience",
 }
-const MATCH_AUDIO_SETTINGS := [&"footstep_volume", &"gunfire_volume", &"explosion_volume"]
+const MATCH_AUDIO_SETTINGS := [&"footstep_volume", &"gunfire_volume", &"explosion_volume", &"ambience_volume"]
 const WINDOW_SIZES := [Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080), Vector2i(2560, 1440), Vector2i(3840, 2160)]
 const FPS_LIMITS := [0, 30, 60, 120, 144]
+const SHADOW_DISTANCES := [24, 36, 52, 75]
+const GRAPHICS_OPTIONS := [&"fullscreen", &"window_size", &"fps_limit", &"vsync",
+	&"render_scale", &"upscaling", &"shadows", &"shadow_distance", &"shadow_cascades",
+	&"ambient_occlusion", &"ssao_quality", &"antialiasing", &"anisotropy", &"effects_detail"]
 const WEAPON_SLOTS := {
 	"primary": &"select_primary", "secondary": &"select_secondary", "knife": &"select_knife",
 }
@@ -52,14 +57,21 @@ var window_size := Vector2i(1280, 720)
 var fps_limit := 0
 var vsync := true
 var render_scale := 1.0
+var upscaling := Viewport.SCALING_3D_MODE_BILINEAR
 var shadows := true
+var shadow_distance := 36
+var shadow_cascades := 0
 var ambient_occlusion := true
+var ssao_quality := 1
 var antialiasing := 0
+var anisotropy := 2
+var effects_detail := 1
 var menu_music_volume := DEFAULT_MENU_MUSIC_VOLUME
 var menu_effects_volume := 0.8
 var footstep_volume := 1.0
 var gunfire_volume := 1.0
 var explosion_volume := 1.0
+var ambience_volume := 0.5
 var _bindings: Dictionary = {}
 var _window_resize_pending := false
 var _physical_mouse_buttons := 0
@@ -84,9 +96,18 @@ func _ready() -> void:
 	fps_limit = saved_limit if saved_limit in FPS_LIMITS else 0
 	vsync = bool(config.get_value("graphics", "vsync", true))
 	render_scale = clampf(float(config.get_value("graphics", "render_scale", 1.0)), 0.5, 1.0)
+	var legacy_scaling := Viewport.SCALING_3D_MODE_FSR2 if bool(config.get_value("graphics", "fsr2", false)) else Viewport.SCALING_3D_MODE_BILINEAR
+	upscaling = clampi(int(config.get_value("graphics", "upscaling", legacy_scaling)), 0, 2)
 	shadows = bool(config.get_value("graphics", "shadows", true))
+	var saved_distance := int(config.get_value("graphics", "shadow_distance", shadow_distance))
+	if saved_distance in SHADOW_DISTANCES:
+		shadow_distance = saved_distance
+	shadow_cascades = clampi(int(config.get_value("graphics", "shadow_cascades", shadow_cascades)), 0, 1)
 	ambient_occlusion = bool(config.get_value("graphics", "ambient_occlusion", true))
-	antialiasing = clampi(int(config.get_value("graphics", "antialiasing", 0)), 0, 2)
+	ssao_quality = clampi(int(config.get_value("graphics", "ssao_quality", ssao_quality)), 0, 2)
+	antialiasing = clampi(int(config.get_value("graphics", "antialiasing", 0)), 0, 4)
+	anisotropy = clampi(int(config.get_value("graphics", "anisotropy", anisotropy)), 0, 4)
+	effects_detail = clampi(int(config.get_value("graphics", "effects_detail", effects_detail)), 0, 1)
 	var reserved_keys: Array[int] = []
 	for action in ACTIONS:
 		if config.has_section_key("bindings", action):
@@ -282,18 +303,35 @@ func apply_graphics() -> void:
 	if DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
 	_apply_render_scale()
-	get_viewport().msaa_3d = antialiasing
+	var viewport := get_viewport()
+	var aa := 0 if uses_fsr2() else antialiasing
+	viewport.msaa_3d = aa if aa < 3 else Viewport.MSAA_DISABLED
+	viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if aa == 3 else Viewport.SCREEN_SPACE_AA_DISABLED
+	viewport.use_taa = aa == 4 and supports_advanced_graphics()
+	viewport.anisotropic_filtering_level = anisotropy
+	if supports_advanced_graphics():
+		RenderingServer.environment_set_ssao_quality(ssao_quality + 1, true, 0.5, 2, 50.0, 300.0)
 	graphics_changed.emit()
+
+
+func supports_advanced_graphics() -> bool:
+	return RenderingServer.get_current_rendering_method() == "forward_plus"
+
+
+func uses_fsr2() -> bool:
+	return upscaling == Viewport.SCALING_3D_MODE_FSR2 and supports_advanced_graphics()
 
 
 func _apply_render_scale() -> void:
 	var window := get_window()
 	var framebuffer := window.get_texture().get_size()
 	var scale := render_scale
-	if DisplayServer.get_name() != "headless" and framebuffer.x > 0 and framebuffer.y > 0:
+	var temporal := uses_fsr2()
+	if not temporal and DisplayServer.get_name() != "headless" and framebuffer.x > 0 and framebuffer.y > 0:
 		# Retina can allocate a larger backing buffer than the selected window size.
 		var output_ratio := minf(window.size.x / framebuffer.x, window.size.y / framebuffer.y)
 		scale *= minf(1.0, output_ratio)
+	window.scaling_3d_mode = upscaling if supports_advanced_graphics() else Viewport.SCALING_3D_MODE_BILINEAR
 	window.scaling_3d_scale = scale
 
 
@@ -329,6 +367,6 @@ func save() -> void:
 		config.set_value("audio", setting, get(setting))
 	for action in _bindings:
 		config.set_value("bindings", action, _bindings[action])
-	for option in [&"fullscreen", &"window_size", &"fps_limit", &"vsync", &"render_scale", &"shadows", &"ambient_occlusion", &"antialiasing"]:
+	for option in GRAPHICS_OPTIONS:
 		config.set_value("graphics", option, get(option))
 	config.save(PATH)

@@ -1,6 +1,5 @@
 extends Node
 
-const MAP := preload("res://game/maps/map_builder.gd")
 const MAX_ROOMS := 3
 const ROOM_PORTS := [7778, 7779, 7780]
 const EMPTY_GRACE := 90.0
@@ -8,6 +7,7 @@ const EMPTY_GRACE := 90.0
 var listed: Array = []
 
 var _records: Array[Dictionary] = []
+var _starting_ports: Dictionary[int, bool] = {}
 var _next_id := 1
 var _typed_password := ""
 var _poll := 0.0
@@ -50,13 +50,14 @@ func net_request_create(password: String, weapons: int, arena: int, limits: Vect
 	if cleaned.is_empty() or cleaned.length() > 24 or cleaned.contains("\n") or cleaned.contains("\r"):
 		_reply(sender, false, 0, "", "Введи пароль комнаты.")
 		return
-	if _records.size() >= MAX_ROOMS:
+	if _records.size() + _starting_ports.size() >= MAX_ROOMS:
 		_reply(sender, false, 0, "", "На сервере уже 3 комнаты.")
 		return
 	var port := _free_port()
 	if port == 0:
 		_reply(sender, false, 0, "", "На сервере уже 3 комнаты.")
 		return
+	_starting_ports[port] = true
 	var rules := _clean_rules(weapons, arena, limits, difficulty, bot_count, size)
 	var token := "%08x%08x" % [randi(), randi()]
 	var folder := OS.get_cache_dir().path_join("shooter-rooms")
@@ -76,11 +77,13 @@ func net_request_create(password: String, weapons: int, arena: int, limits: Vect
 	cfg.set_value("room", "size", rules.size)
 	cfg.set_value("room", "teams", teams)
 	if cfg.save(room_path) != OK:
+		_starting_ports.erase(port)
 		_reply(sender, false, 0, "", "Не удалось создать комнату.")
 		return
 	var pid := _spawn_match(port, room_path)
 	if pid <= 0:
 		DirAccess.remove_absolute(room_path)
+		_starting_ports.erase(port)
 		_reply(sender, false, 0, "", "Не удалось создать комнату.")
 		return
 	var ready := false
@@ -97,6 +100,7 @@ func net_request_create(password: String, weapons: int, arena: int, limits: Vect
 			OS.kill(pid)
 		DirAccess.remove_absolute(room_path)
 		DirAccess.remove_absolute(status_path)
+		_starting_ports.erase(port)
 		_reply(sender, false, 0, "", "Комната не запустилась.")
 		return
 	_records.append({
@@ -110,6 +114,7 @@ func net_request_create(password: String, weapons: int, arena: int, limits: Vect
 		"status": status_path,
 		"born": Time.get_unix_time_from_system(),
 	})
+	_starting_ports.erase(port)
 	_next_id += 1
 	print("Комната %d на UDP %d." % [_next_id - 1, port])
 	_broadcast()
@@ -180,6 +185,8 @@ func _record(room_id: int) -> Dictionary:
 
 func _free_port() -> int:
 	for port in ROOM_PORTS:
+		if _starting_ports.has(port):
+			continue
 		var used := false
 		for record in _records:
 			if int(record.port) == port:
@@ -191,14 +198,15 @@ func _free_port() -> int:
 
 
 func _clean_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> Dictionary:
+	var map := load("res://game/maps/map_builder.gd") as GDScript
 	return {
 		"weapons": clampi(weapons, 0, 2),
-		"arena": clampi(arena, 0, MAP.MAP_NAMES.size() - 1),
+		"arena": clampi(arena, 0, map.MAP_NAMES.size() - 1),
 		"time": clampi(limits.x, 0, 8),
 		"kills": clampi(limits.y, 0, 8),
 		"difficulty": clampi(difficulty, 0, 2),
 		"bots": clampi(bot_count, 0, 10),
-		"size": clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1),
+		"size": clampi(size, 0, map.SIZE_WIDTHS.size() - 1),
 	}
 
 

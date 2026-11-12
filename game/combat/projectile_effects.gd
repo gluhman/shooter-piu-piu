@@ -5,6 +5,7 @@ const Classic := preload("res://game/combat/classic_weapons.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const SpatialAudio := preload("res://addons/spatial_audio_3d/spatial_audio_3d.gd")
 const GRENADE_EXPLOSION := preload("res://game/combat/grenade_explosion.tscn")
+const FRAG_EXPLOSION := preload("res://game/combat/frag_explosion.tscn")
 const SHOT_HEARING_DISTANCE := 125.0
 const SHOT_DISTANCE_LOSS_DB := 16.0
 
@@ -150,7 +151,8 @@ func warm_rendering(ammo: Dictionary) -> void:
 		if profile.trail > 0:
 			var sample := tracer(profile)
 			move_tracer(sample, at, -barrel.basis.z, 0.4)
-	grenade_burst(at, false, 5.0, false)
+	_frag_burst(at, true, 0.0)
+	grenade_burst(at, false, 5.0, true)
 	grenade_burst(at, true, 5.0, false)
 	await RenderingServer.frame_post_draw
 	await get_tree().process_frame
@@ -293,7 +295,18 @@ func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> v
 	if DisplayServer.get_name() == "headless":
 		return
 	var camera := get_viewport().get_camera_3d()
-	if not camera or camera.global_position.distance_squared_to(at) > 95.0 * 95.0:
+	if not camera:
+		return
+	var distance_sq := camera.global_position.distance_squared_to(at)
+	if distance_sq > 95.0 * 95.0:
+		return
+	if not flash and not launcher:
+		var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.05,
+			at - Vector3.UP * 0.35, Balance.WORLD_MASK)
+		var floor_hit := get_world_3d().direct_space_state.intersect_ray(query)
+		var grounded: bool = not floor_hit.is_empty() and floor_hit.normal.y > 0.65
+		var origin: Vector3 = floor_hit.position + Vector3.UP * 0.025 if grounded else at
+		_frag_burst(origin, grounded, distance_sq)
 		return
 	var scale := radius / 5.0 * (0.82 if launcher else 1.0)
 	var center := at + Vector3.UP * 0.38 * scale
@@ -302,14 +315,13 @@ func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> v
 	light.light_color = Color(0.85, 0.91, 1.0) if flash else Color(1.0, 0.66, 0.30)
 	light.light_energy = 6.4 if flash else 10.0 * scale
 	light.omni_range = 12.0 if flash else radius * 2.4 * scale
-	light.shadow_enabled = not flash and camera.global_position.distance_squared_to(at) < 28.0 * 28.0
 	add_child(light)
 	var light_fade := light.create_tween()
 	var light_decay := light_fade.tween_property(light, "light_energy", 0.0, 0.16 if flash else 0.27)
 	if not flash:
 		light_decay.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	light_fade.tween_callback(light.queue_free)
-	_burst(center, Vector3.UP, Color(1.0, 0.74, 0.29), 10 if flash else (32 if launcher else 44),
+	_burst(center, Vector3.UP, Color(1.0, 0.74, 0.29), 10 if flash else 32,
 		0.52, 13.0 * scale, 125.0, 0.062 * scale, Vector3.DOWN * 9.8, "spark", 1.2)
 	if flash:
 		var core := MeshInstance3D.new()
@@ -331,6 +343,17 @@ func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> v
 	explosion.emitting = true
 	_burst(at + Vector3.UP * 0.18, Vector3.UP, Color(0.53, 0.45, 0.34, 0.35),
 		12, 0.94, 6.3 * scale, 115.0, 0.85 * scale, Vector3.UP * 0.40, "smoke")
+
+
+func _frag_burst(at: Vector3, grounded: bool, distance_sq: float) -> void:
+	var explosion := FRAG_EXPLOSION.instantiate() as PyroluxExplosion3D
+	explosion.position = to_local(at)
+	explosion.style = PyroluxExplosion3D.Style.GROUND if grounded else PyroluxExplosion3D.Style.AIR
+	explosion.free_when_done = true
+	if GameSettings.effects_detail == 0 or distance_sq > 35.0 * 35.0:
+		explosion.quality = PyroluxEffect3D.QualitySetting.LOW
+		explosion.light_enabled = false
+	add_child(explosion)
 
 
 func tracer(ammo: Dictionary) -> Tracer:
@@ -384,7 +407,7 @@ func _burst(at: Vector3, axis: Vector3, tint: Color, amount: int, duration: floa
 		particles = _burst_pool.pop_back()
 	_active_bursts += 1
 	particles.show()
-	particles.amount = amount
+	particles.amount = maxi(1, roundi(amount * 0.55)) if GameSettings.effects_detail == 0 else amount
 	particles.lifetime = duration
 	particles.direction = axis
 	particles.spread = spread

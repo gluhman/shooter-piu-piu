@@ -24,6 +24,8 @@ const LEAN_CLEARANCE := 0.07
 const FIRST_PERSON_BODY_LAYER := 3
 const Hurtboxes := preload("res://game/actors/operator_hurtboxes.gd")
 const OperatorPose := preload("res://game/actors/operator_pose.gd")
+const OPERATOR_MODEL_PATH := "res://assets/operator/operator.glb"
+const HitReaction := preload("res://addons/hit_reactions_lite/hit_flinch_lite.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const MovementAudio := preload("res://game/audio/movement_audio.gd")
 const MEDKIT_HEAL := 45
@@ -94,11 +96,12 @@ var _hurt_lock := 0.0
 var _avatar: Node3D
 var _skeleton: Skeleton3D
 var _pose: OperatorPose
+var _hit_reaction: HitReaction
 var _hurtboxes: Hurtboxes
 var _eye_rest: Vector3
 var _head_pivot: Vector3
 var _pouch: Marker3D
-var _bar_root: Node3D
+var _overhead: Node3D
 var _bar_fill: MeshInstance3D
 var _bar_mat: StandardMaterial3D
 var _name_label: Label3D
@@ -127,7 +130,8 @@ func _ready() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
 		_camera.current = false
-		_build_bar()
+		if get_parent().is_local_teammate(team_id()):
+			_build_bar()
 	_build_operator()
 	_movement_audio = MovementAudio.new()
 	_movement_audio.name = "MovementAudio"
@@ -164,8 +168,23 @@ func take_damage(amount: float, killer_id: int = 0, zone: String = "chest", head
 	var next_health := maxf(health - amount, 0.0)
 	var damage := health - next_health
 	_set_health(next_health, killer_id, impact)
+	var reaction := {}
+	if next_health > 0.0 and (damage > 0.0 or absorbed > 0.0) and impact.has("point") and impact.has("velocity"):
+		var point: Vector3 = impact.point
+		var impulse: Vector3 = impact.velocity
+		reaction = {"point": to_local(point), "impulse": global_basis.inverse() * impulse,
+			"revision": _spawn_revision}
 	get_parent().publish_damage(killer_id, score_id(), impact.get("source", ""), impact.get("zone", zone),
-		damage, absorbed, next_health == 0.0)
+		damage, absorbed, next_health == 0.0, reaction)
+
+
+func show_hit_reaction(reaction: Dictionary) -> void:
+	if not _hit_reaction or _dead or not control_enabled or reaction.get("revision") != _spawn_revision:
+		return
+	var point: Variant = reaction.get("point")
+	var impulse: Variant = reaction.get("impulse")
+	if point is Vector3 and impulse is Vector3:
+		_hit_reaction.hit(to_global(point), global_basis * impulse.limit_length(3.0))
 
 
 func cancel_spawn_protection() -> void:
@@ -772,6 +791,8 @@ func _commit(killer_id: int, impact: Dictionary = {}) -> void:
 	if health > 0 or _dead:
 		return
 	_dead = true
+	if _hit_reaction:
+		_hit_reaction.reset()
 	_hurtboxes.set_active(false)
 	_movement_audio.reset()
 	_lean_amount = 0.0
@@ -786,8 +807,8 @@ func _commit(killer_id: int, impact: Dictionary = {}) -> void:
 	velocity = Vector3.ZERO
 	if _avatar:
 		_avatar.visible = false
-	if _bar_root:
-		_bar_root.visible = false
+	if _overhead:
+		_overhead.visible = false
 	if _server_rules():
 		get_parent().get_node("Grenades").drop_cooked(self)
 		var body_impact := impact.duplicate()
@@ -852,6 +873,8 @@ func restart_round() -> void:
 
 func stop_round() -> void:
 	_cancel_respawn()
+	if _hit_reaction:
+		_hit_reaction.reset()
 	_movement_audio.reset()
 	gun.stop_round()
 	_lean_amount = 0.0
@@ -875,6 +898,8 @@ func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
 	_spawn_revision = revision
 	_latest_pose = PackedFloat32Array()
 	_hurtboxes.reset_history()
+	if _hit_reaction:
+		_hit_reaction.reset()
 	_net_grounded = true
 	_last_spawn_position = at
 	global_position = at
@@ -908,8 +933,8 @@ func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
 		inventory_changed.emit()
 	if _avatar:
 		_avatar.visible = true
-	if _bar_root:
-		_bar_root.visible = true
+	if _overhead:
+		_overhead.visible = true
 	health_changed.emit(ceili(health), MAX_HEALTH)
 	_refresh_bar()
 	gun.show()
@@ -1141,7 +1166,11 @@ func _update_capsule() -> void:
 
 
 func _build_operator() -> void:
-	_avatar = OperatorPose.MODEL.instantiate() as Node3D
+	var operator_model := load(OPERATOR_MODEL_PATH) as PackedScene
+	if operator_model == null:
+		push_error("Unable to load operator model")
+		return
+	_avatar = operator_model.instantiate() as Node3D
 	_avatar.name = "Operator"
 	_avatar.rotation.y = PI
 	_avatar.scale = Vector3.ONE * 0.96
@@ -1156,7 +1185,21 @@ func _build_operator() -> void:
 	_hurtboxes = Hurtboxes.new()
 	_hurtboxes.name = "OperatorHurtboxes"
 	add_child(_hurtboxes)
-	_hurtboxes.setup(_skeleton)
+	_hurtboxes.setup(_skeleton, _pose)
+	if not Net.dedicated and not _is_local():
+		_hit_reaction = HitReaction.new()
+		_hit_reaction.name = "HitReaction"
+		_hit_reaction.strength = 1.55
+		_hit_reaction.max_angle_deg = 17.0
+		_hit_reaction.hit_bones = PackedStringArray([
+			"mixamorig_Hips_01", "mixamorig_Spine_02", "mixamorig_Spine1_03", "mixamorig_Spine2_04",
+			"mixamorig_Neck_05", "mixamorig_Head_06",
+			"mixamorig_RightArm_09", "mixamorig_RightForeArm_010", "mixamorig_RightHand_011",
+			"mixamorig_LeftArm_033", "mixamorig_LeftForeArm_034", "mixamorig_LeftHand_035",
+			"mixamorig_RightUpLeg_057", "mixamorig_RightLeg_058", "mixamorig_RightFoot_059",
+			"mixamorig_LeftUpLeg_063", "mixamorig_LeftLeg_064", "mixamorig_LeftFoot_065",
+		])
+		_skeleton.add_child(_hit_reaction)
 
 	var eyes := _avatar.find_child("Mil_R5_Eye", true, false).get_child(0) as MeshInstance3D
 	var eye_center := eyes.global_transform * eyes.get_aabb().get_center()
@@ -1186,11 +1229,11 @@ func set_first_person_body_visible(visible_body: bool) -> void:
 
 
 func _update_operator(delta: float) -> void:
-	if _bar_root and not _dead:
-		_face_bar()
+	if _overhead and not _dead:
+		_face_overhead()
 		var observer := get_viewport().get_camera_3d()
 		if observer:
-			_bar_root.visible = not get_parent().get_node("Grenades").obscures(observer.global_position, hurtbox_center("head"))
+			_overhead.visible = not get_parent().get_node("Grenades").obscures(observer.global_position, hurtbox_center("head"))
 	if _dead:
 		_prev_pos = global_position
 		return
@@ -1224,8 +1267,8 @@ func _update_view_pose() -> void:
 	_camera.position = eye + lean_offset
 	_camera.rotation.z = -_view_lean * 0.16
 	_pouch.position = _pouch_rest + _pose.stance_offset
-	if _bar_root:
-		_bar_root.position.y = 1.98 + stance.y
+	if _overhead:
+		_overhead.position.y = 1.98 + stance.y
 
 
 func _neutral_eye(pitch: float, crouch_weight: float) -> Vector3:
@@ -1233,10 +1276,17 @@ func _neutral_eye(pitch: float, crouch_weight: float) -> Vector3:
 	return _head_pivot + eye_offset + Vector3(0.0, -CROUCH_DROP, 0.05) * crouch_weight
 
 
+func _ensure_overhead() -> void:
+	if _overhead:
+		return
+	_overhead = Node3D.new()
+	_overhead.position.y = 1.98
+	_overhead.visible = not _dead
+	add_child(_overhead)
+
+
 func _build_bar() -> void:
-	_bar_root = Node3D.new()
-	_bar_root.position.y = 1.98
-	add_child(_bar_root)
+	_ensure_overhead()
 	var back := MeshInstance3D.new()
 	var back_mesh := QuadMesh.new()
 	back_mesh.size = Vector2(0.7, 0.09)
@@ -1246,7 +1296,7 @@ func _build_bar() -> void:
 	back_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	back_mesh.material = back_mat
 	back.mesh = back_mesh
-	_bar_root.add_child(back)
+	_overhead.add_child(back)
 	_bar_fill = MeshInstance3D.new()
 	var fill_mesh := QuadMesh.new()
 	fill_mesh.size = Vector2(0.64, 0.055)
@@ -1256,13 +1306,14 @@ func _build_bar() -> void:
 	fill_mesh.material = _bar_mat
 	_bar_fill.mesh = fill_mesh
 	_bar_fill.position.z = 0.01
-	_bar_root.add_child(_bar_fill)
+	_overhead.add_child(_bar_fill)
 	_refresh_bar()
 
 
 func set_name_label(display_name: String) -> void:
-	if not _bar_root:
+	if _is_local() or Net.dedicated:
 		return
+	_ensure_overhead()
 	if not _name_label:
 		_name_label = Label3D.new()
 		_name_label.position.y = 0.14
@@ -1271,7 +1322,7 @@ func set_name_label(display_name: String) -> void:
 		_name_label.modulate = Color(1.0, 1.0, 1.0, 0.82)
 		_name_label.outline_size = 4
 		_name_label.outline_modulate = Color(0.0, 0.0, 0.0, 0.55)
-		_bar_root.add_child(_name_label)
+		_overhead.add_child(_name_label)
 	_name_label.text = display_name
 
 
@@ -1284,9 +1335,9 @@ func _refresh_bar() -> void:
 	_bar_mat.albedo_color = Color(lerpf(0.85, 0.2, ratio), lerpf(0.16, 0.75, ratio), 0.18)
 
 
-func _face_bar() -> void:
+func _face_overhead() -> void:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null:
 		return
-	_bar_root.look_at(camera.global_position, Vector3.UP)
-	_bar_root.rotate_y(PI)
+	_overhead.look_at(camera.global_position, Vector3.UP)
+	_overhead.rotate_y(PI)
