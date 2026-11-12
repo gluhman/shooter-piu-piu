@@ -599,10 +599,14 @@ func _save_display_name() -> void:
 func _refresh_map_size_labels() -> void:
 	var game := _match()
 	var training: bool = _map.selected == game.MAP.TEST_RANGE_ID
+	var village: bool = _map.selected == game.MAP.VILLAGE_ID
 	if training:
 		_map_size.select(game.MAP.DEFAULT_SIZE)
+	elif village and _map_size.selected < game.MAP.VILLAGE_MIN_SIZE:
+		_map_size.select(game.MAP.VILLAGE_MIN_SIZE)
 	_map_size.disabled = training
 	for index in _map_size.item_count:
+		_map_size.set_item_disabled(index, village and index < game.MAP.VILLAGE_MIN_SIZE)
 		var label: String = game.MAP.SIZE_NAMES[index]
 		if _map.selected == game.MAP.BREAKWATER_ID:
 			var dimensions: Vector2 = game.BREAKWATER.SIZE_BOUNDS[index].size

@@ -2,8 +2,9 @@ shader_type spatial;
 
 uniform sampler2D detail_color : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D detail_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
-uniform vec3 dirt : source_color = vec3(0.37, 0.29, 0.21);
-uniform vec3 moss : source_color = vec3(0.32, 0.39, 0.24);
+uniform sampler2D detail_roughness : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform vec3 dirt : source_color = vec3(0.89, 0.83, 0.73);
+uniform vec3 moss : source_color = vec3(0.58, 0.66, 0.46);
 varying vec2 ground_position;
 
 float lattice(vec2 cell) {
@@ -26,11 +27,11 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 detail_uv = ground_position * 0.56;
+	vec2 detail_uv = ground_position * 0.5;
 	float coverage = patches(ground_position * 0.16) * 0.7 + patches(ground_position * 0.56) * 0.3;
 	vec3 detail = texture(detail_color, detail_uv).rgb;
-	ALBEDO = mix(dirt, moss, smoothstep(0.25, 0.73, coverage)) * (0.67 + detail * 0.72);
+	ALBEDO = detail * mix(dirt, moss, smoothstep(0.22, 0.75, coverage));
 	NORMAL_MAP = texture(detail_normal, detail_uv).rgb;
-	NORMAL_MAP_DEPTH = 0.52;
-	ROUGHNESS = 0.94;
+	NORMAL_MAP_DEPTH = 0.78;
+	ROUGHNESS = mix(0.70, 1.0, texture(detail_roughness, detail_uv).r);
 }

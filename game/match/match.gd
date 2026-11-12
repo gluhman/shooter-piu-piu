@@ -232,7 +232,10 @@ func arena_width() -> float:
 
 
 func _selected_map_size(arena: int, size: int) -> int:
-	return MAP.DEFAULT_SIZE if arena == MAP.TEST_RANGE_ID else clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
+	if arena == MAP.TEST_RANGE_ID:
+		return MAP.DEFAULT_SIZE
+	var minimum := MAP.VILLAGE_MIN_SIZE if arena == MAP.VILLAGE_ID else 0
+	return clampi(size, minimum, MAP.SIZE_WIDTHS.size() - 1)
 
 
 func is_training_range() -> bool:
@@ -813,7 +816,7 @@ func _build_arena(layout_seed: int) -> void:
 		mesh.cell_height = 0.1
 		mesh.agent_radius = 0.50 if village else 0.40
 		mesh.agent_height = 1.8
-		mesh.agent_max_climb = 0.1
+		mesh.agent_max_climb = 0.2 if village else 0.1
 		mesh.filter_walkable_low_height_spans = true
 		var width := arena_width()
 		if is_instance_valid(_breakwater):
@@ -823,7 +826,8 @@ func _build_arena(layout_seed: int) -> void:
 		elif map_id == MAP.DUST2_ID:
 			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -3.0, -width * 0.5), Vector3(width, 7.5, width))
 		else:
-			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -0.5, -width * 0.5), Vector3(width, 2.8, width))
+			var bake_height := 6.0 if village else 2.8
+			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -0.5, -width * 0.5), Vector3(width, bake_height, width))
 		var geometry := NavigationMeshSourceGeometryData3D.new()
 		NavigationServer3D.parse_source_geometry_data(mesh, geometry, self)
 		_navigation_pending = true

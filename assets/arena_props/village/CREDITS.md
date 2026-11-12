@@ -1,4 +1,6 @@
-# Деревья и перекрёсток «Лесного посёлка»
+# Ресурсы «Лесного посёлка»
 
 - `village_tree.res` подготовлен из демонстрационного дерева Tree3D с уменьшенной детализацией. Ветка и ствол сохранены как обычная сетка Godot с материалами. [Tree3D](https://github.com/JekSun97/gdTree3D), [лицензия](LICENSE-Tree3D.md).
 - `village_crossroads.res` подготовлен из модели перекрёстка `4way_1x1` RoadGenerator. Матч использует визуальную сетку и свой пол. [RoadGenerator](https://github.com/TheDuckCow/godot-road-generator), [лицензия](LICENSE-RoadGenerator.txt).
+- Модели с текстурами 2K от Poly Haven, лицензия [CC0](https://polyhaven.com/license). [Wine Barrel 01](https://polyhaven.com/a/wine_barrel_01), [Wooden Crate 01](https://polyhaven.com/a/wooden_crate_01), [Wooden Bucket 02](https://polyhaven.com/a/wooden_bucket_02) и [Wicker Basket 01](https://polyhaven.com/a/wicker_basket_01).
+- Материалы в `assets/map_textures/village/` используют карты цвета, нормалей и шероховатости в 2K. Камень, штукатурка и черепица также используют AO. [Cobblestone Floor 02](https://polyhaven.com/a/cobblestone_floor_02), [Plaster Stone Wall 02](https://polyhaven.com/a/plaster_stone_wall_02), [Clay Roof Tiles 02](https://polyhaven.com/a/clay_roof_tiles_02) и [Stony Dirt Path](https://polyhaven.com/a/stony_dirt_path), лицензия [CC0](https://polyhaven.com/license).

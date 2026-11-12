@@ -29,6 +29,7 @@ const SIZE_WIDTHS := [20.0, 40.0, ARENA_WIDTH]
 const SIZE_NAMES := ["Маленькая", "Средняя", "Большая"]
 const DEFAULT_SIZE := 2
 const VILLAGE_ID := 3
+const VILLAGE_MIN_SIZE := 1
 const DUST2_ID := 4
 const WORKSHOP_ID := 5
 const BREAKWATER_ID := 6
@@ -90,6 +91,12 @@ const DUST2_TEXTURES := {
 	"dust2/sandstone": ["color", "normal", "roughness"],
 	"dust2/sand": ["color", "normal", "roughness"],
 }
+const VILLAGE_TEXTURES := {
+	"village/cobble": ["color", "normal", "roughness", "ao"],
+	"village/dirt": ["color", "normal", "roughness"],
+	"village/plaster": ["color", "normal", "roughness", "ao"],
+	"village/roof": ["color", "normal", "roughness", "ao"],
+}
 
 var _textures: Dictionary[String, Texture2D] = {}
 
@@ -105,6 +112,12 @@ func preload_textures(map_id: int) -> void:
 	else:
 		for material in DUST2_TEXTURES:
 			for kind in DUST2_TEXTURES[material]:
+				_textures.erase(_texture_path(material, kind))
+	if map_id == VILLAGE_ID:
+		materials.merge(VILLAGE_TEXTURES)
+	else:
+		for material in VILLAGE_TEXTURES:
+			for kind in VILLAGE_TEXTURES[material]:
 				_textures.erase(_texture_path(material, kind))
 	if map_id == WORKSHOP_ID:
 		return
@@ -146,15 +159,17 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 		return supplies
 	if map_id == TEST_RANGE_ID:
 		return _build_test_range(width)
+	if map_id == VILLAGE_ID:
+		var village_width := maxf(width, SIZE_WIDTHS[VILLAGE_MIN_SIZE])
+		_half_extent = village_width * 0.5
+		var supplies := VILLAGE.new(self).build(village_width, rng)
+		_build_respawn_grid(floori((_half_extent - 1.0) / 5.6), 5.6, _half_extent)
+		_patrol.assign(respawn_points)
+		return supplies
 
 	_build_spawn_ring(_half_extent - (2.25 if width == 70.0 else 1.35))
 	var spacing := 2.8 if width == 20.0 else 5.6
 	var steps := floori((_half_extent - 1.0) / spacing)
-	if map_id == VILLAGE_ID:
-		var supplies := VILLAGE.new(self).build(width, rng)
-		_build_respawn_grid(steps, spacing, _half_extent)
-		_patrol.assign(respawn_points)
-		return supplies
 
 	_load_textures()
 	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(width + 2.0, 0.5, width + 2.0), _floor_mat)
