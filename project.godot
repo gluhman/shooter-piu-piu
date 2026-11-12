@@ -18,6 +18,7 @@ config/icon="res://assets/menu/icon.svg"
 [autoload]
 
 Net="*res://game/network/net.gd"
+RoomDirectory="*res://game/network/room_directory.gd"
 GameSettings="*res://game/settings/game_settings.gd"
 MenuFeedback="*res://game/ui/menu_feedback.gd"
 

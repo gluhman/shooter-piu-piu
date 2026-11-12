@@ -1,6 +1,6 @@
 extends Control
 
-enum Screen { MAIN, SOLO, HOST, GUEST, LOADING }
+enum Screen { MAIN, SOLO, HOST, GUEST, LOADING, SETUP, WAIT, BROWSER, JOIN }
 
 const UI := preload("res://game/ui/menu_ui.gd")
 const MENU_BACKGROUND := preload("res://assets/menu/container_yard.webp")
@@ -18,12 +18,16 @@ var _status: Label
 var _loading_status: Label
 var _ip: LineEdit
 var _display_name: LineEdit
+var _password: LineEdit
+var _form_error: Label
+var _browser_note := ""
 var _lan_bots: OptionButton
 var _busy := false
 var _quitting := false
 var _first_action: Control
 var _solo_button: Button
 var _host_button: Button
+var _internet_button: Button
 var _join_button: Button
 var _cancel_button: Button
 var _map: OptionButton
@@ -38,6 +42,9 @@ var _player_states: Array[Label] = []
 
 
 func _ready() -> void:
+	if Net.dedicated:
+		hide()
+		return
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme = UI.theme()
 	_build_layout()
@@ -53,9 +60,12 @@ func _ready() -> void:
 
 
 func show_loading() -> void:
+	if Net.dedicated or _column == null:
+		return
 	show()
 	_screen = Screen.LOADING
-	_music.stop()
+	if is_instance_valid(_music):
+		_music.stop()
 	_backdrop.hide()
 	_shade.hide()
 	_dim.color.a = 0.94
@@ -74,12 +84,15 @@ func show_loading() -> void:
 
 
 func set_loading_stage(message: String) -> void:
+	if _loading_status == null:
+		return
 	_loading_status.text = message
 
 
 func hide_lobby() -> void:
 	hide()
-	_music.stop()
+	if is_instance_valid(_music):
+		_music.stop()
 
 
 func set_modal_open(open: bool) -> void:
@@ -94,7 +107,9 @@ func show_guest_room() -> void:
 
 func join_failed() -> void:
 	if _screen == Screen.MAIN and _busy:
-		_finish_join("Не удалось подключиться. Проверь IP, сеть и наличие места.")
+		var online := Net.last_failure == "internet"
+		Net.last_failure = ""
+		_finish_join("Сервер недоступен." if online else "Не удалось подключиться. Проверь IP, сеть и наличие места.")
 
 
 func restore_focus(previous: Control) -> void:
@@ -104,24 +119,163 @@ func restore_focus(previous: Control) -> void:
 		_first_action.grab_focus()
 
 
+func is_editing_setup() -> bool:
+	return _screen == Screen.SETUP
+
+
+func is_on_main() -> bool:
+	return _screen == Screen.MAIN
+
+
+func is_browsing() -> bool:
+	return _screen == Screen.BROWSER
+
+
+func show_internet_wait(message: String = "Подключено к серверу. Ждём комнату…") -> void:
+	_busy = false
+	_screen = Screen.WAIT
+	_backdrop.show()
+	_shade.hide()
+	_dim.color.a = 0.46
+	_clear()
+	_set_panel(false, 520)
+	UI.label(_column, "Интернет", 32, UI.INK, true)
+	UI.label(_column, message, 16, UI.MUTED)
+	UI.reveal(_panel)
+
+
+func show_room_browser(note: String = "") -> void:
+	if note != "":
+		_browser_note = note
+	if _column == null:
+		return
+	_busy = false
+	_screen = Screen.BROWSER
+	_backdrop.show()
+	_shade.hide()
+	_dim.color.a = 0.46
+	_clear()
+	_set_panel(false, 640)
+	UI.label(_column, "Интернет-комнаты", 32, UI.INK, true)
+	UI.label(_column, "На сервере не больше трёх комнат. Вход по паролю хоста.", 15, UI.MUTED)
+	if _browser_note != "":
+		var problem := UI.label(_column, _browser_note, 15, UI.ACCENT)
+		problem.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var rooms: Array = RoomDirectory.listed
+	if rooms.is_empty():
+		UI.label(_column, "Пока нет комнат. Создай первую.", 16, UI.MUTED)
+	for entry in rooms:
+		var room_id := int(entry.get("id", 0))
+		var map_index := int(entry.get("map", 0))
+		var names: PackedStringArray = _match().MAP_NAMES
+		var map_name := names[map_index] if map_index >= 0 and map_index < names.size() else "Карта"
+		var players := int(entry.get("players", 0))
+		var title := "%s · %d / %d" % [map_name, players, Net.MAX_PLAYERS]
+		if bool(entry.get("playing", false)):
+			title += " · матч идёт"
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override(&"separation", 8)
+		_column.add_child(row)
+		var caption := UI.label(row, title, 16)
+		caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		UI.button(row, "Войти", _prompt_join.bind(room_id, map_name))
+	var actions := HBoxContainer.new()
+	actions.alignment = BoxContainer.ALIGNMENT_END
+	actions.add_theme_constant_override(&"separation", 8)
+	_column.add_child(actions)
+	UI.button(actions, "В меню", _match().leave_round, &"", true)
+	var create := UI.button(actions, "Создать комнату", _open_room_setup, &"PrimaryButton")
+	create.disabled = rooms.size() >= RoomDirectory.MAX_ROOMS
+	_first_action = create if not create.disabled else actions.get_child(0)
+	_first_action.grab_focus()
+	UI.reveal(_panel)
+
+
+func _open_room_setup() -> void:
+	_browser_note = ""
+	_show_room(Screen.SETUP)
+
+
+func _prompt_join(room_id: int, map_name: String) -> void:
+	_screen = Screen.JOIN
+	_clear()
+	_set_panel(false, 480)
+	UI.label(_column, map_name, 32, UI.INK, true)
+	UI.label(_column, "Пароль задаёт создатель комнаты.", 15, UI.MUTED)
+	_password = LineEdit.new()
+	_password.secret = true
+	_password.max_length = 24
+	_password.placeholder_text = "Пароль"
+	_password.custom_minimum_size = Vector2(220, 42)
+	MenuFeedback.wire(_password)
+	_column.add_child(_password)
+	_form_error = UI.label(_column, "", 14, UI.ACCENT)
+	var actions := HBoxContainer.new()
+	actions.alignment = BoxContainer.ALIGNMENT_END
+	actions.add_theme_constant_override(&"separation", 8)
+	_column.add_child(actions)
+	UI.button(actions, "Назад", show_room_browser, &"", true)
+	var enter := UI.button(actions, "Войти", _submit_join.bind(room_id), &"PrimaryButton")
+	_password.text_submitted.connect(func(_value: String) -> void: _submit_join(room_id))
+	enter.grab_focus()
+	_password.grab_focus()
+	UI.reveal(_panel)
+
+
+func _submit_join(room_id: int) -> void:
+	var password := _password.text.strip_edges() if _password else ""
+	if password.is_empty():
+		_form_error.text = "Введи пароль."
+		return
+	_browser_note = ""
+	show_internet_wait("Проверяем пароль…")
+	RoomDirectory.request_join(room_id, password)
+
+
+func show_internet_room() -> void:
+	var game := _match()
+	if game.is_loading() or game.has_started():
+		return
+	var owner: int = game.room_owner
+	var screen := Screen.GUEST
+	if owner == Net.local_id():
+		screen = Screen.HOST
+	elif owner == 0 and not Net.match_client:
+		screen = Screen.SETUP
+	if _screen == screen and _map != null:
+		refresh_room()
+		return
+	_show_room(screen)
+	if Net.match_client:
+		_match().set_local_display_name(Net.display_name)
+
+
 func refresh_room() -> void:
-	if _screen != Screen.HOST and _screen != Screen.GUEST:
+	if Net.dedicated or _map == null:
+		return
+	if _screen != Screen.HOST and _screen != Screen.GUEST and _screen != Screen.SETUP:
 		return
 	var game := _match()
-	_map.select(game.map_id)
-	_map_size.select(game.map_size)
-	_weapons.select(game.weapon_set)
-	_time_limit.select(game.time_option)
-	_kill_limit.select(game.kill_option)
-	_difficulty.select(game.bot_difficulty)
-	_lan_bots.select(game.lan_bot_count)
+	if _screen != Screen.SETUP:
+		_map.select(game.map_id)
+		_map_size.select(game.map_size)
+		_weapons.select(game.weapon_set)
+		_time_limit.select(game.time_option)
+		_kill_limit.select(game.kill_option)
+		_difficulty.select(game.bot_difficulty)
+		_lan_bots.select(game.lan_bot_count)
 	var local := Net.local_id()
 	var connected_count: int = Net.MAX_PLAYERS - game.player_slots.count(0)
 	_roster_title.text = "Игроки  %d / %d" % [connected_count, Net.MAX_PLAYERS]
 	for slot in Net.MAX_PLAYERS:
 		var peer: int = game.player_slots[slot]
 		_player_names[slot].text = game.player_label(slot) + (" (вы)" if peer == local else "")
-		_player_states[slot].text = "Подключён" if peer != 0 else "Не подключён"
+		if peer == 0:
+			_player_states[slot].text = "Не подключён"
+		elif peer == game.room_owner:
+			_player_states[slot].text = "Создатель"
+		else:
+			_player_states[slot].text = "Подключён"
 		_player_states[slot].add_theme_color_override(&"font_color", UI.ACCENT if peer != 0 else UI.MUTED)
 
 
@@ -219,6 +373,7 @@ func _show_main() -> void:
 	join.add_child(_ip)
 
 	_join_button = UI.button(join, "Подключиться", _on_join)
+	_internet_button = UI.button(network, "Играть через интернет", _on_internet)
 	_cancel_button = UI.button(network, "Отменить подключение", _cancel_join, &"", true)
 	_cancel_button.hide()
 	_status = UI.label(network, "", 14, UI.ACCENT)
@@ -248,9 +403,10 @@ func _show_room(screen: Screen) -> void:
 	_dim.color.a = 0.46
 	_clear()
 	var solo := screen == Screen.SOLO
-	var host := screen == Screen.HOST
+	var host := screen == Screen.HOST or screen == Screen.SETUP
 	_set_panel(false, 550 if solo else 800)
-	UI.label(_column, "Одиночная игра" if solo else "Сетевая комната", 32, UI.INK, true)
+	var title := "Одиночная игра" if solo else ("Новая комната" if screen == Screen.SETUP else "Сетевая комната")
+	UI.label(_column, title, 32, UI.INK, true)
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override(&"separation", 14)
 	_column.add_child(body)
@@ -313,6 +469,14 @@ func _show_room(screen: Screen) -> void:
 	_display_name.text_submitted.connect(func(_value: String) -> void: _save_display_name())
 	_display_name.focus_exited.connect(_save_display_name)
 	UI.row(rules, "Имя в сети", _display_name)
+	if screen == Screen.SETUP and Net.browsing:
+		_password = LineEdit.new()
+		_password.secret = true
+		_password.max_length = 24
+		_password.placeholder_text = "Пароль для входа"
+		_password.custom_minimum_size = Vector2(180, 34)
+		MenuFeedback.wire(_password)
+		UI.row(rules, "Пароль", _password)
 
 	var roster_card := UI.card(body, "")
 	roster_card.get_parent().custom_minimum_size.x = 252
@@ -330,10 +494,13 @@ func _show_room(screen: Screen) -> void:
 		_player_states.append(UI.label(row, "", 13))
 	refresh_room()
 
-	if host:
-		var addresses := Net.lan_addresses()
-		var address := ", ".join(addresses) if not addresses.is_empty() else "адрес в сети не найден"
-		var invite := UI.label(setup, "IP для подключения: " + address, 14, UI.MUTED)
+	if screen == Screen.HOST:
+		var invite_text := "Друзья заходят через «Играть через интернет» и вводят пароль комнаты."
+		if not Net.internet:
+			var addresses := Net.lan_addresses()
+			var address := ", ".join(addresses) if not addresses.is_empty() else "адрес в сети не найден"
+			invite_text = "IP для подключения: " + address
+		var invite := UI.label(setup, invite_text, 14, UI.MUTED)
 		invite.custom_minimum_size.x = 340
 		invite.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_map.item_selected.connect(_on_rules_changed)
@@ -343,6 +510,10 @@ func _show_room(screen: Screen) -> void:
 		_kill_limit.item_selected.connect(_on_rules_changed)
 		_difficulty.item_selected.connect(_on_rules_changed)
 		_lan_bots.item_selected.connect(_on_rules_changed)
+	elif screen == Screen.SETUP:
+		var hint := UI.label(setup, "Выбери карту, правила и пароль. Без пароля в комнату не войти.", 14, UI.MUTED)
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_form_error = UI.label(setup, "", 14, UI.ACCENT)
 	else:
 		_map.disabled = true
 		_map_size.disabled = true
@@ -350,12 +521,17 @@ func _show_room(screen: Screen) -> void:
 		_time_limit.disabled = true
 		_kill_limit.disabled = true
 		_difficulty.disabled = true
-		UI.label(setup, "Ожидание запуска матча хостом…", 14, UI.MUTED)
+		var waiting := "Ожидание запуска создателем комнаты…" if Net.internet else "Ожидание запуска матча хостом…"
+		UI.label(setup, waiting, 14, UI.MUTED)
 	_column.add_child(actions)
-	var leave := UI.button(actions, "Покинуть комнату", game.leave_round, &"", true)
-	if host:
+	var leave := UI.button(actions, "Назад" if Net.browsing and screen == Screen.SETUP else "Покинуть комнату", show_room_browser if Net.browsing and screen == Screen.SETUP else game.leave_round, &"", true)
+	if screen == Screen.SETUP and Net.browsing:
+		UI.button(actions, "Создать комнату", _create_directory_room, &"PrimaryButton")
+	elif screen == Screen.SETUP:
+		UI.button(actions, "Создать комнату", _create_internet_room, &"PrimaryButton")
+	elif screen == Screen.HOST:
 		UI.button(actions, "Начать матч", game.start_host_match, &"PrimaryButton")
-	if not host:
+	if screen == Screen.GUEST:
 		_first_action = leave
 	_first_action.grab_focus()
 	UI.reveal(_panel)
@@ -399,6 +575,40 @@ func _on_rules_changed(_index: int) -> void:
 func _on_solo() -> void:
 	if not _busy:
 		_show_room(Screen.SOLO)
+
+
+func _create_directory_room() -> void:
+	var password := _password.text.strip_edges() if _password else ""
+	if password.is_empty():
+		if _form_error:
+			_form_error.text = "Введи пароль комнаты."
+		return
+	var weapons := _weapons.selected
+	var arena := _map.selected
+	var limits := Vector2i(_time_limit.selected, _kill_limit.selected)
+	var difficulty := _difficulty.selected
+	var bots := _lan_bots.selected
+	var size := _map_size.selected
+	_save_display_name()
+	show_internet_wait("Создаём комнату…")
+	RoomDirectory.request_create(password, weapons, arena, limits, difficulty, bots, size)
+
+
+func _create_internet_room() -> void:
+	_save_display_name()
+	_match().create_internet_room(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, _lan_bots.selected, _map_size.selected)
+
+
+func _on_internet() -> void:
+	if _busy:
+		return
+	var err := Net.join_internet()
+	if err != OK:
+		_set_status("Не удалось подключиться к серверу.")
+		return
+	_set_join_pending(true)
+	_set_status("Подключаемся к серверу…")
+	_cancel_button.grab_focus()
 
 
 func _on_host() -> void:
@@ -450,6 +660,7 @@ func _set_join_pending(pending: bool) -> void:
 	_busy = pending
 	_solo_button.disabled = pending
 	_host_button.disabled = pending
+	_internet_button.disabled = pending
 	_join_button.disabled = pending
 	_ip.editable = not pending
 	_cancel_button.visible = pending

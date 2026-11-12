@@ -34,8 +34,10 @@ var _layout_seed := 0
 var player_slots := PackedInt32Array()
 var _display_names: Dictionary[int, String] = {}
 var lan_bot_count := 1
+var room_owner := 1
 var _solo_bot_count := 1
 var _map_revision := 0
+var _load_token := 0
 
 var _reloading := false
 var _started := false
@@ -46,11 +48,25 @@ var _navigation_region: NavigationRegion3D
 var _ready_peers: Array[int] = []
 var _pose_time := 0.0
 var _cloud_time := 0.0
+var _status_time := 0.0
+var _had_player := false
+var _room_password := ""
+var _owner_token := ""
 
 
 func _ready() -> void:
+	if Net.directory:
+		return
 	player_slots.resize(Net.MAX_PLAYERS)
-	player_slots[0] = 1
+	if Net.match_server:
+		room_owner = 0
+		if not _load_match_room():
+			get_tree().quit(1)
+			return
+	elif Net.dedicated:
+		room_owner = 0
+	else:
+		player_slots[0] = 1
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	Net.joined.connect(_on_joined)
@@ -74,6 +90,8 @@ func player_label(slot: int) -> String:
 	var alias: String = _display_names.get(player_slots[slot], "")
 	if not alias.is_empty():
 		return alias
+	if Net.internet or Net.dedicated:
+		return "Игрок %d" % (slot + 1)
 	return "Хост" if slot == 0 else "Игрок %d" % (slot + 1)
 
 
@@ -195,7 +213,15 @@ func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
 
 
 func can_restart() -> bool:
-	return _started and (Net.solo or (Net.active and multiplayer.is_server()))
+	if not _started or Net.dedicated:
+		return false
+	if Net.solo:
+		return true
+	if not Net.active or multiplayer.multiplayer_peer == null:
+		return false
+	if multiplayer.is_server():
+		return true
+	return room_owner == multiplayer.get_unique_id()
 
 
 func can_choose_next_map() -> bool:
@@ -203,7 +229,14 @@ func can_choose_next_map() -> bool:
 
 
 func start_next_map(arena: int) -> void:
-	if not can_choose_next_map() or is_loading() or arena < 0 or arena >= MAP_NAMES.size():
+	if is_loading() or arena < 0 or arena >= MAP_NAMES.size():
+		return
+	if Net.active and not multiplayer.is_server():
+		if not can_choose_next_map():
+			return
+		net_request_next_map.rpc_id(1, arena)
+		return
+	if not round_finished():
 		return
 	if Net.active:
 		_map_revision += 1
@@ -253,7 +286,12 @@ func _clear_match_map() -> void:
 
 
 func restart_round() -> void:
-	if not can_restart():
+	if Net.active and not multiplayer.is_server():
+		if not can_restart():
+			return
+		net_request_restart.rpc_id(1)
+		return
+	if not _started or not (Net.solo or (Net.active and multiplayer.is_server())):
 		return
 	for peer in _ready_peers:
 		net_restart.rpc_id(peer)
@@ -327,56 +365,146 @@ func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limit
 
 
 func update_host_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+	if Net.active and not multiplayer.is_server():
+		if room_owner != multiplayer.get_unique_id():
+			return
+		net_request_rules.rpc_id(1, weapons, arena, limits, difficulty, bot_count, size)
+		return
 	if _started or _loading or not Net.active or not multiplayer.is_server():
 		return
-	weapon_set = weapons
-	map_id = arena
-	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
-	_set_limits(limits)
-	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
-	lan_bot_count = clampi(bot_count, 0, MAX_BOTS)
+	_apply_room_rules(weapons, arena, limits, difficulty, bot_count, size)
 	_send_room_state()
 
 
+func create_internet_room(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+	if not Net.internet or multiplayer.is_server() or room_owner != 0 or _started or _loading:
+		return
+	net_create_room.rpc_id(1, weapons, arena, limits, difficulty, bot_count, size)
+
+
 func start_host_match() -> void:
+	if Net.internet and not multiplayer.is_server():
+		if room_owner != multiplayer.get_unique_id() or _started or _loading:
+			return
+		_show_loading()
+		net_request_start.rpc_id(1)
+		return
 	if _started or _loading or not Net.active or not multiplayer.is_server():
 		return
+	var token := _load_token
 	_show_loading()
 	for peer in player_slots:
 		if peer > 1:
 			net_wait_for_arena.rpc_id(peer)
 	_layout_seed = randi()
 	await _begin_network_match(weapon_set, map_id, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, map_size)
-	if _reloading or not Net.active:
+	if token != _load_token or _reloading or not Net.active:
 		return
 	for peer in player_slots:
 		if peer > 1:
 			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size)
-	if player_slots.count(0) == Net.MAX_PLAYERS - 1:
+	if not Net.dedicated and player_slots.count(0) == Net.MAX_PLAYERS - 1:
 		$HUD.show_host_ip(Net.lan_addresses())
+	if Net.dedicated:
+		print("Матч начат: %s, игроков %d." % [MAP_NAMES[map_id], _connected_players()])
+		_write_room_status()
+
+
+func _apply_room_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+	weapon_set = clampi(weapons, 0, WEAPON_SET_NAMES.size() - 1)
+	map_id = clampi(arena, 0, mini(MAP_NAMES.size(), ARENA_HOURS.size()) - 1)
+	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
+	_set_limits(limits)
+	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
+	lan_bot_count = clampi(bot_count, 0, MAX_BOTS)
 
 
 func _send_room_state() -> void:
-	$HUD/Lobby.refresh_room()
+	if not Net.dedicated:
+		$HUD/Lobby.refresh_room()
 	for peer in player_slots:
 		if peer > 1:
-			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _display_names, map_size)
+			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _display_names, map_size, room_owner)
+
+
+@rpc("any_peer", "reliable")
+func net_create_room(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+	if not Net.dedicated or not multiplayer.is_server() or _started or _loading:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not player_slots.has(sender):
+		return
+	if room_owner != 0:
+		_send_room_state()
+		return
+	room_owner = sender
+	_apply_room_rules(weapons, arena, limits, difficulty, bot_count, size)
+	print("Комнату создал игрок %d: %s." % [sender, MAP_NAMES[map_id]])
+	_send_room_state()
+
+
+@rpc("any_peer", "reliable")
+func net_request_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+	if not Net.dedicated or not multiplayer.is_server() or multiplayer.get_remote_sender_id() != room_owner:
+		return
+	update_host_rules(weapons, arena, limits, difficulty, bot_count, size)
+
+
+@rpc("any_peer", "reliable")
+func net_request_start() -> void:
+	if not Net.dedicated or not multiplayer.is_server() or multiplayer.get_remote_sender_id() != room_owner:
+		return
+	start_host_match()
+
+
+@rpc("any_peer", "reliable")
+func net_request_restart() -> void:
+	if not Net.dedicated or not multiplayer.is_server() or multiplayer.get_remote_sender_id() != room_owner:
+		return
+	restart_round()
+
+
+@rpc("any_peer", "reliable")
+func net_request_next_map(arena: int) -> void:
+	if not Net.dedicated or not multiplayer.is_server() or multiplayer.get_remote_sender_id() != room_owner:
+		return
+	start_next_map(arena)
+
+
+@rpc("authority", "call_remote", "reliable")
+func net_refused(message: String) -> void:
+	Net.notice = message
+	_reload_main_menu()
+
+
+@rpc("authority", "reliable")
+func net_room_owner(owner: int) -> void:
+	room_owner = owner
 
 
 @rpc("authority", "reliable")
 func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: Vector2i,
-		difficulty: int, bot_count: int, names: Dictionary[int, String], size: int) -> void:
+		difficulty: int, bot_count: int, names: Dictionary[int, String], size: int, owner: int) -> void:
 	if _started or _loading:
 		return
-	weapon_set = weapons
-	map_id = arena
-	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
-	player_slots = roster
-	_set_limits(limits)
-	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
-	lan_bot_count = bot_count
-	_display_names = names
-	$HUD/Lobby.refresh_room()
+	var editing: bool = Net.internet and owner == 0 and $HUD/Lobby.is_editing_setup()
+	if editing:
+		player_slots = roster
+		_display_names = names
+	else:
+		weapon_set = weapons
+		map_id = arena
+		map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
+		player_slots = roster
+		_set_limits(limits)
+		bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
+		lan_bot_count = bot_count
+		_display_names = names
+	room_owner = owner
+	if Net.internet:
+		$HUD/Lobby.show_internet_room()
+	else:
+		$HUD/Lobby.refresh_room()
 
 
 @rpc("authority", "reliable")
@@ -410,15 +538,20 @@ func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: 
 		net_ready.rpc_id(1, revision)
 
 
+func _load_current(token: int) -> bool:
+	return token == _load_token and not _reloading and Net.active
+
+
 func _begin_network_match(weapons: int, arena: int, layout_seed: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+	var token := _load_token
 	weapon_set = weapons
 	map_id = arena
 	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 	_set_limits(limits)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	lan_bot_count = bot_count
-	await _load_arena(layout_seed, bot_count, bot_difficulty)
-	if _reloading or not Net.active:
+	await _load_arena(layout_seed, bot_count, bot_difficulty, token)
+	if not _load_current(token):
 		return
 	_started = true
 	for slot in player_slots.size():
@@ -430,31 +563,49 @@ func _begin_network_match(weapons: int, arena: int, layout_seed: int, limits: Ve
 func _show_loading() -> void:
 	_waiting_for_host = false
 	_loading = true
+	if Net.dedicated:
+		return
 	$HUD/MatchMenu.close()
 	$HUD/Lobby.show_loading()
 
 
 func _loading_stage(message: String) -> void:
-	$HUD/Lobby.set_loading_stage(message)
+	if Net.dedicated:
+		print(message)
+	else:
+		$HUD/Lobby.set_loading_stage(message)
 	await get_tree().process_frame
 	await get_tree().process_frame
 
 
-func _load_arena(layout_seed: int, bot_count: int, difficulty: int) -> void:
+func _load_arena(layout_seed: int, bot_count: int, difficulty: int, token: int = -1) -> void:
 	await _loading_stage("Подгружаем текстуры…")
+	if token >= 0 and not _load_current(token):
+		return
 	await $Map.preload_textures()
+	if token >= 0 and not _load_current(token):
+		return
 	await _loading_stage("Собираем карту…")
 	_build_arena(layout_seed)
 	await _loading_stage("Подгружаем оружие и звуки…")
+	if token >= 0 and not _load_current(token):
+		return
 	$Ballistics.prepare_acoustics()
 	await CLASSIC_WEAPONS.prepare(get_tree(), WEAPON_SETS[weapon_set])
+	if token >= 0 and not _load_current(token):
+		return
 	await _loading_stage("Готовим бойцов…")
-	await _spawn_bots(bot_count, difficulty)
-	while _navigation_pending and not _reloading:
+	await _spawn_bots(bot_count, difficulty, token)
+	while _navigation_pending and not _reloading and (token < 0 or _load_current(token)):
 		await get_tree().process_frame
 
 
 func _finish_loading() -> void:
+	if Net.dedicated:
+		_loading = false
+		if not _reloading:
+			_reset_clock()
+		return
 	var warmup := WEAPON_SCRIPT.render_warmup(WEAPON_SETS[weapon_set])
 	add_child(warmup)
 	var props: Node3D = $Loot.warm_rendering()
@@ -589,8 +740,10 @@ func _on_host_lost() -> void:
 		_finish_round("Хост отключился")
 
 
-func _spawn_bots(count: int, difficulty: int) -> void:
+func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
 	for index in count:
+		if token >= 0 and not _load_current(token):
+			return
 		var bot := PLAYER_SCENE.instantiate()
 		bot.set_script(BOT_SCRIPT)
 		bot.name = "Bot%d" % index
@@ -641,12 +794,18 @@ func _spawn_player(peer_id: int, slot: int) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if Net.match_server:
+		_status_time += delta
+		if _status_time >= 1.0:
+			_status_time = 0.0
+			_write_room_status()
 	if not _started or _loading or round_finished():
 		return
-	_cloud_time += delta
-	if _cloud_time >= 0.2:
-		$WorldEnvironment/SkyDome.process_tick(_cloud_time)
-		_cloud_time = 0.0
+	if not Net.dedicated:
+		_cloud_time += delta
+		if _cloud_time >= 0.2:
+			$WorldEnvironment/SkyDome.process_tick(_cloud_time)
+			_cloud_time = 0.0
 	if not Net.active or multiplayer.is_server():
 		_tick_round(delta)
 	if not Net.active or round_finished():
@@ -706,26 +865,78 @@ func net_poses(poses: Dictionary[int, PackedFloat32Array]) -> void:
 
 
 func _on_joined() -> void:
-	$HUD/Lobby.show_guest_room()
+	if Net.browsing:
+		$HUD/Lobby.show_room_browser()
+		return
+	if Net.match_client:
+		$HUD/Lobby.show_internet_wait("Входим в комнату…")
+		submit_room_auth()
+		return
+	if Net.internet:
+		$HUD/Lobby.show_internet_wait()
+	else:
+		$HUD/Lobby.show_guest_room()
 	set_local_display_name(Net.display_name)
 
 
+func submit_room_auth() -> void:
+	if not Net.match_client:
+		return
+	net_auth.rpc_id(1, Net.pending_password, Net.pending_token)
+
+
 func _on_connection_failed() -> void:
-	$HUD/Lobby.join_failed()
+	if $HUD/Lobby.is_on_main():
+		$HUD/Lobby.join_failed()
+		return
+	if Net.notice.is_empty():
+		Net.notice = "Не удалось войти в комнату."
+	_reload_main_menu()
 
 
 func _on_peer_connected(id: int) -> void:
+	if Net.match_server:
+		return
 	if Net.active and multiplayer.is_server():
 		call_deferred("_welcome", id)
+
+
+@rpc("any_peer", "reliable")
+func net_auth(password: String, token: String) -> void:
+	if not Net.match_server or not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not multiplayer.get_peers().has(sender) or player_slots.has(sender):
+		return
+	if password != _room_password:
+		net_refused.rpc_id(sender, "Неверный пароль")
+		multiplayer.multiplayer_peer.disconnect_peer(sender)
+		return
+	if player_slots.find(0) < 0:
+		net_refused.rpc_id(sender, "Комната заполнена")
+		multiplayer.multiplayer_peer.disconnect_peer(sender)
+		return
+	if token != "" and token == _owner_token and room_owner == 0:
+		room_owner = sender
+		_owner_token = ""
+	_had_player = true
+	_welcome(sender)
+	_write_room_status()
 
 
 func _welcome(id: int) -> void:
 	if not Net.active or not multiplayer.is_server() or not multiplayer.get_peers().has(id):
 		return
+	if player_slots.has(id):
+		return
 	var slot := player_slots.find(0)
-	if slot < 0 or player_slots.has(id):
+	if slot < 0:
+		net_refused.rpc_id(id, "Комната заполнена")
+		multiplayer.multiplayer_peer.disconnect_peer(id)
 		return
 	_set_slot(slot, id)
+	if Net.dedicated:
+		print("Подключился игрок %d. В комнате %d." % [id, _connected_players()])
 	if _started:
 		_send_slot(slot, id, id)
 		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size)
@@ -759,14 +970,28 @@ func _on_peer_disconnected(id: int) -> void:
 	if not Net.active or not multiplayer.is_server():
 		return
 	var slot := player_slots.find(id)
-	if slot <= 0:
+	if slot < 0 or (slot == 0 and not Net.dedicated):
 		return
 	_ready_peers.erase(id)
 	_display_names.erase(id)
+	var was_owner := id == room_owner
 	_set_slot(slot, 0)
+	if was_owner:
+		room_owner = _next_room_owner()
+	if Net.match_server and _had_player and _connected_players() == 0:
+		_write_room_status()
+		print("Комната закрыта.")
+		get_tree().quit(0)
+		return
+	if Net.dedicated and not Net.match_server and _connected_players() == 0:
+		_reset_dedicated_room()
+		print("Комната пуста, сервер снова ждёт игроков.")
+		return
 	if _started:
 		_send_slot(slot, 0)
-		if _ready_peers.is_empty():
+		if was_owner:
+			_broadcast_owner()
+		if not Net.dedicated and _ready_peers.is_empty():
 			$HUD.show_host_ip(Net.lan_addresses())
 	else:
 		_send_room_state()
@@ -781,6 +1006,72 @@ func _send_slot(slot: int, id: int, excluded_peer: int = 0) -> void:
 @rpc("authority", "reliable")
 func net_slot(slot: int, id: int) -> void:
 	_set_slot(slot, id)
+
+
+func _connected_players() -> int:
+	var count := 0
+	for peer in player_slots:
+		if peer > 1:
+			count += 1
+	return count
+
+
+func _next_room_owner() -> int:
+	for peer in player_slots:
+		if peer > 1:
+			return peer
+	return 0 if Net.dedicated else 1
+
+
+func _broadcast_owner() -> void:
+	for peer in player_slots:
+		if peer > 1:
+			net_room_owner.rpc_id(peer, room_owner)
+
+
+func _load_match_room() -> bool:
+	var cfg := ConfigFile.new()
+	if Net.room_file.is_empty() or cfg.load(Net.room_file) != OK:
+		print("Нет файла комнаты.")
+		return false
+	_room_password = str(cfg.get_value("room", "password", ""))
+	_owner_token = str(cfg.get_value("room", "token", ""))
+	_apply_room_rules(
+		int(cfg.get_value("room", "weapons", 0)),
+		int(cfg.get_value("room", "arena", 0)),
+		Vector2i(int(cfg.get_value("room", "time", 4)), int(cfg.get_value("room", "kills", 5))),
+		int(cfg.get_value("room", "difficulty", 1)),
+		int(cfg.get_value("room", "bots", 1)),
+		int(cfg.get_value("room", "size", 2))
+	)
+	DirAccess.remove_absolute(Net.room_file)
+	_write_room_status()
+	return _room_password != ""
+
+
+func _write_room_status() -> void:
+	if not Net.match_server or Net.room_status_path.is_empty():
+		return
+	var status := ConfigFile.new()
+	status.set_value("room", "ready", true)
+	status.set_value("room", "players", _connected_players())
+	status.set_value("room", "playing", _started)
+	status.save(Net.room_status_path)
+
+
+func _reset_dedicated_room() -> void:
+	_load_token += 1
+	room_owner = 0
+	_ready_peers.clear()
+	_display_names.clear()
+	_finish_reason = ""
+	_final_rows.clear()
+	if _started or _loading:
+		_clear_match_map()
+	_loading = false
+	_waiting_for_host = false
+	_started = false
+	player_slots.fill(0)
 
 
 func _set_slot(slot: int, id: int) -> void:
