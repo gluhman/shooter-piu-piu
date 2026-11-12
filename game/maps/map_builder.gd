@@ -627,7 +627,6 @@ func _add_box(center: Vector3, size: Vector3, material: Material, yaw_deg: float
 		cover.yaw = deg_to_rad(yaw_deg)
 		_cover.append(cover)
 	var body := StaticBody3D.new()
-	body.set_collision_layer_value(2, true)
 	body.set_meta(&"impact_surface", surface)
 	body.position = center
 	body.rotation.y = deg_to_rad(yaw_deg)

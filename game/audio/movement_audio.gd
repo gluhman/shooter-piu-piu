@@ -1,5 +1,6 @@
 extends "res://addons/spatial_audio_3d/spatial_audio_3d.gd"
 
+const Balance := preload("res://game/combat/combat_balance.gd")
 const CONCRETE_VARIANTS := preload("res://game/audio/footsteps.gd").STEPS
 const REMOTE_HEARING_DISTANCE := 50.0
 const STEPS := {
@@ -45,7 +46,7 @@ func _ready() -> void:
 		attenuation_filter_db = -6.0
 		panning_strength = 1.5
 		reverb_enabled = false
-		collision_mask = 2
+		collision_mask = Balance.WORLD_MASK
 		occlusion_lp_cutoff = 4200
 		occlusion_min_lp_cutoff = 1600
 		occlusion_fadetime = 0.0

@@ -31,9 +31,9 @@ func _process(delta: float) -> void:
 		_broadcast()
 
 
-func request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+func request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
 	_typed_password = password.strip_edges()
-	net_request_create.rpc_id(1, _typed_password, weapons, arena, limits, difficulty, bot_count, size)
+	net_request_create.rpc_id(1, _typed_password, weapons, arena, limits, difficulty, bot_count, size, teams)
 
 
 func request_join(room_id: int, password: String) -> void:
@@ -42,7 +42,7 @@ func request_join(room_id: int, password: String) -> void:
 
 
 @rpc("any_peer", "reliable")
-func net_request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+func net_request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
 	if not Net.directory or not multiplayer.is_server():
 		return
 	var sender := multiplayer.get_remote_sender_id()
@@ -74,6 +74,7 @@ func net_request_create(password: String, weapons: int, arena: int, limits: Vect
 	cfg.set_value("room", "difficulty", rules.difficulty)
 	cfg.set_value("room", "bots", rules.bots)
 	cfg.set_value("room", "size", rules.size)
+	cfg.set_value("room", "teams", teams)
 	if cfg.save(room_path) != OK:
 		_reply(sender, false, 0, "", "Не удалось создать комнату.")
 		return

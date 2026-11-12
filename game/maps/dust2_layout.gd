@@ -224,7 +224,6 @@ func _floor(sector: Sector) -> void:
 	var visual := MeshInstance3D.new()
 	visual.mesh = surface.commit()
 	var body := StaticBody3D.new()
-	body.set_collision_layer_value(2, true)
 	body.set_meta(&"impact_surface", "concrete")
 	body.add_child(visual)
 	var shape := ConvexPolygonShape3D.new()

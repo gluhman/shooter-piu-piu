@@ -120,8 +120,8 @@ func _on_health(current: int, maximum: int) -> void:
 		$Ammo.hide()
 	_refresh_medkit_hint()
 	if is_instance_valid(_player):
-		var armor_capacity: int = _player.MAX_ARMOR
-		var armor: int = clampi(_player.armor, 0, armor_capacity) if remaining > 0 else 0
+		var armor_capacity: int = maxi(1, _player.armor_capacity())
+		var armor: int = clampi(ceili(_player.armor), 0, armor_capacity) if remaining > 0 else 0
 		_armor_bar.max_value = armor_capacity
 		_armor_bar.value = armor
 		_armor_value.text = "%d / %d" % [armor, armor_capacity]

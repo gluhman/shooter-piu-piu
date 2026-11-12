@@ -3,7 +3,7 @@ extends Node3D
 const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
 const Classic := preload("res://game/combat/classic_weapons.gd")
 const WeaponHud := preload("res://game/ui/weapon_hud.gd")
-const ARENA_WIDTH := preload("res://game/maps/map_builder.gd").ARENA_WIDTH
+const Balance := preload("res://game/combat/combat_balance.gd")
 const DEAGLE_MODEL := preload("res://assets/weapon_models/pistol.glb")
 const SHOTGUN_MESH := preload("res://assets/shotgun/Shotgun.obj")
 const SHOTGUN_DIFFUSE := preload("res://assets/shotgun/Sg_Diffuse.png")
@@ -12,9 +12,9 @@ const SHOTGUN_SPEC := preload("res://assets/shotgun/Sg_Spec.png")
 const AK47_MODEL := preload("res://assets/ak47/ak47.tscn")
 const DEAGLE_SLIDE := preload("res://assets/weapon_audio/deagle_slide.wav")
 const SHOTGUN_PUMP := preload("res://assets/weapon_audio/shotgun_pump.wav")
-const SHELL_START := 0.28
-const SHELL_INTERVAL := 0.60
-const SHELL_FINISH := 0.20
+const SHELL_START: float = Balance.DATA.weapons.shotgun.reload_start_s
+const SHELL_INTERVAL: float = Balance.DATA.weapons.shotgun.reload_shell_s
+const SHELL_FINISH: float = Balance.DATA.weapons.shotgun.reload_end_s
 const SHELL_IN_HAND := Vector3(-0.024, 0.126, 0.052)
 const HIP_FOV := 110.0
 const KNIFE_SWING_TIME := 0.42
@@ -25,22 +25,22 @@ const SPECIALIZATIONS := {
 	"assault": {
 		"name": "Штурмовик", "weapons": ["ak47", "m14", "lever"],
 		"hint": "Средняя дистанция. Точнее короткими очередями и одиночными.",
-		"aim_seconds": 0.20, "moving_spread": 1.0, "burst_spread": 0.82,
+		"aim_seconds": 0.20,
 	},
 	"close": {
 		"name": "Ближний бой", "weapons": ["shotgun", "mac10", "mp5"],
 		"hint": "Быстрое прицеливание и стрельба на ходу. Урон быстрее падает с расстоянием.",
-		"aim_seconds": 0.13, "moving_spread": 0.65, "burst_spread": 0.82,
+		"aim_seconds": 0.13,
 	},
 	"marksman": {
 		"name": "Снайпер", "weapons": ["m700", "m1"],
 		"hint": "Точные выстрелы на дальней дистанции. Медленное прицеливание и сильный разброс на ходу.",
-		"aim_seconds": 0.34, "moving_spread": 1.55, "burst_spread": 0.82,
+		"aim_seconds": 0.34,
 	},
 	"support": {
 		"name": "Поддержка", "weapons": ["m249", "launcher"],
 		"hint": "Пулемёт для подавления или гранатомёт против укрытий. Долгая перезарядка.",
-		"aim_seconds": 0.28, "moving_spread": 1.28, "burst_spread": 1.15,
+		"aim_seconds": 0.28,
 	},
 }
 
@@ -60,145 +60,22 @@ const FIRST_PERSON_SHOTS := {
 	"launcher": preload("res://assets/weapon_audio/first_person/launcher.wav"),
 }
 
-const WEAPONS := {
-	"knife": {
-		"name": "НОЖ",
-		"mode": "ближний бой",
-		"mag": 0,
-		"reserve": 0,
-		"range": 1.9,
-		"damage": 50,
-		"cooldown": 0.55,
-	},
-	"deagle": {
-		"name": "DESERT EAGLE",
-		"mode": "одиночный",
-		"mag": 7,
-		"reserve": 35,
-		"reload": 1.75,
-		"cooldown": 0.33,
-		"pellets": 1,
-		"spread": 0.58,
-		"aim_spread": 0.18,
-		"aim_fov": 72.0,
-		"range": ARENA_WIDTH * 0.75,
-		"recoil": 1.7,
-		"recoil_yaw": 0.35,
-		"kick": 0.045,
-		"damage": 50,
-		"damage_min": 28,
-		"falloff_start": ARENA_WIDTH * 0.15,
-		"falloff_end": ARENA_WIDTH * 0.60,
-	},
-	"shotgun": {
-		"name": "ДРОБОВИК",
-		"mode": "помповый",
-		"mag": 6,
-		"reserve": 24,
-		"reload": 2.15,
-		"cooldown": 0.82,
-		"pellets": 8,
-		"spread": 5.4,
-		"aim_spread": 5.1,
-		"aim_fov": 76.0,
-		"range": ARENA_WIDTH * 0.45,
-		"recoil": 3.3,
-		"recoil_yaw": 0.85,
-		"kick": 0.09,
-		"damage": 14,
-		"damage_min": 2,
-		"falloff_start": ARENA_WIDTH * 0.07,
-		"falloff_end": ARENA_WIDTH * 0.25,
-	},
-	"ak47": {
-		"name": "AK-47",
-		"mode": "автоматический",
-		"automatic": true,
-		"mag": 30,
-		"reserve": 90,
-		"reload": 1.75,
-		"cooldown": 0.11,
-		"pellets": 1,
-		"spread": 1.45,
-		"aim_spread": 0.48,
-		"aim_fov": 68.0,
-		"range": ARENA_WIDTH * 1.15,
-		"recoil": 1.15,
-		"recoil_yaw": 0.32,
-		"kick": 0.035,
-		"damage": 26,
-		"damage_min": 17,
-		"falloff_start": ARENA_WIDTH * 0.30,
-		"falloff_end": ARENA_WIDTH * 0.90,
-	},
-	"m1911": {
-		"name": "M1911", "mode": "одиночный", "automatic": false,
-		"mag": 8, "reserve": 32, "reload": 1.22, "cooldown": 0.21,
-		"pellets": 1, "spread": 0.65, "aim_spread": 0.24, "aim_fov": 73.0, "range": 40.0,
-		"recoil": 1.22, "recoil_yaw": 0.28, "kick": 0.037, "damage": 36,
-		"damage_min": 20, "falloff_start": ARENA_WIDTH * 0.12, "falloff_end": ARENA_WIDTH * 0.45,
-	},
-	"mac10": {
-		"name": "MAC-10", "mode": "автоматический", "automatic": true,
-		"mag": 30, "reserve": 90, "reload": 1.55, "cooldown": 0.075,
-		"pellets": 1, "spread": 2.7, "aim_spread": 1.25, "aim_fov": 81.0, "range": ARENA_WIDTH * 0.55,
-		"recoil": 1.05, "recoil_yaw": 0.52, "kick": 0.03, "damage": 20,
-		"damage_min": 7, "falloff_start": ARENA_WIDTH * 0.10, "falloff_end": ARENA_WIDTH * 0.35,
-	},
-	"mp5": {
-		"name": "MP5", "mode": "автоматический", "automatic": true,
-		"mag": 30, "reserve": 90, "reload": 1.8, "cooldown": 0.09,
-		"pellets": 1, "spread": 1.25, "aim_spread": 0.40, "aim_fov": 76.0, "range": ARENA_WIDTH * 0.85,
-		"recoil": 0.82, "recoil_yaw": 0.3, "kick": 0.031, "damage": 22,
-		"damage_min": 10, "falloff_start": ARENA_WIDTH * 0.18, "falloff_end": ARENA_WIDTH * 0.52,
-	},
-	"m700": {
-		"name": "M700", "mode": "болтовой", "automatic": false,
-		"mag": 5, "reserve": 20, "reload": 2.3, "cooldown": 1.1,
-		"pellets": 1, "spread": 1.30, "aim_spread": 0.10, "aim_fov": 47.0, "range": 126.0,
-		"recoil": 3.5, "recoil_yaw": 0.3, "kick": 0.082, "damage": 92,
-		"damage_min": 62, "falloff_start": 42.0, "falloff_end": 120.0,
-	},
-	"tec9": {
-		"name": "TEC-9", "mode": "одиночный", "automatic": false,
-		"mag": 20, "reserve": 60, "reload": 1.6, "cooldown": 0.17,
-		"pellets": 1, "spread": 1.65, "aim_spread": 0.62, "aim_fov": 79.0, "range": ARENA_WIDTH * 0.65,
-		"recoil": 1.08, "recoil_yaw": 0.4, "kick": 0.034, "damage": 26,
-		"damage_min": 11, "falloff_start": ARENA_WIDTH * 0.15, "falloff_end": ARENA_WIDTH * 0.43,
-	},
-	"lever": {
-		"name": "LEVER ACTION", "mode": "рычажный", "automatic": false,
-		"mag": 7, "reserve": 28, "reload": 2.0, "cooldown": 0.60,
-		"pellets": 1, "spread": 0.68, "aim_spread": 0.18, "aim_fov": 69.0, "range": ARENA_WIDTH * 1.05,
-		"recoil": 2.4, "recoil_yaw": 0.38, "kick": 0.064, "damage": 57,
-		"damage_min": 33, "falloff_start": ARENA_WIDTH * 0.25, "falloff_end": ARENA_WIDTH * 0.83,
-	},
-	"m14": {
-		"name": "M14", "mode": "одиночный", "automatic": false,
-		"mag": 20, "reserve": 60, "reload": 2.0, "cooldown": 0.35,
-		"pellets": 1, "spread": 0.66, "aim_spread": 0.19, "aim_fov": 68.0, "range": ARENA_WIDTH * 1.30,
-		"recoil": 2.15, "recoil_yaw": 0.38, "kick": 0.056, "damage": 43,
-		"damage_min": 32, "falloff_start": 23.0, "falloff_end": ARENA_WIDTH * 1.15,
-	},
-	"launcher": {
-		"name": "M79", "mode": "гранатомёт", "mag": 1, "reserve": 5, "reload": 2.80,
-		"cooldown": 1.0, "pellets": 1, "spread": 0.18, "aim_spread": 0.05, "aim_fov": 70.0,
-		"range": 75.0, "recoil": 3.2, "recoil_yaw": 0.34, "kick": 0.085,
-		"damage": 96, "damage_min": 24, "falloff_start": 0.0, "falloff_end": 5.0,
-	},
-	"m249": {
-		"name": "M249 SAW", "mode": "пулемёт", "automatic": true, "mag": 100, "reserve": 200,
-		"reload": 4.25, "cooldown": 0.082, "pellets": 1, "spread": 1.75, "aim_spread": 0.62, "aim_fov": 71.0,
-		"range": 90.0, "recoil": 1.05, "recoil_yaw": 0.40, "kick": 0.04,
-		"damage": 19, "damage_min": 10, "falloff_start": 14.0, "falloff_end": 61.0,
-	},
-	"m1": {
-		"name": "M1 GARAND", "mode": "оптика 5×", "mag": 8, "reserve": 40, "reload": 2.25,
-		"cooldown": 0.58, "pellets": 1, "spread": 1.35, "aim_spread": 0.19, "aim_fov": 31.9,
-		"range": 104.0, "recoil": 2.6, "recoil_yaw": 0.2, "kick": 0.075,
-		"damage": 61, "damage_min": 41, "falloff_start": 28.0, "falloff_end": 95.0,
-	},
-}
+static var WEAPONS := Balance.weapon_stats({
+	"knife": {"name": "НОЖ", "mode": "ближний бой", "mag": 0, "reserve": 0},
+	"deagle": {"name": "DESERT EAGLE", "mode": "одиночный", "aim_fov": 72.0, "kick": 0.045},
+	"shotgun": {"name": "ДРОБОВИК", "mode": "помповый", "aim_fov": 76.0, "kick": 0.09},
+	"ak47": {"name": "AK-47", "mode": "автоматический", "aim_fov": 68.0, "kick": 0.035},
+	"m1911": {"name": "M1911", "mode": "одиночный", "aim_fov": 73.0, "kick": 0.037},
+	"mac10": {"name": "MAC-10", "mode": "автоматический", "aim_fov": 81.0, "kick": 0.03},
+	"mp5": {"name": "MP5", "mode": "автоматический", "aim_fov": 76.0, "kick": 0.031},
+	"m700": {"name": "M700", "mode": "болтовой", "aim_fov": 47.0, "kick": 0.082},
+	"tec9": {"name": "TEC-9", "mode": "одиночный", "aim_fov": 79.0, "kick": 0.034},
+	"lever": {"name": "LEVER ACTION", "mode": "рычажный", "aim_fov": 69.0, "kick": 0.064},
+	"m14": {"name": "M14", "mode": "одиночный", "aim_fov": 68.0, "kick": 0.056},
+	"launcher": {"name": "M79", "mode": "гранатомёт", "mag": 1, "reserve": 5, "reload": 2.80, "cooldown": 1.0, "pellets": 1, "spread": 0.18, "aim_spread": 0.05, "aim_fov": 70.0, "range": 75.0, "recoil": 3.2, "recoil_yaw": 0.34, "kick": 0.085, "damage": 96, "damage_min": 24, "falloff_start": 0.0, "falloff_end": 5.0},
+	"m249": {"name": "M249 SAW", "mode": "пулемёт", "aim_fov": 71.0, "kick": 0.04},
+	"m1": {"name": "M1 GARAND", "mode": "оптика 5×", "aim_fov": 31.9, "kick": 0.075},
+})
 
 static var _shotgun_material: StandardMaterial3D
 static var _shared_shell_sound: AudioStreamWAV
@@ -235,7 +112,13 @@ var _active := false
 var _trigger_held := false
 var _fire_requested := false
 var _burst_heat := 0.0
-var _recoil_factor := 1.0
+var _last_fire_sequence := 0
+var _shot_index := 0
+var _recoil_index := 0
+var _knife_windup := 0.0
+var _sprint_recovery := 0.0
+var _sprint_fire_queued := false
+var _sprint_last_frame := false
 var _reload_held := false
 var _kick_pos := Vector3.ZERO
 var _kick_rot := 0.0
@@ -265,13 +148,11 @@ var _view: Node3D
 var _model: Node3D
 var _muzzle: Marker3D
 var _barrel_length := 0.0
-var _aim_ray := PhysicsRayQueryParameters3D.new()
 var _shot_player: AudioStreamPlayer
 var _pump_player: AudioStreamPlayer
 var _reload_player: AudioStreamPlayer
 var _world_pump: AudioStreamPlayer3D
 var _world_reload: AudioStreamPlayer3D
-var _last_net_msec := 0
 var _shell_insert: AudioStream
 var _dry: AudioStream
 
@@ -286,8 +167,6 @@ var _dry: AudioStream
 
 
 func _ready() -> void:
-	_aim_ray.collision_mask = 1
-	_aim_ray.exclude = [_player.get_rid()]
 	_shot_player = _make_player()
 	var shots := AudioStreamPolyphonic.new()
 	shots.polyphony = 20
@@ -310,14 +189,14 @@ func equip(weapon_id: String, magazine: int = -1, reserve: int = -1, switching: 
 	_weapon_id = weapon_id
 	_stats = WEAPONS[weapon_id]
 	_handling = SPECIALIZATIONS.get(specialization(weapon_id), {})
-	_recoil_factor = _ballistics.recoil_factor(weapon_id, int(_stats.get("pellets", 1)))
 	_burst_heat = 0.0
 	_mag = int(_stats.mag) if magazine < 0 else mini(magazine, int(_stats.mag))
 	_reserve = int(_stats.reserve) if reserve < 0 else mini(reserve, _player.ammo_capacity(weapon_id))
 	_aim_amount = 0.0
 	_knife_swing_left = 0.0
 	_pending_knife = Vector3.ZERO
-	_last_net_msec = Time.get_ticks_msec() if switching else 0
+	_knife_windup = 0.0
+	_sprint_fire_queued = false
 	_cooldown = maxf(_cooldown, 0.22) if switching else 0.0
 	_reload_left = 0.0
 	_reloading = false
@@ -381,7 +260,10 @@ func _process(delta: float) -> void:
 	if not _active or _match.round_finished():
 		return
 	_cooldown = maxf(_cooldown - delta, 0.0)
-	_burst_heat = move_toward(_burst_heat, 0.0, delta * 1.7)
+	_update_sprint_recovery(delta)
+	if _cooldown == 0.0 and (not _trigger_held or not _player._is_local()):
+		var balance: Dictionary = _stats.get("balance", {})
+		_burst_heat = move_toward(_burst_heat, 0.0, delta * float(balance.get("shot_bloom_recovery_deg_s", 0.0)))
 	_knife_swing_left = maxf(_knife_swing_left - delta, 0.0)
 	if _pump_wait > 0.0:
 		_pump_wait = maxf(_pump_wait - delta, 0.0)
@@ -405,6 +287,7 @@ func _process(delta: float) -> void:
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or not _player.accepts_gameplay_input():
 		_trigger_held = false
 		_fire_requested = false
+		_sprint_fire_queued = false
 		_reload_held = Input.is_action_pressed(&"reload_weapon")
 		_cross.update_pose(0.0, true, false, 0.0, false)
 		return
@@ -412,7 +295,7 @@ func _process(delta: float) -> void:
 	_cross.update_pose(aim_blend(), _reloading, _weapon_id == "knife", _current_spread(), _weapon_id in ["m700", "m1"])
 	var shooting := _trigger_held
 	var repeat := bool(_stats.get("automatic", false)) and (_mag > 0 or _reserve > 0)
-	if _fire_requested or (shooting and repeat):
+	if _fire_requested or (shooting and repeat) or _sprint_fire_queued:
 		_try_fire()
 	_fire_requested = false
 
@@ -422,18 +305,44 @@ func _process(delta: float) -> void:
 	_reload_held = reload_key
 
 
+func _update_sprint_recovery(delta: float) -> void:
+	if _player.sprinting:
+		_sprint_last_frame = true
+		_sprint_recovery = float(_stats.get("balance", {}).get("sprint_to_fire_s", 0.0))
+		cancel_reload()
+	elif _sprint_last_frame:
+		_sprint_last_frame = false
+	else:
+		_sprint_recovery = maxf(0.0, _sprint_recovery - delta)
+
+
+func _can_fire() -> bool:
+	if not _active or not _player.control_enabled or _player.sprinting or _sprint_recovery > 0.0:
+		return false
+	return _cooldown <= 0.0 and not _player.weapon_switch_pending() and (
+		not _reloading or (_loads_one_round() and _shells_inserted > 0 and _mag > 0))
+
+
 func _try_fire() -> void:
-	if _reloading or _cooldown > 0.0 or _player.weapon_switch_pending():
+	if _player.sprinting:
+		_sprint_fire_queued = false
+		return
+	if _sprint_recovery > 0.0:
+		_sprint_fire_queued = true
+		return
+	_sprint_fire_queued = false
+	if not _can_fire():
 		return
 	if _weapon_id == "knife":
 		_cooldown = float(_stats.cooldown)
-		var bore := -_camera.global_basis.z.normalized()
 		_knife_swing_left = KNIFE_SWING_TIME
-		if not Net.active or multiplayer.is_server():
-			_pending_knife = bore
+		if _player._server_rules():
+			_player.cancel_spawn_protection()
+			_pending_knife = -_camera.global_basis.z.normalized()
+			_knife_windup = Balance.MELEE.windup_s
 			_send_shot_visual(_weapon_id)
 		else:
-			net_fire.rpc_id(1, _weapon_id, bore, _player.network_pose())
+			net_fire.rpc_id(1, _weapon_id, _player.network_pose(), _match.estimated_server_time())
 		return
 	if _mag <= 0:
 		if _reserve > 0:
@@ -441,31 +350,35 @@ func _try_fire() -> void:
 		else:
 			_play_shot(_dry, -9.0, 1.0)
 		return
+	cancel_reload()
 	_mag -= 1
-	_cooldown = float(_stats["cooldown"])
+	_cooldown = float(_stats.cooldown)
 	_shoot()
 	_update_hud()
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if _pending_knife.is_zero_approx():
+		return
+	_knife_windup -= delta
+	if _knife_windup > 0.0:
 		return
 	var bore := _pending_knife
 	_pending_knife = Vector3.ZERO
 	if _weapon_id != "knife" or not _player.control_enabled or _match.round_finished():
 		return
 	var origin: Vector3 = _player.current_shot_transform(_camera.global_transform).origin
-	var query := PhysicsRayQueryParameters3D.create(origin, origin + bore * float(_stats.range), 1, [_player.get_rid()])
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
+	var hit: Dictionary = _ballistics.combat_ray(_player, origin, origin + bore * float(_stats.range))
+	if hit.is_empty() or not hit.collider.has_meta(&"hit_zone"):
 		return
-	var victim := hit.collider as Node
-	if victim == null or not (victim.is_in_group("player") or victim.is_in_group("bot")):
-		return
-	var previous_health: int = victim.health
-	var zone: String = victim.projectile_zone(hit.position)
-	victim.take_damage(int(_stats.damage), _player.score_id(), zone, 0.45,
-		{"velocity": bore * 0.8, "point": hit.position, "zone": zone})
+	var victim: Node3D = hit.collider.get_parent().get_parent()
+	var previous_health: float = victim.health
+	var zone: String = hit.collider.get_meta(&"hit_zone")
+	var to_attacker: Vector3 = (_player.global_position - victim.global_position).normalized()
+	var backstab := (-victim.global_basis.z).dot(to_attacker) <= float(Balance.MELEE.backstab_if_defender_forward_dot_direction_to_attacker_lte)
+	var damage := float(Balance.MELEE.back_damage if backstab else Balance.MELEE.front_damage)
+	victim.take_damage(damage, _player.score_id(), zone, 0.0,
+		{"velocity": bore * 0.8, "point": hit.position, "zone": zone, "source": "knife"})
 	if victim.health < previous_health:
 		if _player._is_local():
 			confirm_projectile_hit()
@@ -481,51 +394,68 @@ func net_knife_hit() -> void:
 
 func _shoot() -> void:
 	var barrel := _muzzle.global_transform
-	var direction := _shot_direction(barrel.origin)
-	if not Net.active or multiplayer.is_server():
-		_queue_projectiles(barrel, direction)
+	if _player._server_rules():
+		_player.cancel_spawn_protection()
+		_queue_projectiles(barrel, _camera.global_transform)
 		_send_shot_visual(_weapon_id)
 	else:
-		net_fire.rpc_id(1, _weapon_id, direction, _player.network_pose())
+		var pose: PackedFloat32Array = _player.network_pose()
+		_last_fire_sequence = int(pose[12])
+		net_fire.rpc_id(1, _weapon_id, pose, _match.estimated_server_time())
 	_ballistics.muzzle_effect(_weapon_id, barrel, _player.shot_motion(), false)
-	_kick_pos = Vector3(randf_range(-0.008, 0.008), randf_range(0.0, 0.012), float(_stats["kick"]))
-	var recoil := float(_stats.recoil) * _recoil_factor * (1.0 + _burst_heat * 0.22)
+	_kick_pos = Vector3(randf_range(-0.008, 0.008), randf_range(0.0, 0.012), float(_stats.kick))
+	var recoil := float(_stats.recoil)
 	_kick_rot = -recoil * 1.4
-	_player.add_recoil(recoil, randf_range(-float(_stats.recoil_yaw), float(_stats.recoil_yaw)) * _recoil_factor)
-	if bool(_stats.get("automatic", false)):
-		_burst_heat = minf(_burst_heat + 0.26, 1.6)
+	_recoil_index += 1
+	var recoil_rng := RandomNumberGenerator.new()
+	recoil_rng.seed = hash([_player.score_id(), _recoil_index])
+	var yaw_limit := float(_stats.recoil_yaw)
+	_player.add_recoil(recoil, recoil_rng.randf_range(-yaw_limit, yaw_limit))
+	_add_bloom()
 	var volume := -6.0 if _stats.get("automatic", false) else -2.5
 	_play_shot(FIRST_PERSON_SHOTS[_weapon_id], volume, randf_range(0.97, 1.03))
 	if _weapon_id == "shotgun" or _weapon_id in Classic.ACTIONS:
 		_pump_wait = 0.38
 
 
-func _shot_direction(muzzle: Vector3) -> Vector3:
-	var forward := -_camera.global_basis.z
-	_aim_ray.from = _camera.global_position
-	_aim_ray.to = _aim_ray.from + forward * float(_stats.range)
-	var hit := get_world_3d().direct_space_state.intersect_ray(_aim_ray)
-	var target: Vector3 = hit.get("position", _aim_ray.to)
-	var depth := forward.dot(target - _aim_ray.from)
-	var safe_depth := forward.dot(muzzle - _aim_ray.from) + 0.45
+func _shot_direction(muzzle: Vector3, camera: Transform3D, rewind: float) -> Vector3:
+	var forward := -camera.basis.z
+	var end := camera.origin + forward * float(_stats.range)
+	var hit: Dictionary = _ballistics.combat_ray(_player, camera.origin, end, rewind)
+	var target: Vector3 = hit.get("position", end)
+	var depth := forward.dot(target - camera.origin)
+	var safe_depth := forward.dot(muzzle - camera.origin) + 0.45
 	return (target - muzzle).normalized() if depth > safe_depth else forward.normalized()
 
 
 func _current_spread() -> float:
 	if _weapon_id == "knife":
 		return 0.0
-	var motion: Vector3 = _player.shot_motion()
-	var moving := clampf(Vector2(motion.x, motion.z).length() / 6.5, 0.0, 1.0)
-	var airborne := clampf(absf(motion.y) / 4.0, 0.0, 1.0)
-	var aim := aim_blend()
+	var aim := 0.0 if _player.sliding else _aim_amount
 	var spread := lerpf(float(_stats.spread), float(_stats.aim_spread), aim)
-	var instability := (moving * 0.65 + airborne * 1.1) * lerpf(1.0, 0.6, aim)
-	instability *= float(_handling.get("moving_spread", 0.75))
-	return spread * (1.0 + instability + _burst_heat * float(_handling.get("burst_spread", 0.82))) + instability * 0.17
+	if _player.crouched:
+		spread *= float(Balance.ACCURACY.crouched_spread_multiplier)
+	if _player.combat_speed() > 0.5:
+		spread += lerpf(float(Balance.ACCURACY.moving_hip_spread_add_deg),
+			float(Balance.ACCURACY.moving_ads_spread_add_deg), aim)
+	if not _player.combat_grounded():
+		spread += float(Balance.MOVEMENT.airborne_spread_bonus_deg)
+	return spread + _burst_heat
 
 
-func _queue_projectiles(barrel: Transform3D, direction: Vector3) -> void:
-	_launch_projectiles(barrel, Basis.looking_at(direction, _camera.global_basis.y), _current_spread(), _stats)
+func recoil_recovery() -> float:
+	return float(_stats.get("balance", {}).get("recoil_recovery_deg_s", 6.5))
+
+
+func _add_bloom() -> void:
+	var balance: Dictionary = _stats.get("balance", {})
+	_burst_heat = minf(float(balance.get("shot_bloom_cap_deg", 0.0)),
+		_burst_heat + float(balance.get("shot_bloom_deg", 0.0)))
+
+
+func _queue_projectiles(barrel: Transform3D, camera: Transform3D, rewind: float = -1.0) -> void:
+	var direction := _shot_direction(barrel.origin, camera, rewind)
+	_launch_projectiles(barrel, Basis.looking_at(direction, camera.basis.y), _current_spread(), camera.origin, rewind)
 
 
 func reload_bot() -> void:
@@ -536,82 +466,103 @@ func is_reloading() -> bool:
 	return _reloading
 
 
-func fire_bot(target: Vector3, target_motion: Vector3, aim_error: float, damage_scale: float) -> bool:
-	if _reloading or _muzzle == null:
+func fire_bot(target: Vector3, aim_error: float) -> bool:
+	if not _can_fire() or _muzzle == null:
 		return false
 	if _mag == 0:
 		if _reserve > 0:
 			_start_reload()
 		return false
+	cancel_reload()
 	_mag -= 1
+	_cooldown = float(_stats.cooldown)
+	_player.cancel_spawn_protection()
 	_apply_view(0.0)
 	var barrel := _muzzle.global_transform
 	var bore_target := target
 	if _weapon_id == "launcher":
-		bore_target.y += 4.9 * pow(barrel.origin.distance_to(target) / 29.0, 2.0)
-	else:
-		bore_target = _ballistics.aim_ahead(_weapon_id, barrel.origin, target, target_motion - _player.shot_motion())
+		bore_target.y += 0.5 * float(Balance.MOVEMENT.gravity_m_s2) * pow(barrel.origin.distance_to(target) / _grenades.LAUNCH_SPEED, 2.0)
+
 	var aim := Basis.looking_at((bore_target - barrel.origin).normalized(), _camera.global_basis.y)
 	var cone := tan(deg_to_rad(aim_error))
 	var offset := Vector2.from_angle(randf() * TAU) * sqrt(randf()) * cone
 	var bore := aim * Vector3(offset.x, offset.y, -1.0).normalized()
-	var stats := _stats.duplicate()
-	stats.damage = maxi(1, roundi(float(_stats.damage) * damage_scale))
-	stats.damage_min = maxi(1, roundi(float(_stats.damage_min) * damage_scale))
-	var spread := float(_stats.aim_spread)
-	_launch_projectiles(barrel, Basis.looking_at(bore, aim.y), spread, stats)
+	_launch_projectiles(barrel, Basis.looking_at(bore, aim.y), _current_spread(), _camera.global_position)
+	_add_bloom()
 	_play_remote_shot(_weapon_id)
 	_send_shot_visual(_weapon_id)
 	return true
 
 
-func _launch_projectiles(barrel: Transform3D, aim: Basis, spread: float, stats: Dictionary) -> void:
+func _launch_projectiles(barrel: Transform3D, aim: Basis, spread: float, eye: Vector3, rewind: float = -1.0) -> void:
 	var directions := PackedVector3Array()
-	var cone := tan(deg_to_rad(spread))
-	for _pellet in int(stats.pellets):
-		var offset := Vector2.from_angle(randf() * TAU) * sqrt(randf()) * cone
-		directions.append((aim * Vector3(offset.x, offset.y, -1.0)).normalized())
+	var cone_edge := cos(deg_to_rad(spread))
+	_shot_index += 1
+	var rng := RandomNumberGenerator.new()
+	for pellet in int(_stats.pellets):
+		rng.seed = hash([_match.combat_seed, _player.score_id(), _shot_index, pellet])
+		var depth := rng.randf_range(cone_edge, 1.0)
+		var offset := Vector2.from_angle(rng.randf() * TAU) * sqrt(maxf(0.0, 1.0 - depth * depth))
+		directions.append((aim * Vector3(offset.x, offset.y, -depth)).normalized())
 	if _weapon_id == "launcher":
-		_grenades.launch_round(_player, barrel, directions[0], _barrel_length, int(stats.damage))
+		_grenades.launch_round(_player, barrel, directions[0], _barrel_length, int(_stats.damage))
 		return
-	_ballistics.queue_shot(_weapon_id, stats, _player, _player.score_id(), barrel,
-		_barrel_length, directions, _player.shot_motion())
+	_ballistics.queue_shot(_weapon_id, _stats, _player, barrel, _barrel_length, eye, directions, rewind)
 
 
 @rpc("authority", "reliable")
-func net_fire(weapon_name: String, bore: Vector3, pose: PackedFloat32Array) -> void:
+func net_fire(weapon_name: String, pose: PackedFloat32Array, shot_time: float) -> void:
 	if _match.round_finished() or not multiplayer.is_server() or not _match.match_peers().has(multiplayer.get_remote_sender_id()):
 		return
-	if weapon_name != _weapon_id or _muzzle == null or not _player.control_enabled or (_mag == 0 and weapon_name != "knife") or _reloading:
+	if weapon_name != _weapon_id or _muzzle == null or not _match.apply_client_pose(_player, pose):
 		return
-	if not bore.is_finite() or not is_equal_approx(bore.length_squared(), 1.0):
+	var sequence := int(pose[12])
+	var rewind: float = _match.rewind_time(shot_time)
+	var accepted := _accept_fire_sequence(sequence, pose[7] > 0.0)
+	if rewind < 0.0 or not accepted:
+		_send_ammo(sequence)
 		return
-	# Resolve the shot with the pose at trigger time, even if the movement snapshot arrived late.
-	if not _match.apply_client_pose(_player, pose):
-		return
-	var now := Time.get_ticks_msec()
-	var wait := int(float(_stats.cooldown) * (1000.0 if weapon_name == "knife" else 750.0))
-	if now - _last_net_msec < wait:
-		return
+	_cooldown = float(_stats.cooldown)
+	_player.cancel_spawn_protection()
 	var shot_camera: Transform3D = _player.current_shot_transform(_camera.global_transform)
 	if weapon_name == "knife":
-		if bore.dot(-shot_camera.basis.z) < cos(deg_to_rad(40.0)):
-			return
-		_last_net_msec = now
-		_pending_knife = bore
-		_play_remote_shot(weapon_name)
-		_send_shot_visual(weapon_name)
-		return
-	_last_net_msec = now
-	_mag -= 1
-	_apply_view(0.0)
-	var barrel: Transform3D = _player.current_shot_transform(_muzzle.global_transform)
-	var direction := bore if bore.dot(-shot_camera.basis.z) >= cos(deg_to_rad(40.0)) else -barrel.basis.z
-	_queue_projectiles(barrel, direction)
-	if bool(_stats.get("automatic", false)):
-		_burst_heat = minf(_burst_heat + 0.26, 1.6)
+		_pending_knife = -shot_camera.basis.z
+		_knife_windup = Balance.MELEE.windup_s
+	else:
+		cancel_reload()
+		_mag -= 1
+		_apply_view(0.0)
+		var barrel: Transform3D = _player.current_shot_transform(_muzzle.global_transform)
+		_queue_projectiles(barrel, shot_camera, rewind)
+		_add_bloom()
+		_send_ammo(sequence)
 	_play_remote_shot(weapon_name)
 	_send_shot_visual(weapon_name)
+
+
+func _accept_fire_sequence(sequence: int, sprinting: bool) -> bool:
+	_update_sprint_recovery(0.0)
+	if sequence <= _last_fire_sequence:
+		return false
+	_last_fire_sequence = sequence
+	return _can_fire() and not sprinting and (_mag > 0 or _weapon_id == "knife")
+
+
+func _send_ammo(sequence: int) -> void:
+	var peer := get_multiplayer_authority()
+	if Net.active and multiplayer.is_server() and peer != 1:
+		net_ammo.rpc_id(peer, _weapon_id, _mag, _reserve, sequence)
+
+
+@rpc("any_peer", "reliable")
+func net_ammo(id: String, magazine: int, reserve: int, sequence: int) -> void:
+	if multiplayer.get_remote_sender_id() != 1 or not _player._is_local() or id != _weapon_id:
+		return
+	if sequence < _last_fire_sequence:
+		return
+	_mag = magazine
+	_reserve = reserve
+	_update_hud()
 
 
 func _send_shot_visual(weapon_name: String) -> void:
@@ -653,7 +604,7 @@ func _play_world_pump(id: String) -> void:
 
 
 func _start_reload() -> void:
-	if _weapon_id == "knife" or _reloading or _mag >= int(_stats.mag) or _reserve <= 0:
+	if _weapon_id == "knife" or _player.sprinting or _reloading or _mag >= int(_stats.mag) or _reserve <= 0:
 		return
 	var units := mini(int(_stats["mag"]) - _mag, _reserve)
 	_begin_reload(units)
@@ -685,10 +636,10 @@ func net_reload(id: String, units: int) -> void:
 			return
 	elif sender != 1:
 		return
-	if id != _weapon_id or not _player.control_enabled or units < 1 or units > int(_stats["mag"]):
+	if id != _weapon_id or not _player.control_enabled or _player.sprinting or units < 1 or units > int(_stats["mag"]):
 		return
 	if multiplayer.is_server():
-		units = mini(units, mini(int(_stats.mag) - _mag, _reserve))
+		units = mini(int(_stats.mag) - _mag, _reserve)
 		if _reloading or units <= 0:
 			return
 		_send_reload(id, units)
@@ -706,7 +657,7 @@ func _begin_reload(units: int) -> void:
 	_reload_units = units
 	_shells_inserted = 0
 	_reloading = true
-	_reload_time = float(_stats["reload"])
+	_reload_time = float(_stats.get("reload_empty", _stats.reload) if _mag == 0 else _stats.reload)
 	if _loads_one_round():
 		_reload_time = SHELL_START + SHELL_INTERVAL * units + SHELL_FINISH
 	_reload_left = _reload_time
@@ -728,7 +679,7 @@ func _reload_stream() -> AudioStream:
 
 func _insert_loaded_shells() -> void:
 	var elapsed := _reload_time - _reload_left
-	var inserted := clampi(1 + floori((elapsed - SHELL_START - 0.49) / SHELL_INTERVAL), 0, _reload_units)
+	var inserted := clampi(floori((elapsed - SHELL_START + 0.00001) / SHELL_INTERVAL), 0, _reload_units)
 	if inserted <= _shells_inserted:
 		return
 	var count := inserted - _shells_inserted
@@ -751,6 +702,8 @@ func _finish_reload() -> void:
 		_reserve -= _reload_units
 	_reloading = false
 	_reset_reload_pose()
+	if _player._server_rules():
+		_send_ammo(_last_fire_sequence)
 	if _weapon_id == "deagle":
 		if _player._is_local():
 			_play_on(_reload_player, DEAGLE_SLIDE, -6.0, false)
@@ -777,6 +730,7 @@ func stop_round() -> void:
 	_fire_requested = false
 	_trigger_held = false
 	_pending_knife = Vector3.ZERO
+	_sprint_fire_queued = false
 	_pump_wait = 0.0
 	for sound in [_shot_player, _reload_player, _pump_player, _world_pump, _world_reload]:
 		sound.stop()
@@ -800,8 +754,10 @@ func _apply_view(delta: float) -> void:
 	if _weapon_id == "knife":
 		_apply_knife_view()
 		return
-	var wants_aim: bool = _player.aiming and _player.control_enabled and not _reloading
-	_aim_amount = move_toward(_aim_amount, float(wants_aim), delta / float(_handling.get("aim_seconds", 0.16)))
+	var wants_aim: bool = _player.aiming and _player.control_enabled and not _reloading and not _player.sprinting and not _player.sliding
+	var ads_time := float(_stats.get("balance", {}).get("ads_s", _handling.get("aim_seconds", 0.16)))
+	ads_time += _player.armor_ads_delay()
+	_aim_amount = move_toward(_aim_amount, float(wants_aim), delta / ads_time)
 	var blend := aim_blend()
 	if _player._is_local():
 		_camera.fov = lerpf(HIP_FOV, float(_stats["aim_fov"]), blend)
@@ -834,9 +790,9 @@ func _apply_view(delta: float) -> void:
 		var carry_origin: Vector3 = _player.weapon_carry_anchor() + body_basis * (carry_offset + bob * 0.55 + handling_offset)
 		var carry_basis := _camera.global_basis.inverse() * body_basis * carry_rotation * handling_rotation
 		hip_position = hip_position.lerp(_camera.to_local(carry_origin), run_carry)
-		hip_basis = hip_basis.slerp(carry_basis, run_carry)
+		hip_basis = hip_basis.slerp(carry_basis.orthonormalized(), run_carry)
 	_view.position = hip_position.lerp(_aim_pose.origin + Vector3.BACK * _kick_pos.z, blend)
-	_view.basis = hip_basis.slerp(_aim_pose.basis, blend)
+	_view.basis = hip_basis.orthonormalized().slerp(_aim_pose.basis, blend)
 	if not _player._is_local() or blend < 1.0:
 		var reach_weight := 1.0 - blend if _player._is_local() else 1.0
 		_view.global_position += _player.weapon_reach_correction(not _reloading) * reach_weight

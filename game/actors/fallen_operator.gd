@@ -1,5 +1,6 @@
 extends Node3D
 
+const Balance := preload("res://game/combat/combat_balance.gd")
 const OperatorPose := preload("res://game/actors/operator_pose.gd")
 const SIMULATION_SECONDS := 4.0
 const BONE_PREFIX := "mixamorig_"
@@ -19,7 +20,8 @@ const SEGMENTS := [
 	["LeftLeg_064", "LeftFoot_065", 0.061, 4.0, 78.0, 8.0],
 	["LeftFoot_065", "LeftToeBase_066", 0.063, 1.0, 27.0, 12.0],
 ]
-const HIT_SEGMENTS := {"head": [2], "chest": [1], "stomach": [0], "arm": [3, 4, 5, 6], "leg": [7, 8, 10, 11]}
+const HIT_SEGMENTS := {"head": [2], "neck": [2], "chest": [1], "abdomen": [0], "pelvis": [0],
+	"upper_arm": [3, 5], "forearm_hand": [4, 6], "thigh": [7, 10], "calf_foot": [8, 11]}
 
 var _skeleton: Skeleton3D
 var _simulator: PhysicalBoneSimulator3D
@@ -65,7 +67,7 @@ func _start_fall(state: Dictionary) -> void:
 		var body := PhysicalBone3D.new()
 		body.set("bone_name", _skeleton.get_bone_name(_indices[index]))
 		body.collision_layer = 0
-		body.collision_mask = 2
+		body.collision_mask = Balance.WORLD_MASK
 		body.mass = segment[3]
 		body.linear_damp = 0.45
 		body.angular_damp = 2.2

@@ -7,7 +7,6 @@ const COVER_REACH := 9.0
 const COVER_TRAVEL_TIME := 3.5
 const COVER_ARRIVAL := 0.4
 const COVER_DIRECTIONS := 8
-const BOT_DAMAGE_SCALE := 0.65
 const DIFFICULTY := [
 	{"speed": 0.85, "shot_delay": 1.35, "spread": 2.4},
 	{"speed": 1.0, "shot_delay": 1.0, "spread": 1.15},
@@ -65,7 +64,7 @@ func _ready() -> void:
 	add_to_group("bot")
 	_grenades.clear()
 	if _server_rules():
-		_sight_ray.collision_mask = 1
+		_sight_ray.collision_mask = Balance.WORLD_AND_CAPSULES
 		_sight_ray.exclude = [get_rid()]
 		_navigation = NavigationAgent3D.new()
 		_navigation.path_desired_distance = 0.25
@@ -86,9 +85,9 @@ func shot_motion() -> Vector3:
 	return velocity if _server_rules() else super.shot_motion()
 
 
-func take_damage(amount: int, killer_id: int = 0, zone: String = "chest", vest_fraction: float = 0.0, impact: Dictionary = {}) -> void:
+func take_damage(amount: float, killer_id: int = 0, zone: String = "chest", head_multiplier: float = 0.0, impact: Dictionary = {}) -> void:
 	var previous_health := health
-	super.take_damage(amount, killer_id, zone, vest_fraction, impact)
+	super.take_damage(amount, killer_id, zone, head_multiplier, impact)
 	if health <= 0 or health == previous_health:
 		return
 	var attacker: Node = get_parent().combatant(killer_id)
@@ -101,7 +100,7 @@ func take_damage(amount: int, killer_id: int = 0, zone: String = "chest", vest_f
 
 
 func _respawn_delay() -> float:
-	return 3.5
+	return super._respawn_delay()
 
 
 func _next_respawn_weapon() -> String:
@@ -192,10 +191,13 @@ func _physics_process(delta: float) -> void:
 		_blocked_time -= delta
 		if wish != Vector3.ZERO and not target:
 			wish = _detour
+	speed *= armor_movement_scale()
+	if concussion_left > 0.0:
+		speed *= float(Balance.GRENADES.concussion.movement_speed_multiplier_during_effect)
 	var horizontal := Vector2(velocity.x, velocity.z).move_toward(Vector2(wish.x, wish.z) * speed, BOT_ACCELERATION * delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.y
-	velocity.y = 0.0 if is_on_floor() else velocity.y + get_gravity().y * delta
+	velocity.y = 0.0 if is_on_floor() else velocity.y + -float(Balance.MOVEMENT.gravity_m_s2) * delta
 	var before := global_position
 	move_and_slide()
 	_track_movement_audio(delta, true)
@@ -214,7 +216,7 @@ func _fight(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Ve
 	_camera.rotation.x = clampf(asin(to_target.normalized().y), -0.78, 0.78)
 	var direction := _flat_direction(to_target)
 	if ammo.x > 0 and _shoot_wait <= 0.0 and (-global_basis.z).dot(direction) > 0.985 and _has_sight(target):
-		if gun.fire_bot(target.aim_center(), target.shot_motion(), float(modifiers.spread), BOT_DAMAGE_SCALE):
+		if gun.fire_bot(target.aim_center(), float(modifiers.spread)):
 			var cadence := float(profile.delay) * float(modifiers.shot_delay) * randf_range(0.88, 1.14)
 			_shoot_wait = maxf(float(Weapon.WEAPONS[weapon_id].cooldown), cadence)
 	var distance: float = global_position.distance_to(target.global_position)
@@ -355,7 +357,7 @@ func _cover_path_length(path: PackedVector3Array, threat: Vector2, safe_distance
 func _cover_query(threat: Vector3) -> PhysicsRayQueryParameters3D:
 	var query := PhysicsRayQueryParameters3D.new()
 	query.from = threat
-	query.collision_mask = 2
+	query.collision_mask = Balance.WORLD_MASK
 	return query
 
 
@@ -368,7 +370,7 @@ func _visible_target(reach: float) -> Node3D:
 	var best: Node3D
 	var best_distance := reach * reach
 	for enemy in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
-		if enemy == self or not enemy.control_enabled or enemy.health <= 0:
+		if enemy == self or not enemy.control_enabled or enemy.health <= 0 or get_parent().same_team(score_id(), enemy.score_id()):
 			continue
 		var distance: float = global_position.distance_squared_to(enemy.global_position)
 		if distance >= best_distance or get_parent().get_node("Grenades").obscures(_camera.global_position, enemy.aim_center()):

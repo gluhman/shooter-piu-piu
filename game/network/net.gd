@@ -2,7 +2,8 @@ extends Node
 
 const PORT := 7777
 const CHANNEL_COUNT := 4
-const MAX_PLAYERS := 10
+const Balance := preload("res://game/combat/combat_balance.gd")
+const MAX_PLAYERS: int = Balance.MATCH.max_players_total
 const MAX_NAME_LENGTH := 24
 const INTERNET_ADDRESS := "136.234.32.193"
 

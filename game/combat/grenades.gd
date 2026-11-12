@@ -1,5 +1,6 @@
 extends Node3D
 
+const Balance := preload("res://game/combat/combat_balance.gd")
 const ASSETS := preload("res://game/combat/arsenal_assets.gd")
 const SMOKE_SHADER := preload("res://game/combat/smoke_cloud.gdshader")
 const EXPLOSION := preload("res://assets/match_audio/explosion_body.wav")
@@ -7,13 +8,12 @@ const DISTANT_EXPLOSION := preload("res://assets/match_audio/explosion_distant.w
 const DISTANT_EXPLOSION_DISTANCE := 35.0
 const FLASH_BANG := preload("res://assets/arsenal/flash_bang.wav")
 const SMOKE_HISS := preload("res://assets/arsenal/smoke_hiss.wav")
-const GRAVITY := Vector3.DOWN * 9.8
+const GRAVITY: Vector3 = Vector3.DOWN * Balance.MOVEMENT.gravity_m_s2
 const LAUNCH_SPEED := 29.0
 const ROUND_FUSE := 3.0
-const SMOKE_RADIUS := 4.2
-const SMOKE_TIME := 18.0
-const EXPLOSIVE_RADIUS := 5.0
-const FLASH_RADIUS := 16.0
+const SMOKE_RADIUS: float = Balance.GRENADES.smoke.radius_m
+const SMOKE_TIME: float = Balance.GRENADES.smoke.time_to_full_density_s + Balance.GRENADES.smoke.full_density_duration_s + Balance.GRENADES.smoke.fade_out_s
+const ROUND_RADIUS := 5.0
 
 class Flight:
 	var id: int
@@ -38,7 +38,9 @@ class Cloud:
 
 var _flights: Dictionary[int, Flight] = {}
 var _clouds: Array[Cloud] = []
-var _requests: Dictionary[int, String] = {}
+var _requests: Array[Array] = []
+var _cooking: Dictionary[int, float] = {}
+var _detonated: Dictionary[int, bool] = {}
 var _next_id := 1
 var _sync_left := 0.0
 var _puff := QuadMesh.new()
@@ -47,34 +49,43 @@ var _puff := QuadMesh.new()
 @onready var _hud := get_node("../HUD")
 
 
-func request_throw(actor: Node, kind: String) -> void:
+func request_throw(actor: Node, kind: String, released: bool = false) -> void:
 	if Net.active and not multiplayer.is_server():
-		net_throw.rpc_id(1, kind, actor.network_pose())
+		net_throw.rpc_id(1, kind, released, actor.network_pose())
 	else:
-		_requests[actor.score_id()] = kind
+		_requests.append([actor.score_id(), kind, released])
 
 
 @rpc("any_peer", "reliable")
-func net_throw(kind: String, pose: PackedFloat32Array) -> void:
+func net_throw(kind: String, released: bool, pose: PackedFloat32Array) -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if not multiplayer.is_server() or not _match.match_peers().has(sender) or not ASSETS.GRENADE_IDS.has(kind):
 		return
 	var actor := _match.combatant(sender) as CharacterBody3D
 	if is_instance_valid(actor) and actor.control_enabled and _match.apply_client_pose(actor, pose):
-		_requests[sender] = kind
+		_requests.append([sender, kind, released])
+
+
+func drop_cooked(actor: Node) -> void:
+	var id: int = actor.score_id()
+	if _cooking.has(id):
+		var time := _cooking[id]
+		_cooking.erase(id)
+		_launch("frag", actor, actor.global_position + Vector3.UP * 0.25, Vector3.ZERO,
+			time, int(Balance.GRENADES.frag.max_damage))
 
 
 func launch_round(actor: Node, barrel: Transform3D, direction: Vector3, length: float, damage: int) -> void:
-	var query := PhysicsRayQueryParameters3D.create(barrel.origin - direction * length, barrel.origin, 1, [actor.get_rid()])
+	var query := PhysicsRayQueryParameters3D.create(barrel.origin + barrel.basis.z * length, barrel.origin, Balance.WORLD_AND_CAPSULES, [actor.get_rid()])
 	var wall := get_world_3d().direct_space_state.intersect_ray(query)
 	if not wall.is_empty():
-		_detonate(0, "round", wall.position + wall.normal * 0.05, actor.score_id(), damage)
+		_launch("round", actor, wall.position + wall.normal * 0.05, Vector3.ZERO, 0.0, damage)
 		return
 	_launch("round", actor, barrel.origin, direction * LAUNCH_SPEED + actor.shot_motion(), ROUND_FUSE, damage)
 
 
 func predict_round(actor: Node, barrel: Transform3D, length: float) -> Vector3:
-	var query := PhysicsRayQueryParameters3D.create(barrel.origin + barrel.basis.z * length, barrel.origin, 1, [actor.get_rid()])
+	var query := PhysicsRayQueryParameters3D.create(barrel.origin + barrel.basis.z * length, barrel.origin, Balance.WORLD_AND_CAPSULES, [actor.get_rid()])
 	var space := get_world_3d().direct_space_state
 	var wall := space.intersect_ray(query)
 	if not wall.is_empty():
@@ -96,6 +107,8 @@ func reset_round() -> void:
 		child.queue_free()
 	_clouds.clear()
 	_requests.clear()
+	_cooking.clear()
+	_detonated.clear()
 
 
 func send_state(peer: int) -> void:
@@ -110,7 +123,7 @@ func obscures(from: Vector3, to: Vector3) -> bool:
 		var center := cloud.at + Vector3.UP * 1.45
 		var closest := Geometry3D.get_closest_point_to_segment(center, from, to)
 		var radius := SMOKE_RADIUS * _smoke_growth(cloud.age)
-		if cloud.left > 0.75 and center.distance_squared_to(closest) < radius * radius:
+		if cloud.age >= float(Balance.GRENADES.smoke.time_to_full_density_s) and cloud.left > 1.0 and center.distance_squared_to(closest) < radius * radius:
 			return true
 	return false
 
@@ -121,9 +134,17 @@ func _physics_process(delta: float) -> void:
 	var authority := not Net.active or multiplayer.is_server()
 	var space := get_world_3d().direct_space_state
 	if authority:
-		for id in _requests:
-			_throw(_match.combatant(id), _requests[id], space)
+		for request in _requests:
+			_throw(_match.combatant(request[0]), request[1], request[2], space)
 		_requests.clear()
+		for id in _cooking.keys():
+			_cooking[id] -= delta
+			if _cooking[id] <= 0.0:
+				var actor: Node = _match.combatant(id)
+				if is_instance_valid(actor):
+					_launch("frag", actor, actor.hurtbox_center("chest"), Vector3.ZERO,
+						0.0, int(Balance.GRENADES.frag.max_damage))
+				_cooking.erase(id)
 	for id in _flights.keys():
 		_step(_flights[id], delta, space, authority)
 	if authority and Net.active and not _flights.is_empty():
@@ -147,7 +168,7 @@ func _process(delta: float) -> void:
 			continue
 		cloud.age += delta
 		var growth := _smoke_growth(cloud.age)
-		cloud.material.set_shader_parameter("density", minf(1.0, cloud.left / 4.0) * growth)
+		cloud.material.set_shader_parameter("density", minf(1.0, cloud.left / float(Balance.GRENADES.smoke.fade_out_s)) * growth)
 		for j in cloud.offsets.size():
 			var puff := cloud.node.get_child(j) as MeshInstance3D
 			var offset := cloud.offsets[j] * growth
@@ -156,19 +177,38 @@ func _process(delta: float) -> void:
 			puff.scale = Vector3.ONE * cloud.sizes[j] * growth
 
 
-func _throw(actor: Node, kind: String, space: PhysicsDirectSpaceState3D) -> void:
-	if not is_instance_valid(actor) or not actor.control_enabled:
+func _throw(actor: Node, kind: String, released: bool, space: PhysicsDirectSpaceState3D) -> void:
+	if not is_instance_valid(actor) or not actor.control_enabled or not ASSETS.GRENADE_IDS.has(kind):
 		return
-	if not actor.consume_grenade(kind):
-		return
+	var shooter: int = actor.score_id()
+	var time: float
+	if kind == "frag":
+		if not released:
+			if not actor.sprinting and not _cooking.has(shooter) and actor.consume_grenade(kind):
+				_cooking[shooter] = Balance.GRENADES.frag.fuse_s
+				actor.cancel_spawn_protection()
+			return
+		if not _cooking.has(shooter):
+			return
+		if actor.sprinting:
+			drop_cooked(actor)
+			return
+		time = _cooking[shooter]
+		_cooking.erase(shooter)
+	else:
+		if released or actor.sprinting or not actor.consume_grenade(kind):
+			return
+		time = Balance.GRENADES[kind].fuse_from_release_s
+	actor.cancel_spawn_protection()
 	var camera := actor.get_node("Camera3D") as Camera3D
 	var shot_camera: Transform3D = actor.current_shot_transform(camera.global_transform)
 	var direction := -shot_camera.basis.z
 	var query := PhysicsRayQueryParameters3D.create(shot_camera.origin, shot_camera.origin + direction * 0.42, 1, [actor.get_rid()])
+	query.hit_from_inside = true
 	var hit := space.intersect_ray(query)
 	var origin: Vector3 = query.to if hit.is_empty() else hit.position + hit.normal * 0.07
-	var velocity: Vector3 = direction * 12.4 + Vector3.UP * 3.1 + actor.shot_motion()
-	_launch(kind, actor, origin, velocity, 1.65 if kind == "flash" else 2.35, 130)
+	var velocity := direction * float(Balance.GRENADES.shared.throw_speed_m_s)
+	_launch(kind, actor, origin, velocity, time, int(Balance.GRENADES.frag.max_damage))
 
 
 func _launch(kind: String, actor: Node, at: Vector3, velocity: Vector3, time: float, damage: int) -> void:
@@ -192,7 +232,7 @@ func net_launch(id: int, kind: String, at: Vector3, velocity: Vector3, time: flo
 	flight.at = at
 	flight.velocity = velocity
 	flight.spin = Vector3(5.0, 2.5, 1.5) if kind != "round" else Vector3(0.0, 0.0, 9.0)
-	flight.model = ASSETS.make_model(kind if kind != "round" else "flash")
+	flight.model = ASSETS.make_model(kind if kind not in ["round", "concussion"] else "flash")
 	if kind == "round":
 		flight.model.scale = Vector3.ONE * 0.56
 	add_child(flight.model)
@@ -218,7 +258,7 @@ func _step(flight: Flight, delta: float, space: PhysicsDirectSpaceState3D, autho
 		return
 	if not flight.velocity.is_zero_approx():
 		var next := flight.at + flight.velocity * delta + GRAVITY * (delta * delta * 0.5)
-		var query := PhysicsRayQueryParameters3D.create(flight.at, next, 1)
+		var query := PhysicsRayQueryParameters3D.create(flight.at, next, Balance.WORLD_AND_CAPSULES)
 		if flight.source.is_valid():
 			query.exclude = [flight.source]
 		var hit := space.intersect_ray(query) if authority else {}
@@ -231,7 +271,10 @@ func _step(flight: Flight, delta: float, space: PhysicsDirectSpaceState3D, autho
 			if flight.kind == "round":
 				_detonate(flight.id, flight.kind, flight.at, flight.shooter, flight.damage)
 				return
-			flight.velocity = flight.velocity.bounce(normal) * 0.54
+			var normal_speed := flight.velocity.dot(normal)
+			var tangent := flight.velocity - normal * normal_speed
+			flight.velocity = tangent * (1.0 - float(Balance.GRENADES.shared.collision_friction))
+			flight.velocity -= normal * normal_speed * float(Balance.GRENADES.shared.collision_bounce_restitution)
 			if normal.y > 0.6 and flight.velocity.length() < 1.5:
 				flight.velocity = Vector3.ZERO
 				flight.spin = Vector3.ZERO
@@ -240,40 +283,53 @@ func _step(flight: Flight, delta: float, space: PhysicsDirectSpaceState3D, autho
 
 
 func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) -> void:
+	if not _flights.has(id) or _detonated.has(id):
+		return
 	net_detonate(id, kind, at)
 	for peer in _match.match_peers():
 		net_detonate.rpc_id(peer, id, kind, at)
 	if kind == "smoke":
 		return
-	var radius := FLASH_RADIUS if kind == "flash" else EXPLOSIVE_RADIUS
+	var preset: Dictionary = Balance.GRENADES.get(kind, {})
+	var radius := float(preset.get("blast_radius_m", preset.get("effect_radius_m", ROUND_RADIUS)))
 	var space := get_world_3d().direct_space_state
+	var query: PhysicsRayQueryParameters3D = _match.get_node("Ballistics").world_query()
+	query.hit_from_inside = false
 	for actor in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
-		if not actor.control_enabled or _match.round_finished():
+		if not actor.control_enabled or not _match.allows_damage(shooter, actor.score_id()):
 			continue
-		var camera := actor.get_node("Camera3D") as Camera3D
-		var shot_camera: Transform3D = actor.current_shot_transform(camera.global_transform)
-		var target: Vector3 = shot_camera.origin if kind == "flash" else actor.aim_center()
-		var distance := target.distance_to(at)
+		var distance: float = actor.capsule_distance(at) if kind in ["frag", "round"] else actor.hurtbox_center("head").distance_to(at)
 		if distance >= radius:
 			continue
-		var query := PhysicsRayQueryParameters3D.create(at, target, 2)
-		if not space.intersect_ray(query).is_empty():
+		var clear := 0
+		query.from = at
+		for target: Vector3 in actor.blast_samples():
+			query.to = target
+			if at.is_equal_approx(target) or space.intersect_ray(query).is_empty():
+				clear += 1
+		if clear == 0:
 			continue
 		var strength := 1.0 - distance / radius
 		if kind == "flash":
-			var facing := (-shot_camera.basis.z).dot((at - target).normalized())
-			actor.apply_flash(pow(strength, 0.7) * lerpf(0.19, 1.0, smoothstep(-0.15, 0.75, facing)))
+			var camera := actor.get_node("Camera3D") as Camera3D
+			var shot_camera: Transform3D = actor.current_shot_transform(camera.global_transform)
+			var facing := (-shot_camera.basis.z).dot((at - shot_camera.origin).normalized())
+			var facing_scale := 1.0 if facing >= float(preset.full_facing_if_view_dot_to_grenade_gte) else float(preset.peripheral_multiplier)
+			actor.apply_flash(float(preset.max_blind_s) * strength * facing_scale * float(clear) / 3.0)
+		elif kind == "concussion":
+			actor.apply_concussion(float(preset.max_duration_s) * strength)
 		else:
-			var away := (target - at).normalized()
-			var launch := (away + Vector3.UP * 0.40).normalized() * lerpf(3.0, 10.0, strength)
-			actor.take_damage(roundi(damage * pow(strength, 0.70)), shooter, "chest", 0.25,
-				{"velocity": launch, "point": target, "zone": "blast"})
+			var target: Vector3 = actor.hurtbox_center("chest")
+			var amount := Balance.frag_damage(distance, clear) if kind == "frag" else damage * Balance.blast_fraction(distance, radius, clear)
+			actor.take_damage(amount, shooter, "chest", 0.0,
+				{"velocity": (target - at).normalized() * 2.0, "point": target, "zone": "blast", "source": kind})
 
 
 @rpc("authority", "reliable")
 func net_detonate(id: int, kind: String, at: Vector3) -> void:
-	if _match.round_finished():
+	if _match.round_finished() or _detonated.has(id):
 		return
+	_detonated[id] = true
 	if _flights.has(id):
 		_flights[id].model.queue_free()
 		_flights.erase(id)
@@ -282,7 +338,7 @@ func net_detonate(id: int, kind: String, at: Vector3) -> void:
 		net_smoke(at, SMOKE_TIME, 0.0)
 		effects.play_explosion_sound(SMOKE_HISS, at, -13.0, 28.0)
 	else:
-		var flash := kind == "flash"
+		var flash := kind in ["flash", "concussion"]
 		if flash:
 			effects.play_explosion_sound(FLASH_BANG, at, -5.0, 105.0)
 		else:
@@ -290,16 +346,11 @@ func net_detonate(id: int, kind: String, at: Vector3) -> void:
 			var distant := camera != null and camera.global_position.distance_to(at) >= DISTANT_EXPLOSION_DISTANCE
 			effects.play_explosion_sound(DISTANT_EXPLOSION if distant else EXPLOSION, at,
 				-10.0 if distant else -3.0, 155.0)
-		effects.grenade_effect(at, flash, EXPLOSIVE_RADIUS, kind == "round")
+		effects.grenade_effect(at, flash, float(Balance.GRENADES.frag.blast_radius_m) if kind == "frag" else ROUND_RADIUS, kind == "round")
 
 
 @rpc("authority", "reliable")
 func net_smoke(at: Vector3, left: float, age: float) -> void:
-	# Keep overlapping grenades from rendering duplicate clouds in the same small area.
-	for cloud in _clouds:
-		if at.distance_squared_to(cloud.at) < 2.4 * 2.4:
-			cloud.left = maxf(cloud.left, left)
-			return
 	var cloud := Cloud.new()
 	cloud.node = Node3D.new()
 	cloud.at = at
@@ -327,4 +378,4 @@ func net_smoke(at: Vector3, left: float, age: float) -> void:
 
 
 func _smoke_growth(age: float) -> float:
-	return maxf(0.05, smoothstep(0.0, 1.7, age))
+	return maxf(0.05, smoothstep(0.0, float(Balance.GRENADES.smoke.time_to_full_density_s), age))

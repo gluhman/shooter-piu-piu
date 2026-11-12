@@ -33,6 +33,7 @@ var _cancel_button: Button
 var _map: OptionButton
 var _map_size: OptionButton
 var _weapons: OptionButton
+var _mode: OptionButton
 var _time_limit: OptionButton
 var _kill_limit: OptionButton
 var _difficulty: OptionButton
@@ -260,6 +261,7 @@ func refresh_room() -> void:
 		_map.select(game.map_id)
 		_map_size.select(game.map_size)
 		_weapons.select(game.weapon_set)
+		_mode.select(int(game.team_deathmatch))
 		_time_limit.select(game.time_option)
 		_kill_limit.select(game.kill_option)
 		_difficulty.select(game.bot_difficulty)
@@ -429,6 +431,8 @@ func _show_room(screen: Screen) -> void:
 	UI.row(rules, "Карта", _map)
 	UI.row(rules, "Размер карты", _map_size)
 	UI.row(rules, "Набор оружия", _weapons)
+	_mode = _options(["Каждый за себя", "Командный бой 5 на 5"], int(game.team_deathmatch))
+	UI.row(rules, "Режим", _mode)
 	_time_limit = _limit_options(game.TIME_LIMITS, game.time_option, 60, "%d мин")
 	_kill_limit = _limit_options(game.KILL_LIMITS, game.kill_option, 1, "%d")
 	UI.row(rules, "Время матча", _time_limit)
@@ -453,7 +457,7 @@ func _show_room(screen: Screen) -> void:
 		UI.button(actions, "Назад", _show_main, &"", true)
 		UI.button(actions, "Начать матч", func() -> void:
 			bots.apply()
-			game.start_solo(int(bots.value), _difficulty.selected, _weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _map_size.selected)
+			game.start_solo(int(bots.value), _difficulty.selected, _weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _map_size.selected, _mode.selected == 1)
 		, &"PrimaryButton")
 		_first_action.grab_focus()
 		UI.reveal(_panel)
@@ -506,6 +510,7 @@ func _show_room(screen: Screen) -> void:
 		_map.item_selected.connect(_on_rules_changed)
 		_map_size.item_selected.connect(_on_rules_changed)
 		_weapons.item_selected.connect(_on_rules_changed)
+		_mode.item_selected.connect(_on_rules_changed)
 		_time_limit.item_selected.connect(_on_rules_changed)
 		_kill_limit.item_selected.connect(_on_rules_changed)
 		_difficulty.item_selected.connect(_on_rules_changed)
@@ -518,6 +523,7 @@ func _show_room(screen: Screen) -> void:
 		_map.disabled = true
 		_map_size.disabled = true
 		_weapons.disabled = true
+		_mode.disabled = true
 		_time_limit.disabled = true
 		_kill_limit.disabled = true
 		_difficulty.disabled = true
@@ -569,7 +575,7 @@ func _save_display_name() -> void:
 
 
 func _on_rules_changed(_index: int) -> void:
-	_match().update_host_rules(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, _lan_bots.selected, _map_size.selected)
+	_match().update_host_rules(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, _lan_bots.selected, _map_size.selected, _mode.selected == 1)
 
 
 func _on_solo() -> void:
@@ -589,14 +595,15 @@ func _create_directory_room() -> void:
 	var difficulty := _difficulty.selected
 	var bots := _lan_bots.selected
 	var size := _map_size.selected
+	var teams := _mode.selected == 1
 	_save_display_name()
 	show_internet_wait("Создаём комнату…")
-	RoomDirectory.request_create(password, weapons, arena, limits, difficulty, bots, size)
+	RoomDirectory.request_create(password, weapons, arena, limits, difficulty, bots, size, teams)
 
 
 func _create_internet_room() -> void:
 	_save_display_name()
-	_match().create_internet_room(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, _lan_bots.selected, _map_size.selected)
+	_match().create_internet_room(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, _lan_bots.selected, _map_size.selected, _mode.selected == 1)
 
 
 func _on_internet() -> void:

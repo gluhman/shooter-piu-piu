@@ -10,7 +10,8 @@ const MAP_NAMES := MAP.MAP_NAMES
 const WEAPON_SET_NAMES := ["Любое", "Дробовик и пистолет", "Всё, кроме дробовика"]
 const TIME_LIMITS := [0, 60, 180, 300, 600, 900, 1200, 1800, 3600]
 const KILL_LIMITS := [0, 1, 5, 10, 15, 20, 30, 50, 100]
-const POSE_INTERVAL := 1.0 / 30.0
+const Balance := preload("res://game/combat/combat_balance.gd")
+const POSE_INTERVAL: float = 1.0 / Balance.NETWORK.snapshot_hz
 const ARENA_HOURS := [13.0, 9.5, 16.0, 15.5, 14.0]
 const MIN_RESPAWN_DISTANCE := 12.0
 const DIFFICULTY_NAMES := ["Легко", "Обычно", "Сложно"]
@@ -20,6 +21,16 @@ const WEAPON_SETS := [
 	["deagle", "ak47", "m1911", "mac10", "mp5", "m700", "tec9", "lever", "m14", "launcher", "m249", "m1"],
 ]
 
+signal damage_resolved(event: Dictionary)
+
+var combat_seed := 0
+var _damage_sequence := 0
+var _latest_damage_event := 0
+var _server_clock_offset := 0.0
+var _server_clock_synced := false
+var team_deathmatch := false
+var _team_score := Vector2i.ZERO
+var _team_bot_slots := PackedInt32Array()
 var map_id := 0
 var map_size := MAP.DEFAULT_SIZE
 var weapon_set := 0
@@ -55,6 +66,12 @@ var _owner_token := ""
 
 
 func _ready() -> void:
+	if not Balance.validate():
+		push_error("Invalid combat balance preset")
+		get_tree().quit(1)
+		return
+	combat_seed = randi()
+	Engine.physics_ticks_per_second = int(Balance.NETWORK.tick_hz)
 	if Net.directory:
 		return
 	player_slots.resize(Net.MAX_PLAYERS)
@@ -95,6 +112,11 @@ func player_label(slot: int) -> String:
 	return "Хост" if slot == 0 else "Игрок %d" % (slot + 1)
 
 
+func _match_player_label(slot: int) -> String:
+	var label := player_label(slot)
+	return "%s · Команда %d" % [label, slot % 2 + 1] if team_deathmatch else label
+
+
 func set_local_display_name(value: String) -> void:
 	Net.remember_display_name(value)
 	if not Net.active:
@@ -122,7 +144,7 @@ func _set_display_name(peer: int, alias: String) -> void:
 	if _started:
 		var player := combatant(peer)
 		if player:
-			player.set_name_label(player_label(player.slot))
+			player.set_name_label(_match_player_label(player.slot))
 		for guest in _ready_peers:
 			net_display_names.rpc_id(guest, _display_names)
 	else:
@@ -133,7 +155,7 @@ func _set_display_name(peer: int, alias: String) -> void:
 func net_display_names(names: Dictionary[int, String]) -> void:
 	_display_names = names
 	for player in get_tree().get_nodes_in_group("player"):
-		player.set_name_label(player_label(player.slot))
+		player.set_name_label(_match_player_label(player.slot))
 
 
 func is_loading() -> bool:
@@ -175,11 +197,11 @@ func choose_respawn(actor: Node3D, previous: Vector3) -> Vector3:
 	var enemies: Array[Node3D] = []
 	for group in [&"player", &"bot"]:
 		for fighter in get_tree().get_nodes_in_group(group):
-			if fighter != actor and fighter.health > 0:
+			if fighter != actor and fighter.health > 0 and not same_team(actor.score_id(), fighter.score_id()):
 				enemies.append(fighter)
 	var space := get_world_3d().direct_space_state
 	var ray := PhysicsRayQueryParameters3D.new()
-	ray.collision_mask = 2
+	ray.collision_mask = Balance.WORLD_MASK
 	var best := previous
 	var best_score := -INF
 	var visibility_radius := maxf(64.0, arena_width() * 0.65)
@@ -248,7 +270,7 @@ func start_next_map(arena: int) -> void:
 	else:
 		var bot_count := _solo_bot_count if Net.solo else maxi(1, lan_bot_count)
 		_clear_match_map()
-		await start_solo(bot_count, bot_difficulty, weapon_set, arena, Vector2i(time_option, kill_option), map_size)
+		await start_solo(bot_count, bot_difficulty, weapon_set, arena, Vector2i(time_option, kill_option), map_size, team_deathmatch)
 
 
 @rpc("authority", "reliable")
@@ -347,39 +369,41 @@ func net_score_snapshot(scores: Dictionary) -> void:
 	$HUD.apply_score_snapshot(scores)
 
 
-func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limits: Vector2i, size: int) -> void:
+func start_solo(bot_count: int, difficulty: int, weapons: int, arena: int, limits: Vector2i, size: int, teams: bool = false) -> void:
 	if _started or _loading or Net.active:
 		return
 	_show_loading()
 	Net.play_solo()
+	team_deathmatch = teams
 	_set_limits(limits)
 	weapon_set = weapons
 	map_id = arena
 	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
 	bot_difficulty = clampi(difficulty, 0, DIFFICULTY_NAMES.size() - 1)
 	_solo_bot_count = clampi(bot_count, 1, MAX_BOTS)
+	_reserve_team_bot_slots(_solo_bot_count)
 	await _load_arena(randi(), _solo_bot_count, bot_difficulty)
 	_started = true
 	_spawn_player(1, 0)
 	await _finish_loading()
 
 
-func update_host_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+func update_host_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
 	if Net.active and not multiplayer.is_server():
 		if room_owner != multiplayer.get_unique_id():
 			return
-		net_request_rules.rpc_id(1, weapons, arena, limits, difficulty, bot_count, size)
+		net_request_rules.rpc_id(1, weapons, arena, limits, difficulty, bot_count, size, teams)
 		return
 	if _started or _loading or not Net.active or not multiplayer.is_server():
 		return
-	_apply_room_rules(weapons, arena, limits, difficulty, bot_count, size)
+	_apply_room_rules(weapons, arena, limits, difficulty, bot_count, size, teams)
 	_send_room_state()
 
 
-func create_internet_room(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+func create_internet_room(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
 	if not Net.internet or multiplayer.is_server() or room_owner != 0 or _started or _loading:
 		return
-	net_create_room.rpc_id(1, weapons, arena, limits, difficulty, bot_count, size)
+	net_create_room.rpc_id(1, weapons, arena, limits, difficulty, bot_count, size, teams)
 
 
 func start_host_match() -> void:
@@ -401,12 +425,13 @@ func start_host_match() -> void:
 		if peer > 1:
 			net_wait_for_arena.rpc_id(peer)
 	_layout_seed = randi()
+	_reserve_team_bot_slots(lan_bot_count)
 	await _begin_network_match(weapon_set, map_id, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, map_size)
 	if token != _load_token or _reloading or not Net.active:
 		return
 	for peer in player_slots:
 		if peer > 1:
-			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size)
+			net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size, team_deathmatch, _team_bot_slots)
 	if not Net.dedicated and player_slots.count(0) == Net.MAX_PLAYERS - 1:
 		$HUD.show_host_ip(Net.lan_addresses())
 	if Net.dedicated:
@@ -414,7 +439,8 @@ func start_host_match() -> void:
 		_write_room_status()
 
 
-func _apply_room_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+func _apply_room_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
+	team_deathmatch = teams
 	weapon_set = clampi(weapons, 0, WEAPON_SET_NAMES.size() - 1)
 	map_id = clampi(arena, 0, mini(MAP_NAMES.size(), ARENA_HOURS.size()) - 1)
 	map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
@@ -428,11 +454,11 @@ func _send_room_state() -> void:
 		$HUD/Lobby.refresh_room()
 	for peer in player_slots:
 		if peer > 1:
-			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _display_names, map_size, room_owner)
+			net_room_state.rpc_id(peer, weapon_set, map_id, player_slots, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _display_names, map_size, room_owner, team_deathmatch)
 
 
 @rpc("any_peer", "reliable")
-func net_create_room(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+func net_create_room(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
 	if not Net.dedicated or not multiplayer.is_server() or _started or _loading:
 		return
 	var sender := multiplayer.get_remote_sender_id()
@@ -442,16 +468,16 @@ func net_create_room(weapons: int, arena: int, limits: Vector2i, difficulty: int
 		_send_room_state()
 		return
 	room_owner = sender
-	_apply_room_rules(weapons, arena, limits, difficulty, bot_count, size)
+	_apply_room_rules(weapons, arena, limits, difficulty, bot_count, size, teams)
 	print("Комнату создал игрок %d: %s." % [sender, MAP_NAMES[map_id]])
 	_send_room_state()
 
 
 @rpc("any_peer", "reliable")
-func net_request_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int) -> void:
+func net_request_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
 	if not Net.dedicated or not multiplayer.is_server() or multiplayer.get_remote_sender_id() != room_owner:
 		return
-	update_host_rules(weapons, arena, limits, difficulty, bot_count, size)
+	update_host_rules(weapons, arena, limits, difficulty, bot_count, size, teams)
 
 
 @rpc("any_peer", "reliable")
@@ -488,7 +514,7 @@ func net_room_owner(owner: int) -> void:
 
 @rpc("authority", "reliable")
 func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: Vector2i,
-		difficulty: int, bot_count: int, names: Dictionary[int, String], size: int, owner: int) -> void:
+		difficulty: int, bot_count: int, names: Dictionary[int, String], size: int, owner: int, teams: bool) -> void:
 	if _started or _loading:
 		return
 	var editing: bool = Net.internet and owner == 0 and $HUD/Lobby.is_editing_setup()
@@ -496,6 +522,7 @@ func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: 
 		player_slots = roster
 		_display_names = names
 	else:
+		team_deathmatch = teams
 		weapon_set = weapons
 		map_id = arena
 		map_size = clampi(size, 0, MAP.SIZE_WIDTHS.size() - 1)
@@ -523,7 +550,7 @@ func net_wait_for_arena() -> void:
 
 @rpc("authority", "reliable")
 func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int, limits: Vector2i,
-		difficulty: int, bot_count: int, revision: int, size: int) -> void:
+		difficulty: int, bot_count: int, revision: int, size: int, teams: bool, bot_slots: PackedInt32Array) -> void:
 	if revision < _map_revision:
 		return
 	if revision > _map_revision:
@@ -536,6 +563,8 @@ func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: 
 	if _started or _loading:
 		return
 	player_slots = roster
+	team_deathmatch = teams
+	_team_bot_slots = bot_slots
 	_show_loading()
 	await _begin_network_match(weapons, arena, layout_seed, limits, difficulty, bot_count, size)
 	if not _reloading and Net.active:
@@ -671,6 +700,7 @@ func _set_limits(limits: Vector2i) -> void:
 
 
 func _reset_clock() -> void:
+	_team_score = Vector2i.ZERO
 	_round_left = TIME_LIMITS[time_option]
 	net_clock(ceili(_round_left))
 
@@ -704,6 +734,9 @@ func net_clock(seconds: int) -> void:
 func _finish_round(reason: String) -> void:
 	if round_finished():
 		return
+	if team_deathmatch:
+		var winner := "Ничья" if _team_score.x == _team_score.y else ("Команда 1 победила" if _team_score.x > _team_score.y else "Команда 2 победила")
+		reason = "%s (%d–%d) · %s" % [winner, _team_score.x, _team_score.y, reason]
 	var rows: Array = $HUD.score_rows(false)
 	rows.sort_custom(func(a: Array, b: Array) -> bool: return a[1] > b[1] or (a[1] == b[1] and a[2] < b[2]))
 	net_finish(reason, rows)
@@ -744,14 +777,41 @@ func _on_host_lost() -> void:
 		_finish_round("Хост отключился")
 
 
+func _reserve_team_bot_slots(count: int) -> void:
+	_team_bot_slots.clear()
+	if not team_deathmatch:
+		return
+	var open_slots: Array[PackedInt32Array] = [PackedInt32Array(), PackedInt32Array()]
+	var team_sizes := Vector2i.ZERO
+	for slot in player_slots.size():
+		var team := slot % 2
+		if player_slots[slot] == 0:
+			open_slots[team].append(slot)
+		else:
+			team_sizes[team] += 1
+	for _index in mini(count, open_slots[0].size() + open_slots[1].size()):
+		var team := 0 if team_sizes.x <= team_sizes.y else 1
+		if open_slots[team].is_empty():
+			team = 1 - team
+		_team_bot_slots.append(open_slots[team][0])
+		open_slots[team].remove_at(0)
+		team_sizes[team] += 1
+
+
 func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
+	if team_deathmatch:
+		count = _team_bot_slots.size()
 	for index in count:
 		if token >= 0 and not _load_current(token):
 			return
+		if team_deathmatch and player_slots[_team_bot_slots[index]] != 0:
+			continue
 		var bot := PLAYER_SCENE.instantiate()
 		bot.set_script(BOT_SCRIPT)
 		bot.name = "Bot%d" % index
 		bot.combatant_id = -index
+		if team_deathmatch:
+			bot.slot = _team_bot_slots[index]
 		bot.position = $Map.initial_spawn(Net.MAX_PLAYERS + index)
 		bot.spawn_position = bot.position
 		bot.patrol_route = $Map.patrol_route()
@@ -764,13 +824,53 @@ func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
 			await get_tree().process_frame
 
 
+func same_team(first: int, second: int) -> bool:
+	if not team_deathmatch or first == second:
+		return false
+	var first_actor := combatant(first)
+	var second_actor := combatant(second)
+	return first_actor != null and second_actor != null and first_actor.team_id() == second_actor.team_id()
+
+
+func allows_damage(attacker: int, victim: int) -> bool:
+	return Balance.MATCH.friendly_fire_enabled or not same_team(attacker, victim)
+
+
 func announce(killer_id: int, victim_id: int) -> void:
 	for peer in _ready_peers:
 		net_frag.rpc_id(peer, killer_id, victim_id)
 	net_frag(killer_id, victim_id)
 	var limit: int = KILL_LIMITS[kill_option]
-	if killer_id != victim_id and limit > 0 and $HUD.kills_for(killer_id) >= limit:
-		_finish_round("Достигнут лимит убийств")
+	var score: int = $HUD.kills_for(killer_id)
+	var killer := combatant(killer_id)
+	if team_deathmatch and killer != null and killer_id != victim_id:
+		var team: int = killer.team_id()
+		_team_score[team] += 1
+		score = _team_score[team]
+	if killer_id != victim_id and limit > 0 and score >= limit:
+		_finish_round.call_deferred("Достигнут лимит убийств")
+
+
+func publish_damage(attacker: int, victim: int, source: String, zone: String,
+		hp_damage: float, armor_damage: float, killed: bool) -> void:
+	_damage_sequence += 1
+	var event := {
+		"event_id": _damage_sequence, "server_tick": Engine.get_physics_frames(),
+		"attacker_peer_id": attacker, "victim_peer_id": victim,
+		"source_id": source, "zone_id": zone, "hp_damage": hp_damage,
+		"armor_damage": armor_damage, "is_kill": killed,
+	}
+	net_damage_event(event)
+	for peer in _ready_peers:
+		net_damage_event.rpc_id(peer, event)
+
+
+@rpc("authority", "reliable")
+func net_damage_event(event: Dictionary) -> void:
+	if int(event.event_id) <= _latest_damage_event:
+		return
+	_latest_damage_event = int(event.event_id)
+	damage_resolved.emit(event)
 
 
 @rpc("authority", "reliable")
@@ -779,6 +879,13 @@ func net_frag(killer_id: int, victim_id: int) -> void:
 
 
 func _spawn_player(peer_id: int, slot: int) -> void:
+	if team_deathmatch:
+		var index := _team_bot_slots.find(slot)
+		var bot := get_node_or_null("Bot%d" % index) if index >= 0 else null
+		if bot:
+			$HUD.remove_score(bot.combatant_id)
+			remove_child(bot)
+			bot.queue_free()
 	var player := PLAYER_SCENE.instantiate()
 	player.name = str(peer_id)
 	player.slot = slot
@@ -793,7 +900,7 @@ func _spawn_player(peer_id: int, slot: int) -> void:
 			$HUD/Lobby.hide_lobby()
 			$HUD/WeaponSelect.show_select()
 	else:
-		player.set_name_label(player_label(slot))
+		player.set_name_label(_match_player_label(slot))
 	$HUD.refresh_score()
 
 
@@ -828,7 +935,7 @@ func _physics_process(delta: float) -> void:
 		for bot in get_tree().get_nodes_in_group("bot"):
 			poses[bot.combatant_id] = bot.network_pose()
 		for peer in _ready_peers:
-			net_poses.rpc_id(peer, poses)
+			net_poses.rpc_id(peer, poses, combat_time())
 	else:
 		var player := get_node_or_null(str(Net.local_id()))
 		if player and player.control_enabled:
@@ -852,14 +959,69 @@ func apply_client_pose(player: Node, pose: PackedFloat32Array) -> bool:
 	for value in pose:
 		if not is_finite(value):
 			return false
+	if absf(pose[4]) > deg_to_rad(80.1) or pose[12] < 1.0 or pose[12] != floorf(pose[12]):
+		return false
+	for index in [5, 6, 7, 8, 10]:
+		if pose[index] != 0.0 and pose[index] != 1.0:
+			return false
+	var previous: PackedFloat32Array = player._latest_pose
+	var destination := Vector3(pose[0], pose[1], pose[2])
+	var origin: Vector3 = player.global_position
+	var elapsed := 0.12
+	var travel_budget := 0.4
+	if not previous.is_empty():
+		if pose[12] <= previous[12]:
+			return pose[12] >= previous[12] - 8.0
+		origin = Vector3(previous[0], previous[1], previous[2])
+		elapsed = clampf(combat_time() - float(player._pose_received_at), 0.0, 0.25)
+		travel_budget = player._pose_travel_budget
+	var travel := destination - origin
+	var horizontal := Vector2(travel.x, travel.z).length()
+	travel_budget = minf(1.4, travel_budget + float(player.SPRINT_SPEED) * elapsed)
+	if horizontal > travel_budget:
+		return false
+	if absf(travel.y) > 22.0 * elapsed + 0.55:
+		return false
+	if travel.length_squared() > 0.0001:
+		var query := PhysicsRayQueryParameters3D.create(origin + Vector3.UP * 0.65, destination + Vector3.UP * 0.65, Balance.WORLD_MASK)
+		if not get_world_3d().direct_space_state.intersect_ray(query).is_empty():
+			return false
+	player._pose_travel_budget = travel_budget - horizontal
 	player.apply_network_pose(pose)
 	return true
 
 
+func combat_time() -> float:
+	return Time.get_ticks_usec() * 0.000001
+
+
+func estimated_server_time() -> float:
+	return combat_time() + _server_clock_offset if _server_clock_synced else 0.0
+
+
+func rewind_time(sent_time: float) -> float:
+	var now := combat_time()
+	if sent_time == 0.0:
+		return now - float(Balance.NETWORK.remote_interpolation_delay_s)
+	if not is_finite(sent_time) or sent_time > now + float(Balance.NETWORK.max_future_shot_skew_s) or sent_time < now - float(Balance.NETWORK.hitbox_history_s):
+		return -1.0
+	var viewed_time := sent_time - float(Balance.NETWORK.remote_interpolation_delay_s)
+	return clampf(viewed_time, now - float(Balance.NETWORK.max_lag_compensation_s), now)
+
+
 @rpc("authority", "call_remote", "unreliable_ordered", 1)
-func net_poses(poses: Dictionary[int, PackedFloat32Array]) -> void:
+func net_poses(poses: Dictionary[int, PackedFloat32Array], server_time: float) -> void:
 	if round_finished():
 		return
+	var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	var server := transport.get_peer(1) if transport else null
+	if server:
+		# ENet starts with a high RTT estimate before the first acknowledgements.
+		var travel_time := minf(float(Balance.NETWORK.max_future_shot_skew_s) * 0.75,
+			server.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME) * 0.0005)
+		var sample := server_time + travel_time - combat_time()
+		_server_clock_offset = lerpf(_server_clock_offset, sample, 0.10) if _server_clock_synced else sample
+		_server_clock_synced = true
 	for peer in poses:
 		if peer == Net.local_id():
 			continue
@@ -943,7 +1105,7 @@ func _welcome(id: int) -> void:
 		print("Подключился игрок %d. В комнате %d." % [id, _connected_players()])
 	if _started:
 		_send_slot(slot, id, id)
-		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size)
+		net_begin.rpc_id(id, weapon_set, map_id, player_slots, _layout_seed, Vector2i(time_option, kill_option), bot_difficulty, lan_bot_count, _map_revision, map_size, team_deathmatch, _team_bot_slots)
 	else:
 		_send_room_state()
 
@@ -1046,7 +1208,8 @@ func _load_match_room() -> bool:
 		Vector2i(int(cfg.get_value("room", "time", 4)), int(cfg.get_value("room", "kills", 5))),
 		int(cfg.get_value("room", "difficulty", 1)),
 		int(cfg.get_value("room", "bots", 1)),
-		int(cfg.get_value("room", "size", 2))
+		int(cfg.get_value("room", "size", 2)),
+		bool(cfg.get_value("room", "teams", false))
 	)
 	DirAccess.remove_absolute(Net.room_file)
 	_write_room_status()

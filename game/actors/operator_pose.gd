@@ -1,5 +1,6 @@
 extends SkeletonModifier3D
 
+const Balance := preload("res://game/combat/combat_balance.gd")
 const VEST_MESH := "Object_105"
 const MODEL := preload("res://assets/operator/operator.glb")
 const LOCOMOTION := preload("res://assets/animations/operator_locomotion.res")
@@ -76,7 +77,7 @@ func _ready() -> void:
 		var toe_yaw := atan2(-toe_offset.x, -toe_offset.z)
 		_forward_boots.append(Basis(Vector3.UP, -toe_yaw) * ankle.basis.orthonormalized())
 		_rest_toe_pitch.append(toe_offset.angle_to(Vector3.UP))
-	_floor_ray.collision_mask = 2
+	_floor_ray.collision_mask = Balance.WORLD_MASK
 	_right_fingers = _finger_chains(skeleton, "Right")
 	_left_fingers = _finger_chains(skeleton, "Left")
 	_head = skeleton.find_bone(&"mixamorig_Head_06")

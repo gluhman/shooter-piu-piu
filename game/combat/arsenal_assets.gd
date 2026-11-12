@@ -1,9 +1,10 @@
 extends RefCounted
 
-const GRENADE_IDS := ["frag", "flash", "smoke"]
-const GRENADE_ACTIONS := {"frag": &"throw_frag", "flash": &"throw_flash", "smoke": &"throw_smoke"}
-const GRENADE_LABELS := {"frag": "Осколочная", "flash": "Светошумовая", "smoke": "Дымовая"}
-const MAX_GRENADES := 2
+const Balance := preload("res://game/combat/combat_balance.gd")
+const GRENADE_IDS := ["frag", "flash", "concussion", "smoke"]
+const GRENADE_ACTIONS := {"frag": &"throw_frag", "flash": &"throw_flash", "smoke": &"throw_smoke", "concussion": &"throw_grenade"}
+const GRENADE_LABELS := {"frag": "Осколочная", "flash": "Светошумовая", "smoke": "Дымовая", "concussion": "Оглушающая"}
+const MAX_GRENADES: int = Balance.GRENADES.shared.count_per_spawn
 const MODELS := {
 	"launcher": "res://assets/arsenal/launcher.glb",
 	"m249": "res://assets/arsenal/m249.glb",
@@ -11,6 +12,7 @@ const MODELS := {
 	"m1": "res://assets/arsenal/m1.glb",
 	"frag": "res://assets/arsenal/frag.glb",
 	"flash": "res://assets/arsenal/flash.glb",
+	"concussion": "res://assets/arsenal/flash.glb",
 	"smoke": "res://assets/arsenal/smoke.glb",
 	"armor": "res://assets/arsenal/armor.glb",
 }

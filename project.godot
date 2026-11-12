@@ -35,7 +35,10 @@ enabled=PackedStringArray("res://addons/sky_3d/plugin.cfg")
 
 [layer_names]
 
-3d_physics/layer_2="Acoustic geometry"
+3d_physics/layer_1="World"
+3d_physics/layer_2="Movement capsules"
+3d_physics/layer_3="Combat hurtboxes"
+3d_physics/layer_4="Grenade projectiles"
 
 [physics]
 

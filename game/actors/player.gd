@@ -1,27 +1,28 @@
 extends CharacterBody3D
 
-const WALK_SPEED := 5.0
-const SPRINT_SPEED := 7.4
-const CROUCH_SPEED := 2.6
-const AIM_SPEED := 3.2
+const Balance := preload("res://game/combat/combat_balance.gd")
+const WALK_SPEED: float = Balance.MOVEMENT.walk_speed_m_s
+const SPRINT_SPEED: float = WALK_SPEED * Balance.MOVEMENT.sprint_multiplier
+const CROUCH_SPEED: float = WALK_SPEED * Balance.MOVEMENT.crouch_speed_multiplier
+const AIM_SPEED: float = WALK_SPEED * Balance.MOVEMENT.ads_speed_multiplier
 const GROUND_ACCELERATION := 42.0
 const GROUND_BRAKING := 46.0
 const AIR_ACCELERATION := 24.0
 const STANDING_HEIGHT := 1.7
 const CROUCH_HEIGHT := 1.22
 const CROUCH_DROP := STANDING_HEIGHT - CROUCH_HEIGHT
-const JUMP_VELOCITY := 4.6
+const JUMP_VELOCITY: float = Balance.MOVEMENT.jump_vertical_speed_m_s
 const MOUSE_SENS := 0.0022
-const MAX_HEALTH := 100
-const MAX_ARMOR := 65
-const HIT_MULTIPLIERS := {"head": 2.35, "chest": 1.0, "stomach": 0.85, "arm": 0.65, "leg": 0.55}
+const MAX_HEALTH: int = Balance.PLAYER.max_health
+const MAX_ARMOR: int = Balance.VESTS.heavy.starting_durability
 const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
 const NETWORK_POSE_SIZE := 13
-const REMOTE_BLEND_TIME := 0.045
+const REMOTE_BLEND_TIME: float = Balance.NETWORK.remote_interpolation_delay_s
 const LEAN_DISTANCE := 0.28
 const LEAN_SPEED := 8.0
 const LEAN_CLEARANCE := 0.07
 const FIRST_PERSON_BODY_LAYER := 3
+const Hurtboxes := preload("res://game/actors/operator_hurtboxes.gd")
 const OperatorPose := preload("res://game/actors/operator_pose.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const MovementAudio := preload("res://game/audio/movement_audio.gd")
@@ -35,13 +36,26 @@ signal weapon_wheel_used
 
 var control_enabled := false
 var slot := 0
-var health := MAX_HEALTH
-var armor := 0
+var health := float(MAX_HEALTH)
+var armor := 0.0
+var vest_tier := "none"
+var sprinting := false
+var sliding := false
+var concussion_left := 0.0
+var _slide_left := 0.0
+var _slide_cooldown := 0.0
+var _slide_direction := Vector3.ZERO
+var _crouch_held := false
+var _regen_left := 0.0
+var _regen_sync_left := 0.0
 var flash_left := 0.0
 var _grenades: Dictionary[String, int] = {}
 var _throw_wait := 0.0
+var _frag_button: StringName
 var _pose_sequence := 0
 var _latest_pose := PackedFloat32Array()
+var _pose_received_at := 0.0
+var _pose_travel_budget := 0.40
 var _pose_elapsed := 0.0
 var _pose_origin := Vector3.ZERO
 var _pose_yaw := 0.0
@@ -73,12 +87,14 @@ var _pouch_rest: Vector3
 
 var _jump_held := false
 var _recoil_pitch := 0.0
+var _recoil_yaw := 0.0
 var _dead := false
 var _respawn_timer: SceneTreeTimer
 var _hurt_lock := 0.0
 var _avatar: Node3D
 var _skeleton: Skeleton3D
 var _pose: OperatorPose
+var _hurtboxes: Hurtboxes
 var _eye_rest: Vector3
 var _head_pivot: Vector3
 var _pouch: Marker3D
@@ -99,6 +115,8 @@ var _movement_audio: MovementAudio
 
 func _ready() -> void:
 	add_to_group("player")
+	collision_layer = Balance.MOVEMENT_CAPSULE_MASK
+	collision_mask = Balance.WORLD_AND_CAPSULES
 	_standing_capsule = _collision.shape as CapsuleShape3D
 	_collision.shape = _standing_capsule.duplicate()
 	_prev_pos = global_position
@@ -129,34 +147,86 @@ func _server_rules() -> bool:
 	return not Net.active or multiplayer.is_server()
 
 
-func take_damage(amount: int, killer_id: int = 0, zone: String = "chest", vest_fraction: float = 0.0, impact: Dictionary = {}) -> void:
-	if not _server_rules() or get_parent().round_finished():
+func take_damage(amount: float, killer_id: int = 0, zone: String = "chest", head_multiplier: float = 0.0, impact: Dictionary = {}) -> void:
+	if not _server_rules() or get_parent().round_finished() or _dead or not control_enabled or amount <= 0.0:
 		return
-	if _dead or not control_enabled or amount <= 0 or _hurt_lock > 0.0:
+	if not get_parent().allows_damage(killer_id, score_id()):
 		return
-	amount = maxi(1, roundi(amount * float(HIT_MULTIPLIERS[zone])))
-	if zone == "chest" and armor > 0:
-		var absorbed := mini(armor, clampi(roundi(amount * vest_fraction), 0, amount - 1))
+	if _hurt_lock > 0.0 and not (impact.get("zone") == "blast" and killer_id == score_id()):
+		return
+	var absorbed := 0.0
+	if head_multiplier > 0.0:
+		amount = Balance.zone_damage(amount, zone, head_multiplier)
+		absorbed = Balance.vest_absorption(amount, zone, vest_tier, armor)
 		armor -= absorbed
 		amount -= absorbed
-	_set_health(maxi(health - amount, 0), killer_id, impact)
+	_regen_left = Balance.PLAYER.health_regen_delay_s
+	var next_health := maxf(health - amount, 0.0)
+	var damage := health - next_health
+	_set_health(next_health, killer_id, impact)
+	get_parent().publish_damage(killer_id, score_id(), impact.get("source", ""), impact.get("zone", zone),
+		damage, absorbed, next_health == 0.0)
 
 
-func projectile_zone(at: Vector3) -> String:
-	var point := to_local(at)
-	if point.y >= _capsule_height - 0.225:
-		return "head"
-	if point.y < _capsule_height * 0.46:
-		return "leg"
-	if absf(point.x) > 0.23:
-		return "arm"
-	return "chest" if point.y >= _capsule_height - 0.52 else "stomach"
+func cancel_spawn_protection() -> void:
+	_hurt_lock = 0.0
+
+
+func _regenerate_health(delta: float) -> void:
+	if _dead or not control_enabled or health >= MAX_HEALTH:
+		return
+	var recovery_time := maxf(0.0, delta - _regen_left)
+	_regen_left = maxf(0.0, _regen_left - delta)
+	if recovery_time <= 0.0:
+		return
+	health = minf(MAX_HEALTH, health + recovery_time * float(Balance.PLAYER.health_regen_hp_s))
+	_regen_sync_left -= recovery_time
+	if _regen_sync_left <= 0.0 or health == MAX_HEALTH:
+		_regen_sync_left = 0.10
+		_set_health(health, 0)
 
 
 func grant_armor() -> void:
 	if _server_rules() and control_enabled and armor < MAX_ARMOR:
+		vest_tier = "heavy"
 		armor = MAX_ARMOR
 		_set_health(health, 0)
+
+
+func armor_capacity() -> int:
+	return int(Balance.VESTS[vest_tier].starting_durability)
+
+
+func armor_movement_scale() -> float:
+	return float(Balance.VESTS[vest_tier].movement_multiplier)
+
+
+func armor_ads_delay() -> float:
+	return float(Balance.VESTS[vest_tier].ads_add_s)
+
+
+func combat_grounded() -> bool:
+	return is_on_floor() if _is_local() or is_in_group("bot") else _net_grounded
+
+
+func combat_speed() -> float:
+	return Vector2(velocity.x, velocity.z).length() if _is_local() or is_in_group("bot") else visual_speed()
+
+
+func capsule_distance(at: Vector3) -> float:
+	var shape := _collision.shape as CapsuleShape3D
+	var half_segment := maxf(0.0, shape.height * 0.5 - shape.radius)
+	var local := _collision.to_local(at)
+	var nearest := Vector3(0.0, clampf(local.y, -half_segment, half_segment), 0.0)
+	return maxf(0.0, local.distance_to(nearest) - shape.radius)
+
+
+func hurtbox_center(zone: String) -> Vector3:
+	return _hurtboxes.center(zone)
+
+
+func blast_samples() -> Array[Vector3]:
+	return [hurtbox_center("head"), hurtbox_center("chest"), hurtbox_center("pelvis")]
 
 
 func grenade_stock(kind: String) -> int:
@@ -194,25 +264,35 @@ func consume_grenade(kind: String) -> bool:
 	return true
 
 
-func apply_flash(strength: float) -> void:
-	if not _server_rules() or strength < 0.04:
+func apply_flash(duration: float) -> void:
+	if not _server_rules() or duration <= 0.0:
 		return
-	flash_left = maxf(flash_left, _flash_duration(strength))
+	flash_left = maxf(flash_left, duration)
 	if _is_local():
-		net_flash(strength)
+		net_flash(duration)
 	elif score_id() > 1:
-		net_flash.rpc_id(score_id(), strength)
+		net_flash.rpc_id(score_id(), duration)
 
 
 @rpc("any_peer", "reliable")
-func net_flash(strength: float) -> void:
+func net_flash(duration: float) -> void:
 	if multiplayer.get_remote_sender_id() not in [0, 1] or not _is_local():
 		return
-	get_parent().get_node("HUD").show_flashbang(strength, _flash_duration(strength))
+	get_parent().get_node("HUD").show_flashbang(1.0, duration)
 
 
-func _flash_duration(strength: float) -> float:
-	return 0.24 + 3.3 * pow(clampf(strength, 0.0, 1.0), 1.17)
+func apply_concussion(duration: float) -> void:
+	if not _server_rules() or duration <= 0.0:
+		return
+	concussion_left = maxf(concussion_left, duration)
+	if not _is_local() and score_id() > 1:
+		net_concussion.rpc_id(score_id(), duration)
+
+
+@rpc("any_peer", "reliable")
+func net_concussion(duration: float) -> void:
+	if multiplayer.get_remote_sender_id() == 1 and _is_local():
+		concussion_left = maxf(concussion_left, duration)
 
 
 func set_scoped_view(scoped: bool) -> void:
@@ -223,13 +303,13 @@ func set_scoped_view(scoped: bool) -> void:
 
 func restore_health(amount: int) -> void:
 	if _server_rules() and control_enabled:
-		_set_health(mini(MAX_HEALTH, health + amount), 0)
+		_set_health(minf(MAX_HEALTH, health + amount), 0)
 
 
-func _set_health(value: int, killer_id: int, impact: Dictionary = {}) -> void:
+func _set_health(value: float, killer_id: int, impact: Dictionary = {}) -> void:
 	health = value
 	for peer in get_parent().match_peers():
-		net_set_health.rpc_id(peer, health, armor, killer_id)
+		net_set_health.rpc_id(peer, health, armor, vest_tier, killer_id)
 	_commit(killer_id, impact)
 
 
@@ -326,7 +406,7 @@ func ammo_reward_weapon() -> String:
 
 func ammo_capacity(id: String) -> int:
 	var base := int(Weapon.WEAPONS[id].reserve)
-	return base * 3 if score_id() > 0 else base
+	return base
 
 
 func ammo_space(id: String) -> int:
@@ -449,6 +529,10 @@ func _is_owner_request(sender: int) -> bool:
 	return multiplayer.is_server() and sender == get_multiplayer_authority() and get_parent().match_peers().has(sender)
 
 
+func team_id() -> int:
+	return slot % 2
+
+
 func score_id() -> int:
 	return get_multiplayer_authority()
 
@@ -468,7 +552,7 @@ func send_status_to(peer: int) -> void:
 	if peer != get_multiplayer_authority():
 		if weapon_id != "":
 			net_equip.rpc_id(peer, weapon_id, _spawn_loadout)
-		net_set_health.rpc_id(peer, health, armor, 0)
+		net_set_health.rpc_id(peer, health, armor, vest_tier, 0)
 
 
 func network_pose() -> PackedFloat32Array:
@@ -476,10 +560,9 @@ func network_pose() -> PackedFloat32Array:
 		return _latest_pose
 	_pose_sequence += 1
 	var grounded := is_on_floor() if _is_local() or (_server_rules() and is_in_group("bot")) else _net_grounded
-	# The two former wall-normal fields keep the existing pose layout.
 	return PackedFloat32Array([
 		position.x, position.y, position.z, rotation.y, _camera.rotation.x, float(crouched), float(aiming),
-		0.0, 0.0, _view_lean, float(grounded), float(_spawn_revision), float(_pose_sequence),
+		float(sprinting), float(sliding), _view_lean, float(grounded), float(_spawn_revision), float(_pose_sequence),
 	])
 
 
@@ -491,6 +574,7 @@ func apply_network_pose(pose: PackedFloat32Array) -> void:
 	var target := Vector3(pose[0], pose[1], pose[2])
 	var snap := _latest_pose.is_empty() or position.distance_squared_to(target) > 25.0
 	_latest_pose = pose
+	_pose_received_at = Time.get_ticks_usec() * 0.000001
 	_pose_origin = position
 	_pose_yaw = rotation.y
 	_pose_pitch = _camera.rotation.x
@@ -502,7 +586,9 @@ func apply_network_pose(pose: PackedFloat32Array) -> void:
 		_visual_vertical = 0.0
 		_pose.reset_locomotion()
 	crouched = pose[5] > 0.0
-	aiming = pose[6] > 0.0
+	sprinting = pose[7] > 0.0
+	sliding = pose[8] > 0.0
+	aiming = pose[6] > 0.0 and not sprinting and not sliding
 	var basis := Basis(Vector3.UP, pose[3])
 	var eye := target + basis * _neutral_eye(pose[4], float(crouched))
 	_lean_amount = _limit_lean(clampf(pose[9], -1.0, 1.0), eye, basis.x)
@@ -532,6 +618,19 @@ func current_shot_transform(rendered: Transform3D) -> Transform3D:
 	var aim_rotation := yaw_adjustment * pitch_adjustment
 	return Transform3D(aim_rotation * rendered.basis,
 		target + yaw_adjustment * offset + aim_rotation * (rendered.origin - camera_at))
+
+
+func record_hurtboxes(time: float) -> void:
+	var correction := Transform3D.IDENTITY
+	if not _latest_pose.is_empty() and not _is_local() and not is_in_group("bot"):
+		var turn := Basis(Vector3.UP, angle_difference(rotation.y, _latest_pose[3]))
+		var destination := Vector3(_latest_pose[0], _latest_pose[1], _latest_pose[2])
+		correction = Transform3D(turn, destination - turn * global_position)
+	_hurtboxes.record_pose(time, correction)
+
+
+func rewound_hit(from: Vector3, to: Vector3, time: float) -> Dictionary:
+	return _hurtboxes.rewound_ray(from, to, time)
 
 
 func set_weapon_grips(right: Marker3D, left: Marker3D, knife: bool) -> void:
@@ -575,11 +674,12 @@ func visual_speed() -> float:
 
 
 @rpc("any_peer", "reliable")
-func net_set_health(value: int, vest: int, killer_id: int) -> void:
+func net_set_health(value: float, vest: float, tier: String, killer_id: int) -> void:
 	if multiplayer.get_remote_sender_id() != 1:
 		return
 	health = value
 	armor = vest
+	vest_tier = tier
 	_commit(killer_id)
 
 
@@ -655,7 +755,10 @@ func _apply_equip(id: String, magazine: int = -1, reserve: int = -1, switching: 
 	if id != "knife" and not get_parent().allows_weapon(id):
 		return
 	weapon_id = id
+	if not control_enabled:
+		_hurt_lock = Balance.MATCH.spawn_protection_s
 	control_enabled = true
+	_hurtboxes.set_active(true)
 	_switch_pending = false
 	gun.equip(id, magazine, reserve, switching)
 	if _is_local() and not get_parent().input_blocked():
@@ -664,11 +767,12 @@ func _apply_equip(id: String, magazine: int = -1, reserve: int = -1, switching: 
 
 func _commit(killer_id: int, impact: Dictionary = {}) -> void:
 	_vest.visible = armor > 0
-	health_changed.emit(health, MAX_HEALTH)
+	health_changed.emit(ceili(health), MAX_HEALTH)
 	_refresh_bar()
 	if health > 0 or _dead:
 		return
 	_dead = true
+	_hurtboxes.set_active(false)
 	_movement_audio.reset()
 	_lean_amount = 0.0
 	_view_lean = 0.0
@@ -685,6 +789,7 @@ func _commit(killer_id: int, impact: Dictionary = {}) -> void:
 	if _bar_root:
 		_bar_root.visible = false
 	if _server_rules():
+		get_parent().get_node("Grenades").drop_cooked(self)
 		var body_impact := impact.duplicate()
 		body_impact["drift"] = drift
 		get_parent().get_node("Loot").drop_combatant(self, body_impact)
@@ -703,10 +808,19 @@ func _clear_inventory() -> void:
 
 
 func _reset_support() -> void:
-	armor = 0
-	_vest.hide()
+	vest_tier = Balance.PLAYER.spawn_vest
+	armor = armor_capacity()
+	_vest.show()
 	flash_left = 0.0
+	concussion_left = 0.0
+	sprinting = false
+	sliding = false
+	_slide_left = 0.0
+	_slide_cooldown = 0.0
+	_regen_left = 0.0
+	_regen_sync_left = 0.0
 	_throw_wait = 0.0
+	_frag_button = &""
 
 
 func _request_respawn() -> void:
@@ -726,7 +840,7 @@ func _next_respawn_weapon() -> String:
 
 
 func _respawn_delay() -> float:
-	return 2.2
+	return float(Balance.MATCH.respawn_delay_s)
 
 
 func restart_round() -> void:
@@ -760,6 +874,7 @@ func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
 	_view_lean = 0.0
 	_spawn_revision = revision
 	_latest_pose = PackedFloat32Array()
+	_hurtboxes.reset_history()
 	_net_grounded = true
 	_last_spawn_position = at
 	global_position = at
@@ -767,19 +882,22 @@ func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
 	velocity = Vector3.ZERO
 	rotation.y = atan2(at.x, at.z)
 	_camera.rotation.x = 0.0
-	health = MAX_HEALTH
+	_recoil_pitch = 0.0
+	_recoil_yaw = 0.0
+	health = float(MAX_HEALTH)
 	_dead = false
-	collision_layer = 1
-	collision_mask = 1
+	collision_layer = Balance.MOVEMENT_CAPSULE_MASK
+	collision_mask = Balance.WORLD_AND_CAPSULES
 	crouched = false
 	aiming = false
 	_crouch_blend = 0.0
 	_update_view_pose()
 	_update_capsule()
-	_hurt_lock = 1.0
+	_hurt_lock = Balance.MATCH.spawn_protection_s
 	if id != "":
 		_apply_equip(id)
 	control_enabled = id != ""
+	_hurtboxes.set_active(control_enabled)
 	_prev_pos = global_position
 	_visual_velocity = Vector3.ZERO
 	_visual_vertical = 0.0
@@ -792,7 +910,7 @@ func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
 		_avatar.visible = true
 	if _bar_root:
 		_bar_root.visible = true
-	health_changed.emit(health, MAX_HEALTH)
+	health_changed.emit(ceili(health), MAX_HEALTH)
 	_refresh_bar()
 	gun.show()
 
@@ -801,7 +919,9 @@ func add_recoil(pitch_deg: float, yaw_deg: float) -> void:
 	if not _is_local():
 		return
 	var pitch := deg_to_rad(pitch_deg)
-	rotate_y(deg_to_rad(yaw_deg))
+	var yaw := deg_to_rad(yaw_deg)
+	rotate_y(yaw)
+	_recoil_yaw += yaw
 	_camera.rotation.x = clampf(_camera.rotation.x + pitch, deg_to_rad(-80.0), deg_to_rad(80.0))
 	_recoil_pitch += pitch
 
@@ -811,6 +931,9 @@ func _process(delta: float) -> void:
 		_hurt_lock = maxf(_hurt_lock - delta, 0.0)
 		_throw_wait = maxf(_throw_wait - delta, 0.0)
 		flash_left = maxf(flash_left - delta, 0.0)
+		if not get_parent().round_finished():
+			_regenerate_health(delta)
+	concussion_left = maxf(concussion_left - delta, 0.0)
 	if _is_local():
 		_recover_recoil(delta)
 	else:
@@ -829,15 +952,22 @@ func _visual_update_interval() -> float:
 
 
 func _recover_recoil(delta: float) -> void:
-	if absf(_recoil_pitch) < 0.0001:
-		_recoil_pitch = 0.0
-		return
-	var step := _recoil_pitch * minf(1.0, delta * 10.0)
-	_recoil_pitch -= step
-	_camera.rotation.x = clampf(_camera.rotation.x - step, deg_to_rad(-80.0), deg_to_rad(80.0))
+	var recovery: float = delta * gun.recoil_recovery()
+	var pitch_step := clampf(_recoil_pitch, -recovery, recovery)
+	var yaw_step := clampf(_recoil_yaw, -recovery, recovery)
+	_recoil_pitch -= pitch_step
+	_recoil_yaw -= yaw_step
+	if not is_zero_approx(yaw_step):
+		rotate_y(-yaw_step)
+	_camera.rotation.x = clampf(_camera.rotation.x - pitch_step, deg_to_rad(-80.0), deg_to_rad(80.0))
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _is_local() and _frag_button != &"" and event.is_action_released(_frag_button):
+		_frag_button = &""
+		get_parent().get_node("Grenades").request_throw(self, "frag", true)
+		get_viewport().set_input_as_handled()
+		return
 	if not _is_local() or not accepts_gameplay_input():
 		return
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -857,8 +987,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 	for kind: String in ARSENAL.GRENADE_IDS:
-		if event.is_action_pressed(ARSENAL.GRENADE_ACTIONS[kind]):
-			_throw_grenade(kind)
+		var action: StringName = ARSENAL.GRENADE_ACTIONS[kind]
+		if action != &"throw_grenade" and event.is_action_pressed(action):
+			_throw_grenade(kind, action)
 			get_viewport().set_input_as_handled()
 			return
 	if event.is_action_pressed(&"use_medkit"):
@@ -866,7 +997,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"throw_grenade"):
-		_throw_grenade(carried_grenade())
+		_throw_grenade(carried_grenade(), &"throw_grenade")
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"interact"):
@@ -875,14 +1006,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var sensitivity := MOUSE_SENS * GameSettings.sensitivity * (0.2 if _scoped else lerpf(1.0, 0.55, gun.aim_blend()))
+		if concussion_left > 0.0:
+			sensitivity *= float(Balance.GRENADES.concussion.mouse_look_sensitivity_multiplier_during_effect)
 		var pitch_sign := 1.0 if GameSettings.invert_y else -1.0
 		rotate_y(-event.relative.x * sensitivity)
 		var pitch: float = _camera.rotation.x + event.relative.y * sensitivity * pitch_sign
 		_camera.rotation.x = clampf(pitch, deg_to_rad(-80.0), deg_to_rad(80.0))
 
 
-func _throw_grenade(kind: String) -> void:
-	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and grenade_stock(kind) > 0:
+func _throw_grenade(kind: String, action: StringName) -> void:
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not sprinting and grenade_stock(kind) > 0:
+		if kind == "frag":
+			_frag_button = action
 		get_parent().get_node("Grenades").request_throw(self, kind)
 
 
@@ -905,14 +1040,26 @@ func _physics_process(delta: float) -> void:
 	var lean_input := Input.get_axis(&"cover_left", &"cover_right") if accepts_input else 0.0
 	_lean_amount = move_toward(_lean_amount, lean_input, LEAN_SPEED * delta)
 
-	aiming = accepts_input and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and GameSettings.aim_pressed()
+	var wish := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
+	var wants_crouch := accepts_input and Input.is_action_pressed(&"crouch")
+	var direction := (global_basis * Vector3(wish.x, 0.0, wish.y)).limit_length()
+	_slide_left = maxf(0.0, _slide_left - delta)
+	_slide_cooldown = maxf(0.0, _slide_cooldown - delta)
+	if wants_crouch and not _crouch_held and sprinting and is_on_floor() and _slide_cooldown == 0.0:
+		_slide_direction = Vector3(velocity.x, 0.0, velocity.z).normalized()
+		_slide_left = Balance.MOVEMENT.slide_duration_s
+		_slide_cooldown = Balance.MOVEMENT.slide_cooldown_s
+	_crouch_held = wants_crouch
+	sliding = _slide_left > 0.0 and accepts_input
 	if accepts_input:
-		_update_crouch(Input.is_action_pressed(&"crouch"))
+		_update_crouch(wants_crouch or sliding)
+	sprinting = accepts_input and not crouched and not sliding and not wish.is_zero_approx() and Input.is_action_pressed(&"sprint")
+	aiming = accepts_input and not sprinting and not sliding and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and GameSettings.aim_pressed()
 	if not accepts_input:
 		velocity.x = 0.0
 		velocity.z = 0.0
 		if not is_on_floor():
-			velocity.y += get_gravity().y * delta
+			velocity.y += -float(Balance.MOVEMENT.gravity_m_s2) * delta
 		else:
 			velocity.y = 0.0
 		move_and_slide()
@@ -921,12 +1068,10 @@ func _physics_process(delta: float) -> void:
 
 	var vertical := velocity.y
 	if not is_on_floor():
-		vertical += get_gravity().y * delta
+		vertical += -float(Balance.MOVEMENT.gravity_m_s2) * delta
 	if jump_pressed and is_on_floor() and not crouched:
 		vertical = JUMP_VELOCITY
 
-	var wish := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
-	var sprinting := not crouched and not aiming and Input.is_action_pressed(&"sprint")
 	var speed := WALK_SPEED
 	if crouched:
 		speed = CROUCH_SPEED
@@ -934,7 +1079,13 @@ func _physics_process(delta: float) -> void:
 		speed = AIM_SPEED
 	elif sprinting:
 		speed = SPRINT_SPEED
-	var direction := (global_basis * Vector3(wish.x, 0.0, wish.y)).limit_length()
+	if sliding:
+		direction = _slide_direction
+		speed = lerpf(CROUCH_SPEED, float(Balance.MOVEMENT.slide_initial_speed_m_s),
+			_slide_left / float(Balance.MOVEMENT.slide_duration_s))
+	speed *= armor_movement_scale()
+	if concussion_left > 0.0:
+		speed *= float(Balance.GRENADES.concussion.movement_speed_multiplier_during_effect)
 	var acceleration := AIR_ACCELERATION
 	if is_on_floor():
 		acceleration = GROUND_BRAKING if wish.is_zero_approx() else GROUND_ACCELERATION
@@ -950,7 +1101,7 @@ func _limit_lean(amount: float, eye: Vector3, right: Vector3) -> float:
 	if is_zero_approx(amount):
 		return 0.0
 	var offset := right * (amount * LEAN_DISTANCE)
-	var ray := PhysicsRayQueryParameters3D.create(eye, eye + offset + offset.normalized() * LEAN_CLEARANCE, 2)
+	var ray := PhysicsRayQueryParameters3D.create(eye, eye + offset + offset.normalized() * LEAN_CLEARANCE, Balance.WORLD_MASK)
 	ray.hit_from_inside = true
 	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
 	if hit.is_empty():
@@ -1002,6 +1153,10 @@ func _build_operator() -> void:
 	_pose = OperatorPose.new()
 	_pose.actor = self
 	_skeleton.add_child(_pose)
+	_hurtboxes = Hurtboxes.new()
+	_hurtboxes.name = "OperatorHurtboxes"
+	add_child(_hurtboxes)
+	_hurtboxes.setup(_skeleton)
 
 	var eyes := _avatar.find_child("Mil_R5_Eye", true, false).get_child(0) as MeshInstance3D
 	var eye_center := eyes.global_transform * eyes.get_aabb().get_center()
@@ -1033,6 +1188,9 @@ func set_first_person_body_visible(visible_body: bool) -> void:
 func _update_operator(delta: float) -> void:
 	if _bar_root and not _dead:
 		_face_bar()
+		var observer := get_viewport().get_camera_3d()
+		if observer:
+			_bar_root.visible = not get_parent().get_node("Grenades").obscures(observer.global_position, hurtbox_center("head"))
 	if _dead:
 		_prev_pos = global_position
 		return

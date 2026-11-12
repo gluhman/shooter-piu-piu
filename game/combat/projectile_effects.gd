@@ -1,5 +1,6 @@
 extends Node3D
 
+const Balance := preload("res://game/combat/combat_balance.gd")
 const Classic := preload("res://game/combat/classic_weapons.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const SpatialAudio := preload("res://addons/spatial_audio_3d/spatial_audio_3d.gd")
@@ -39,6 +40,16 @@ const MUZZLE_LIGHT_DISTANCE := 27.0
 const MAX_IMPACT_VISUAL_DISTANCE := 46.0
 const MARK_DISTANCE := 85.0
 const MAX_MARKS := 160
+
+
+class Tracer extends MeshInstance3D:
+	var trail_length: float
+	var trail_width: float
+
+	func _init(length: float, width: float) -> void:
+		trail_length = length
+		trail_width = width
+
 
 var _soft: Texture2D
 var _flare: Texture2D
@@ -88,7 +99,7 @@ func prepare_acoustics() -> void:
 			voice.bus = bus
 			voice.panning_strength = 3.0
 			voice.attenuation_filter_db = 0.0
-			voice.collision_mask = 2
+			voice.collision_mask = Balance.WORLD_MASK
 			voice.occlusion_lp_cutoff = 4700 if bus == &"Gunfire" else 5500
 			if bus == &"Gunfire":
 				voice.occlusion_min_lp_cutoff = 1800
@@ -138,7 +149,6 @@ func warm_rendering(ammo: Dictionary) -> void:
 	for profile in ammo.values():
 		if profile.trail > 0:
 			var sample := tracer(profile)
-			sample.set_meta("trail", float(profile.trail))
 			move_tracer(sample, at, -barrel.basis.z, 0.4)
 	grenade_burst(at, false, 5.0, false)
 	grenade_burst(at, true, 5.0, false)
@@ -323,8 +333,8 @@ func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> v
 		12, 0.94, 6.3 * scale, 115.0, 0.85 * scale, Vector3.UP * 0.40, "smoke")
 
 
-func tracer(ammo: Dictionary) -> MeshInstance3D:
-	var streak := MeshInstance3D.new()
+func tracer(ammo: Dictionary) -> Tracer:
+	var streak := Tracer.new(float(ammo.trail), float(ammo.width))
 	var color: Color = ammo.color
 	if not _trace_meshes.has(color):
 		var mesh := BoxMesh.new()
@@ -339,19 +349,21 @@ func tracer(ammo: Dictionary) -> MeshInstance3D:
 		_trace_meshes[color] = mesh
 	streak.mesh = _trace_meshes[color]
 	streak.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	streak.set_meta("width", float(ammo.width))
 	streak.hide()
 	add_child(streak)
 	return streak
 
 
-func move_tracer(streak: MeshInstance3D, at: Vector3, direction: Vector3, distance: float) -> void:
-	var length := minf(distance, streak.get_meta("trail"))
+func move_tracer(streak: Tracer, at: Vector3, direction: Vector3, distance: float) -> void:
+	var length := minf(distance, streak.trail_length)
+	if length <= 0.04:
+		streak.hide()
+		return
 	var up := Vector3.RIGHT if absf(direction.dot(Vector3.UP)) > 0.96 else Vector3.UP
-	var width: float = streak.get_meta("width")
-	var basis := Basis.looking_at(direction, up).scaled_local(Vector3(width, width, length))
-	streak.global_transform = Transform3D(basis, at - direction * length * 0.5)
-	streak.visible = length > 0.04
+	var width := streak.trail_width
+	var orientation := Basis.looking_at(direction, up).scaled_local(Vector3(width, width, length))
+	streak.global_transform = Transform3D(orientation, at - direction * length * 0.5)
+	streak.show()
 
 
 func _burst(at: Vector3, axis: Vector3, tint: Color, amount: int, duration: float,

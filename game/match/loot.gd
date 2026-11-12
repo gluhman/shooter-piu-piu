@@ -2,6 +2,7 @@ extends Node3D
 
 enum Kind { CRATE, WEAPON, AMMO, MEDKIT, BODY, ARMOR, GRENADE }
 
+const Balance := preload("res://game/combat/combat_balance.gd")
 const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
 
 const CRATE_MODEL := preload("res://assets/arena_props/supply_crate.glb")
@@ -20,6 +21,7 @@ var _drops: Dictionary[int, Dictionary] = {}
 var _requests: Dictionary[int, Vector2i] = {}
 var _next_id := 1
 var _clock := 0.0
+var _armor_respawns: Array[Dictionary] = []
 var _prompt_wait := 0.0
 var _auto_pickup_wait := 0.0
 var _hover := Vector2i(-1, -1)
@@ -31,7 +33,6 @@ var _hover := Vector2i(-1, -1)
 func build_crates(placements: Array[Transform3D]) -> void:
 	for placement in placements:
 		var crate := StaticBody3D.new()
-		crate.set_collision_layer_value(2, true)
 		crate.name = "SupplyCrate%d" % _crates.size()
 		crate.transform = placement
 		crate.set_meta(&"impact_surface", "wood")
@@ -68,6 +69,7 @@ func warm_rendering() -> Node3D:
 
 
 func reset_round() -> void:
+	_armor_respawns.clear()
 	for id in _drops.keys():
 		net_remove_drop(id)
 	for index in _crates.size():
@@ -115,7 +117,7 @@ func drop_combatant(actor: Node, impact: Dictionary) -> void:
 	for index in skeleton.get_bone_count():
 		pose.append(skeleton.get_bone_pose(index))
 	body_state["pose"] = pose
-	_add_drop(Kind.BODY, "", actor.armor, actor.global_position, actor.rotation.y, true, body_state)
+	_add_drop(Kind.BODY, "", ceili(actor.armor), actor.global_position, actor.rotation.y, true, body_state)
 	var items: Array[Dictionary] = []
 	var inventory: Dictionary[String, Vector2i] = actor.inventory_stock()
 	for id in inventory:
@@ -188,6 +190,11 @@ func _physics_process(delta: float) -> void:
 		return
 	if not Net.active or multiplayer.is_server():
 		_clock += delta
+		for index in range(_armor_respawns.size() - 1, -1, -1):
+			var pickup := _armor_respawns[index]
+			if pickup.at <= _clock:
+				_add_drop(Kind.ARMOR, "", 1, pickup.position, pickup.yaw, false)
+				_armor_respawns.remove_at(index)
 		for id in _drops.keys():
 			if _drops[id].expires <= _clock:
 				_remove_drop(id)
@@ -312,6 +319,8 @@ func _collect_drop(actor: Node, id: int, drop: Dictionary, manual := false) -> v
 	var reward := {"kind": drop.kind, "weapon": drop.weapon, "amount": amount}
 	_give(actor, reward)
 	_hud_pickup(actor, reward)
+	if drop.kind == Kind.ARMOR:
+		_schedule_armor_respawn(drop.position, drop.yaw)
 	if amount < int(drop.amount):
 		var remaining := int(drop.amount) - amount
 		net_drop_amount(id, remaining)
@@ -340,6 +349,8 @@ func _open_crate(actor: Node, index: int, at: Vector3) -> void:
 		amount = int(WEAPON.WEAPONS[weapon].mag) * 2
 	var reward := {"kind": kind, "weapon": weapon, "amount": amount}
 	if _can_take(actor, reward):
+		if kind == Kind.ARMOR:
+			_schedule_armor_respawn(at, _crates[index].rotation.y)
 		reward.amount = _take_amount(actor, reward, false)
 		_give(actor, reward)
 		_hud_pickup(actor, reward)
@@ -347,6 +358,10 @@ func _open_crate(actor: Node, index: int, at: Vector3) -> void:
 			_add_drop(kind, weapon, amount - int(reward.amount), at, _crates[index].rotation.y, true)
 	else:
 		_add_drop(kind, weapon, amount, at, _crates[index].rotation.y, true)
+
+
+func _schedule_armor_respawn(at: Vector3, yaw: float) -> void:
+	_armor_respawns.append({"at": _clock + float(Balance.DATA.armor.heavy_pickup_respawn_s), "position": at, "yaw": yaw})
 
 
 func _take_amount(actor: Node, drop: Dictionary, manual: bool) -> int:
@@ -460,7 +475,7 @@ func net_add_drop(id: int, kind: int, weapon: String, amount: int, at: Vector3, 
 	add_child(drop)
 	_drops[id] = {
 		"node": drop, "kind": kind, "weapon": weapon, "amount": amount,
-		"position": at, "yaw": yaw, "expires": _clock + LIFETIME,
+		"position": at, "yaw": yaw, "expires": INF if kind == Kind.ARMOR else _clock + LIFETIME,
 	}
 	match kind:
 		Kind.WEAPON: WEAPON.add_pickup_model(drop, weapon)
