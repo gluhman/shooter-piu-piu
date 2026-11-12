@@ -18,9 +18,15 @@ const TIME_LIMITS := [0, 60, 180, 300, 600, 900, 1200, 1800, 3600]
 const KILL_LIMITS := [0, 1, 5, 10, 15, 20, 30, 50, 100]
 const Balance := preload("res://game/combat/combat_balance.gd")
 const POSE_INTERVAL: float = 1.0 / Balance.NETWORK.snapshot_hz
-const ARENA_HOURS := [13.0, 9.5, 16.0, 15.5, 14.0, 15.0, 12.0]
-const ARENA_WIND := [Vector2(25, 1.0), Vector2(-65, 0.75), Vector2(120, 1.2),
-	Vector2(-35, 0.9), Vector2(-105, 2.0), Vector2(60, 0.8), Vector2(0, 0.2)]
+const ARENA_WEATHER := {
+	0: {"hour": 13.0, "wind": Vector2(25, 1.0)},
+	1: {"hour": 9.5, "wind": Vector2(-65, 0.75)},
+	2: {"hour": 16.0, "wind": Vector2(120, 1.2)},
+	MAP.VILLAGE_ID: {"hour": 15.5, "wind": Vector2(-35, 0.9)},
+	MAP.DUST2_ID: {"hour": 14.0, "wind": Vector2(-105, 2.0)},
+	MAP.WORKSHOP_ID: {"hour": 15.0, "wind": Vector2(60, 0.8)},
+	MAP.TEST_RANGE_ID: {"hour": 12.0, "wind": Vector2(0, 0.2)},
+}
 const MIN_RESPAWN_DISTANCE := 12.0
 const DIFFICULTY_NAMES := ["Легко", "Обычно", "Сложно"]
 const WEAPON_SETS := [
@@ -773,8 +779,9 @@ func _build_arena(layout_seed: int) -> void:
 		_breakwater.apply_layout(map_size)
 		$Loot.build_crates(_breakwater.get_supply_placements())
 	else:
-		$WorldEnvironment.current_time = ARENA_HOURS[map_id]
-		var wind: Vector2 = ARENA_WIND[map_id]
+		var weather: Dictionary = ARENA_WEATHER[map_id]
+		$WorldEnvironment.current_time = weather.hour
+		var wind: Vector2 = weather.wind
 		$WorldEnvironment.wind_direction = deg_to_rad(wind.x)
 		$WorldEnvironment.wind_speed = wind.y
 		$Loot.build_crates($Map.build(map_id, layout_seed, arena_width()))
@@ -852,7 +859,7 @@ func net_clock(seconds: int) -> void:
 	$HUD.show_round_status(seconds, limit > 0, KILL_LIMITS[kill_option])
 	if limit > 0 and map_id != MAP.BREAKWATER_ID:
 		var elapsed := clampi(limit - seconds, 0, limit)
-		var sky_hour := float(ARENA_HOURS[map_id]) + float(elapsed - elapsed % 15) / 1500.0
+		var sky_hour := float(ARENA_WEATHER[map_id].hour) + float(elapsed - elapsed % 15) / 1500.0
 		if not is_equal_approx($WorldEnvironment.current_time, sky_hour):
 			$WorldEnvironment.current_time = sky_hour
 			_apply_graphics()

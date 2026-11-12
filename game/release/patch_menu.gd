@@ -8,6 +8,8 @@ const DIALOG_SIZE := Vector2i(680, 420)
 var _choose: Button
 var _check: Button
 var _download: Button
+var _status_scroll: ScrollContainer
+var _status: Label
 var _picker: FileDialog
 var _http: HTTPRequest
 var _candidate: Dictionary = {}
@@ -20,7 +22,6 @@ func _ready() -> void:
 	title = "Обновление игры"
 	min_size = Vector2i(620, 220)
 	max_size = Vector2i(720, 700)
-	dialog_autowrap = true
 	ok_button_text = "Закрыть"
 	_choose = add_button("Выбрать .pck", true)
 	_check = add_button("Проверить GitHub", true)
@@ -29,6 +30,14 @@ func _ready() -> void:
 	_check.pressed.connect(_find_update)
 	_download.pressed.connect(_download_update)
 	_download.hide()
+	get_label().hide()
+	_status_scroll = ScrollContainer.new()
+	_status_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(_status_scroll)
+	_status = Label.new()
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_status_scroll.add_child(_status)
 	_picker = FileDialog.new()
 	_picker.title = "Выберите патч Shooter"
 	_picker.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -46,7 +55,7 @@ func open() -> void:
 	if not visible:
 		_candidate.clear()
 		_download.hide()
-		dialog_text = "Текущая версия: %s\nGitHub: не проверен\n\nУстановка патча перезапустит игру." % ShooterRelease.version
+		_set_status("Текущая версия: %s\nGitHub: не проверен\n\nУстановка патча перезапустит игру." % ShooterRelease.version)
 		popup_centered(DIALOG_SIZE)
 
 
@@ -150,17 +159,16 @@ func _finish_install(path: String, error: String) -> void:
 
 
 func _set_busy(busy: bool, message: String) -> void:
-	dialog_text = message
+	_set_status(message)
 	_choose.disabled = busy
 	_check.disabled = busy
 	_download.disabled = busy
 	get_ok_button().disabled = busy
-	if visible:
-		call_deferred("_center_dialog")
 
 
-func _center_dialog() -> void:
-	popup_centered(Vector2i(DIALOG_SIZE.x, maxi(DIALOG_SIZE.y, size.y)))
+func _set_status(message: String) -> void:
+	_status.text = message
+	_status_scroll.scroll_vertical = 0
 
 
 func _release_notes(notes: String) -> String:
@@ -176,7 +184,7 @@ func _process(_delta: float) -> void:
 	var progress := ""
 	if total > 0:
 		progress = " · %.0f%%" % (100.0 * float(downloaded) / float(total))
-	dialog_text = "GitHub: доступен\nСкачивание %s%s\n%s из %s · %s/с" % [_download_version, progress, _format_bytes(downloaded), _format_bytes(total), _format_bytes(int(float(downloaded) / elapsed))]
+	_set_status("GitHub: доступен\nСкачивание %s%s\n%s из %s · %s/с" % [_download_version, progress, _format_bytes(downloaded), _format_bytes(total), _format_bytes(int(float(downloaded) / elapsed))])
 
 
 func _format_bytes(value: int) -> String:

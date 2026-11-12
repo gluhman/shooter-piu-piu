@@ -188,6 +188,7 @@ func _run() -> void:
 		and _near(tracer.global_basis.z.length(), profile.trail))
 
 	await _check_aim_alignment()
+	_check_probabilistic_accuracy()
 	await _check_projectile_flight()
 	await _check_ballistic_aim()
 	_check_hurtbox_lifetime()
@@ -271,6 +272,53 @@ func _check_aim_alignment() -> void:
 	shooter.aiming = false
 	ballistics._pending.clear()
 	wall.queue_free()
+
+
+func _check_probabilistic_accuracy() -> void:
+	var gun: Node3D = shooter.gun
+	var rng := RandomNumberGenerator.new()
+	var hip: float = Balance.ACCURACY.centered_shot_chance_hip
+	var ads: float = Balance.ACCURACY.centered_shot_chance_ads
+	var shot_index := 0
+	for candidate in range(1, 101):
+		rng.seed = hash([arena.combat_seed, shooter.score_id(), candidate, 0])
+		var roll := rng.randf()
+		if roll >= hip and roll < ads:
+			shot_index = candidate
+			break
+	if shot_index == 0:
+		_check("Seeded rolls include a shot centered only in ADS", false)
+		return
+
+	var original_index: int = gun._shot_index
+	var spread := 5.0
+	gun.equip("ak47")
+	gun._aim_amount = 1.0
+	gun._shot_index = shot_index - 1
+	gun._launch_projectiles(Transform3D.IDENTITY, Basis.IDENTITY, spread, Vector3.ZERO)
+	var aimed: Dictionary = ballistics._pending.pop_back()
+	_check("Full ADS can roll a centered shot", aimed.directions[0] == Vector3.FORWARD)
+
+	shooter.sliding = true
+	gun._shot_index = shot_index - 1
+	gun._launch_projectiles(Transform3D.IDENTITY, Basis.IDENTITY, spread, Vector3.ZERO)
+	var sliding: Dictionary = ballistics._pending.pop_back()
+	shooter.sliding = false
+	_check("Sliding immediately uses the hip-fire chance", sliding.directions[0] != Vector3.FORWARD)
+
+	gun.equip("shotgun")
+	gun._shot_index = shot_index - 1
+	gun._launch_projectiles(Transform3D.IDENTITY, Basis.IDENTITY, spread, Vector3.ZERO)
+	var shotgun: Dictionary = ballistics._pending.pop_back()
+	var preserves_pellets := true
+	for pellet in int(weapons.shotgun.pellets):
+		rng.seed = hash([arena.combat_seed, shooter.score_id(), shot_index, pellet])
+		var depth := rng.randf_range(cos(deg_to_rad(spread)), 1.0)
+		var offset := Vector2.from_angle(rng.randf() * TAU) * sqrt(maxf(0.0, 1.0 - depth * depth))
+		var expected := Vector3(offset.x, offset.y, -depth).normalized()
+		preserves_pellets = preserves_pellets and shotgun.directions[pellet].is_equal_approx(expected)
+	_check("Shotgun preserves its seeded pellet pattern", preserves_pellets)
+	gun._shot_index = original_index
 
 
 func _check_ballistic_aim() -> void:
