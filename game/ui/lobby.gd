@@ -598,11 +598,17 @@ func _save_display_name() -> void:
 
 func _refresh_map_size_labels() -> void:
 	var game := _match()
+	var training: bool = _map.selected == game.MAP.TEST_RANGE_ID
+	if training:
+		_map_size.select(game.MAP.DEFAULT_SIZE)
+	_map_size.disabled = training
 	for index in _map_size.item_count:
 		var label: String = game.MAP.SIZE_NAMES[index]
 		if _map.selected == game.MAP.BREAKWATER_ID:
 			var dimensions: Vector2 = game.BREAKWATER.SIZE_BOUNDS[index].size
 			_map_size.set_item_text(index, "%s · %.1f × %.1f м" % [label, dimensions.x, dimensions.y])
+		elif training:
+			_map_size.set_item_text(index, "%s · учебный комплекс" % label)
 		else:
 			var width: float = game.MAP.SIZE_WIDTHS[index]
 			_map_size.set_item_text(index, "%s · %d × %d м" % [label, width, width])
