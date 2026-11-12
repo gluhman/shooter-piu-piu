@@ -20,6 +20,7 @@ const HIP_FOV := 110.0
 const KNIFE_SWING_TIME := 0.42
 const KNIFE_GRIP_IN_WRIST := Vector3(-0.012, 0.101, 0.021)
 const KNIFE_IN_WRIST := Basis(Vector3.UP, -PI * 0.5)
+const M249_RELOAD_ACTION_START := 0.34
 const SIDEARMS := ["deagle", "m1911", "tec9"]
 const SPECIALIZATIONS := {
 	"assault": {
@@ -120,6 +121,8 @@ var _sprint_recovery := 0.0
 var _sprint_fire_queued := false
 var _sprint_last_frame := false
 var _reload_held := false
+var _reload_sound_delay := 0.0
+var _reload_sound_world := false
 var _kick_pos := Vector3.ZERO
 var _kick_rot := 0.0
 var _bob_t := 0.0
@@ -281,6 +284,10 @@ func _process(delta: float) -> void:
 			_finish_reload()
 		elif _player._is_local():
 			_ammo.set_reload_progress(1.0 - _reload_left / _reload_time)
+	if _reload_sound_delay > 0.0:
+		_reload_sound_delay = maxf(0.0, _reload_sound_delay - delta)
+		if _reload_sound_delay == 0.0 and _reloading:
+			_play_reload_sound()
 	_kick_pos = _kick_pos.lerp(Vector3.ZERO, minf(1.0, delta * 9.0))
 	_kick_rot = lerpf(_kick_rot, 0.0, minf(1.0, delta * 9.0))
 	if not _player._is_local():
@@ -651,11 +658,9 @@ func _start_reload() -> void:
 		return
 	var units := mini(int(_stats["mag"]) - _mag, _reserve)
 	_begin_reload(units)
+	_queue_reload_sound(not _player._is_local())
 	if _player._is_local():
-		_play_on(_reload_player, _reload_stream(), -3.0, false)
 		_update_hud()
-	else:
-		_play_world_reload()
 	if Net.active:
 		if multiplayer.is_server():
 			_send_reload(_weapon_id, units)
@@ -687,13 +692,27 @@ func net_reload(id: String, units: int) -> void:
 			return
 		_send_reload(id, units)
 	_begin_reload(units)
-	_play_world_reload()
+	_queue_reload_sound(true)
 
 
 func _play_world_reload() -> void:
 	_world_reload.stream = _reload_stream()
 	if _world_reload.stream:
 		_world_reload.play()
+
+
+func _queue_reload_sound(world: bool) -> void:
+	_reload_sound_world = world
+	_reload_sound_delay = _reload_time * M249_RELOAD_ACTION_START if _weapon_id == "m249" else 0.0
+	if _reload_sound_delay == 0.0:
+		_play_reload_sound()
+
+
+func _play_reload_sound() -> void:
+	if _reload_sound_world:
+		_play_world_reload()
+	else:
+		_play_on(_reload_player, _reload_stream(), -3.0, false)
 
 
 func _begin_reload(units: int) -> void:
@@ -744,6 +763,7 @@ func _finish_reload() -> void:
 		_mag += _reload_units
 		_reserve -= _reload_units
 	_reloading = false
+	_reload_sound_delay = 0.0
 	_reset_reload_pose()
 	if _player._server_rules():
 		_send_ammo(_last_fire_sequence)
@@ -761,6 +781,7 @@ func cancel_reload() -> void:
 	if not _reloading:
 		return
 	_reloading = false
+	_reload_sound_delay = 0.0
 	_reset_reload_pose()
 	_reload_player.stop()
 	_world_reload.stop()
@@ -1083,7 +1104,8 @@ func _pose_reload(progress: float) -> void:
 	var pouch := _view.to_local(_player.reload_pouch_position())
 	# Arc forward from the pouch so the wrist clears the vest and receiver.
 	var reach := pouch + Vector3(-0.04, 0.08, -0.13)
-	_player.set_support_grip(smoothstep(0.0, 0.17, progress) * (1.0 - smoothstep(0.82, 1.0, progress)))
+	var pose_progress := _reload_pose_progress(progress)
+	_player.set_support_grip(smoothstep(0.0, 0.17, pose_progress) * (1.0 - smoothstep(0.82, 1.0, pose_progress)))
 	if _loads_one_round():
 		_pose_shell_reload(pouch, reach)
 		return
@@ -1093,21 +1115,31 @@ func _pose_reload(progress: float) -> void:
 	var extracted := seated_hand + Vector3(-0.024, -0.09, 0.025)
 	var carry_basis := _hand_basis(Vector3(0.52, 0.24, -0.82), Vector3(0.32, 0.92, 0.0))
 	var stow := pouch + hand_offset
-	var wrist := _path(progress, [0.0, 0.17, 0.30, 0.49, 0.58, 0.85, 1.0],
+	var wrist := _path(pose_progress, [0.0, 0.17, 0.30, 0.49, 0.58, 0.85, 1.0],
 		[_support_rest, seated_hand, extracted, stow, stow, seated_hand, _support_rest])
-	if progress > 0.58 and progress < 0.85:
-		var t := smoothstep(0.58, 0.85, progress)
+	if pose_progress > 0.58 and pose_progress < 0.85:
+		var t := smoothstep(0.58, 0.85, pose_progress)
 		var guide := reach + hand_offset
 		wrist = stow.lerp(guide, t).lerp(guide.lerp(seated_hand, t), t)
 	wrist = _view.to_local(_player.clamp_support_hand(_view.to_global(wrist)))
 	_left_wrist.position = wrist
 	_left_wrist.basis = _support_basis.slerp(carry_basis,
-		smoothstep(0.0, 0.17, progress) * (1.0 - smoothstep(0.85, 1.0, progress)))
-	if progress < 0.17 or progress >= 0.85:
+		smoothstep(0.0, 0.17, pose_progress) * (1.0 - smoothstep(0.85, 1.0, pose_progress)))
+	if pose_progress < 0.17 or pose_progress >= 0.85:
 		_place_magazine(_magazine_seat)
 	else:
-		var tilt := -0.32 * smoothstep(0.17, 0.34, progress) * (1.0 - smoothstep(0.69, 0.85, progress))
+		var tilt := -0.32 * smoothstep(0.17, 0.34, pose_progress) * (1.0 - smoothstep(0.69, 0.85, pose_progress))
 		_place_magazine(wrist - hand_offset, tilt)
+
+
+func _reload_pose_progress(progress: float) -> float:
+	if _weapon_id != "m249":
+		return progress
+	var stream := _reload_stream()
+	if stream == null:
+		return progress
+	var action_end := M249_RELOAD_ACTION_START + stream.get_length() / maxf(_reload_time, 0.001)
+	return clampf(inverse_lerp(M249_RELOAD_ACTION_START, action_end, progress), 0.0, 1.0)
 
 
 func _pose_shell_reload(pouch: Vector3, reach: Vector3) -> void:

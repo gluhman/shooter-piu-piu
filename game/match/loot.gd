@@ -12,10 +12,13 @@ const LIFETIME := 60.0
 const REACH := 2.3
 const AUTO_REACH := 1.35
 const CRATE_SCALE := 1.65
+const CRATE_RESPAWN_S := 28.0
+const CRATE_PICKUP_DELAY_S := 0.55
 
 var _crates: Array[StaticBody3D] = []
 var _lids: Array[Node3D] = []
 var _open: Array[bool] = []
+var _crate_respawns: Array[float] = []
 var _lid_tweens: Dictionary[int, Tween] = {}
 var _drops: Dictionary[int, Dictionary] = {}
 var _requests: Dictionary[int, Vector2i] = {}
@@ -55,6 +58,7 @@ func build_crates(placements: Array[Transform3D]) -> void:
 		_crates.append(crate)
 		_lids.append(lid)
 		_open.append(false)
+		_crate_respawns.append(0.0)
 
 
 func warm_rendering() -> Node3D:
@@ -70,6 +74,8 @@ func warm_rendering() -> Node3D:
 
 func reset_round() -> void:
 	_armor_respawns.clear()
+	for index in _crate_respawns.size():
+		_crate_respawns[index] = 0.0
 	for id in _drops.keys():
 		net_remove_drop(id)
 	for index in _crates.size():
@@ -87,6 +93,7 @@ func clear_map() -> void:
 	_crates.clear()
 	_lids.clear()
 	_open.clear()
+	_crate_respawns.clear()
 	_lid_tweens.clear()
 
 
@@ -195,6 +202,12 @@ func _physics_process(delta: float) -> void:
 			if pickup.at <= _clock:
 				_add_drop(Kind.ARMOR, "", 1, pickup.position, pickup.yaw, false)
 				_armor_respawns.remove_at(index)
+		for index in _crate_respawns.size():
+			if _crate_respawns[index] > 0.0 and _crate_respawns[index] <= _clock:
+				_crate_respawns[index] = 0.0
+				_set_open(index, false, true)
+				for peer in _match.match_peers():
+					net_reset_crate.rpc_id(peer, index, true)
 		for id in _drops.keys():
 			if _drops[id].expires <= _clock:
 				_remove_drop(id)
@@ -217,6 +230,8 @@ func _pick_up_nearby() -> void:
 	var actors := get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot")
 	for id in _drops.keys():
 		var drop := _drops[id]
+		if drop.pickup_at > _clock:
+			continue
 		if drop.kind not in [Kind.AMMO, Kind.MEDKIT, Kind.GRENADE, Kind.ARMOR]:
 			continue
 		var at: Vector3 = drop.position + Vector3.UP * 0.18
@@ -296,7 +311,7 @@ func _claim(actor: Node, target: Vector2i) -> void:
 			_open_crate(actor, index, at)
 		return
 	var drop := _drops.get(target.y, {}) as Dictionary
-	if drop.is_empty() or drop.kind != target.x or not _can_take(actor, drop, true):
+	if drop.is_empty() or drop.pickup_at > _clock or drop.kind != target.x or not _can_take(actor, drop, true):
 		return
 	if _reachable(actor, drop.position + Vector3.UP * 0.18):
 		_collect_drop(actor, target.y, drop, true)
@@ -347,17 +362,8 @@ func _open_crate(actor: Node, index: int, at: Vector3) -> void:
 	var amount := 1
 	if kind == Kind.AMMO:
 		amount = int(WEAPON.WEAPONS[weapon].mag) * 2
-	var reward := {"kind": kind, "weapon": weapon, "amount": amount}
-	if _can_take(actor, reward):
-		if kind == Kind.ARMOR:
-			_schedule_armor_respawn(at, _crates[index].rotation.y)
-		reward.amount = _take_amount(actor, reward, false)
-		_give(actor, reward)
-		_hud_pickup(actor, reward)
-		if int(reward.amount) < amount:
-			_add_drop(kind, weapon, amount - int(reward.amount), at, _crates[index].rotation.y, true)
-	else:
-		_add_drop(kind, weapon, amount, at, _crates[index].rotation.y, true)
+	_add_drop(kind, weapon, amount, at, _crates[index].rotation.y, true, {}, CRATE_PICKUP_DELAY_S)
+	_crate_respawns[index] = _clock + CRATE_RESPAWN_S
 
 
 func _schedule_armor_respawn(at: Vector3, yaw: float) -> void:
@@ -453,29 +459,67 @@ func _set_open(index: int, opened: bool, animate: bool) -> void:
 	var angle := deg_to_rad(-92.0) if opened else 0.0
 	if animate:
 		var tween := create_tween()
-		tween.tween_property(_lids[index], "rotation:x", angle, 0.27).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tween.tween_property(_lids[index], "rotation:x", angle, 0.27).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT if opened else Tween.EASE_IN)
 		_lid_tweens[index] = tween
 	else:
 		_lids[index].rotation.x = angle
-
-
-func _add_drop(kind: int, weapon: String, amount: int, at: Vector3, yaw: float, animate: bool, body_state: Dictionary = {}) -> void:
-	var id := _next_id
-	_next_id += 1
-	net_add_drop(id, kind, weapon, amount, at, yaw, animate, body_state)
-	for peer in _match.match_peers():
-		net_add_drop.rpc_id(peer, id, kind, weapon, amount, at, yaw, animate, body_state)
+	if opened and animate:
+		_crate_open_effect(_crates[index])
 
 
 @rpc("authority", "reliable")
-func net_add_drop(id: int, kind: int, weapon: String, amount: int, at: Vector3, yaw: float, animate: bool, body_state: Dictionary = {}) -> void:
+func net_reset_crate(index: int, animate: bool) -> void:
+	if index >= 0 and index < _crates.size():
+		_set_open(index, false, animate)
+
+
+func _crate_open_effect(crate: Node3D) -> void:
+	var burst := Node3D.new()
+	burst.position = Vector3(0.0, 0.54, 0.0)
+	crate.add_child(burst)
+	var ring := MeshInstance3D.new()
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.12
+	mesh.bottom_radius = 0.12
+	mesh.height = 0.012
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = Color(0.95, 0.76, 0.28, 0.85)
+	material.emission_enabled = true
+	material.emission = Color(1.0, 0.54, 0.12)
+	material.emission_energy_multiplier = 3.2
+	mesh.material = material
+	ring.mesh = mesh
+	burst.add_child(ring)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.62, 0.23)
+	light.light_energy = 2.4
+	light.omni_range = 3.2
+	burst.add_child(light)
+	var tween := create_tween().set_parallel()
+	tween.tween_property(ring, "scale", Vector3(5.0, 1.0, 5.0), 0.34).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(light, "light_energy", 0.0, 0.34)
+	tween.chain().tween_callback(burst.queue_free)
+
+
+func _add_drop(kind: int, weapon: String, amount: int, at: Vector3, yaw: float, animate: bool, body_state: Dictionary = {}, pickup_delay := 0.0) -> void:
+	var id := _next_id
+	_next_id += 1
+	net_add_drop(id, kind, weapon, amount, at, yaw, animate, body_state, pickup_delay)
+	for peer in _match.match_peers():
+		net_add_drop.rpc_id(peer, id, kind, weapon, amount, at, yaw, animate, body_state, pickup_delay)
+
+
+@rpc("authority", "reliable")
+func net_add_drop(id: int, kind: int, weapon: String, amount: int, at: Vector3, yaw: float, animate: bool, body_state: Dictionary = {}, pickup_delay := 0.0) -> void:
 	var drop := FALLEN_OPERATOR.new() as Node3D if kind == Kind.BODY else Node3D.new()
 	drop.position = at
 	drop.rotation.y = yaw
 	add_child(drop)
 	_drops[id] = {
 		"node": drop, "kind": kind, "weapon": weapon, "amount": amount,
-		"position": at, "yaw": yaw, "expires": INF if kind == Kind.ARMOR else _clock + LIFETIME,
+		"position": at, "yaw": yaw, "expires": INF if kind == Kind.ARMOR else _clock + LIFETIME, "pickup_at": _clock + pickup_delay,
 	}
 	match kind:
 		Kind.WEAPON: WEAPON.add_pickup_model(drop, weapon)

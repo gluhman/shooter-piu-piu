@@ -2,11 +2,13 @@ extends "res://game/actors/player.gd"
 
 const BOT_SPEED := 3.3
 const BOT_ACCELERATION := 22.0
-const SEARCH_TIME := 10.0
+const SEARCH_TIME := 6.0
 const COVER_REACH := 9.0
 const COVER_TRAVEL_TIME := 3.5
 const COVER_ARRIVAL := 0.4
 const COVER_DIRECTIONS := 8
+const ENGAGE_DELAY := [Vector2(0.45, 0.75), Vector2(0.24, 0.42), Vector2(0.12, 0.26)]
+const REPOSITION_SHOTS := [5, 7, 9]
 const DIFFICULTY := [
 	{"speed": 0.85, "shot_delay": 1.35, "spread": 2.4},
 	{"speed": 1.0, "shot_delay": 1.0, "spread": 1.15},
@@ -33,11 +35,13 @@ var difficulty := 1
 var patrol_route: Array
 var _waypoint := 0
 var _vision_wait := 0.0
+var _engage_left := 0.0
 var _target: Node3D
 var _strafe_side := 1.0
 var _strafe_left := 0.0
 var _flank_point := Vector3.INF
 var _shoot_wait := 0.0
+var _shots_since_reposition := 0
 var _loot_scan := 0.0
 var _loot_target := Vector3.INF
 var _blocked_time := 0.0
@@ -118,8 +122,10 @@ func _reset_behavior() -> void:
 		if global_position.distance_squared_to(patrol_route[index]) < global_position.distance_squared_to(patrol_route[_waypoint]):
 			_waypoint = index
 	_shoot_wait = randf_range(0.55, 0.95) * float(DIFFICULTY[difficulty].shot_delay)
+	_shots_since_reposition = 0
 	_target = null
 	_vision_wait = randf_range(0.0, 0.14)
+	_engage_left = 0.0
 	_strafe_side = -1.0 if randf() < 0.5 else 1.0
 	_strafe_left = randf_range(0.5, 1.4)
 	_flank_point = Vector3.INF
@@ -156,9 +162,16 @@ func _physics_process(delta: float) -> void:
 	_vision_wait -= delta
 	if _vision_wait <= 0.0 and flash_left < 0.2:
 		_vision_wait = randf_range(0.12, 0.19)
-		_target = _visible_target(float(profile.range))
+		var next_target := _visible_target(float(profile.range))
+		if next_target != _target:
+			_target = next_target
+			if _target:
+				var delay: Vector2 = ENGAGE_DELAY[difficulty]
+				_engage_left = randf_range(delay.x, delay.y)
+				_shots_since_reposition = 0
 	var target := _target if flash_left < 0.2 and is_instance_valid(_target) and _target.control_enabled and _target.health > 0 else null
 	_shoot_wait = maxf(0.0, _shoot_wait - delta)
+	_engage_left = maxf(0.0, _engage_left - delta)
 	_cover_cooldown = maxf(0.0, _cover_cooldown - delta)
 	if target:
 		_last_seen = target.global_position
@@ -215,10 +228,14 @@ func _fight(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Ve
 	_face(to_target, delta)
 	_camera.rotation.x = clampf(asin(to_target.normalized().y), -0.78, 0.78)
 	var direction := _flat_direction(to_target)
-	if ammo.x > 0 and _shoot_wait <= 0.0 and (-global_basis.z).dot(direction) > 0.985 and _has_sight(target):
+	if ammo.x > 0 and _engage_left <= 0.0 and _shoot_wait <= 0.0 and (-global_basis.z).dot(direction) > 0.985 and _has_sight(target):
 		if gun.fire_bot(target.aim_center(), float(modifiers.spread)):
 			var cadence := float(profile.delay) * float(modifiers.shot_delay) * randf_range(0.88, 1.14)
 			_shoot_wait = maxf(float(Weapon.WEAPONS[weapon_id].cooldown), cadence)
+			_shots_since_reposition += 1
+			if _shots_since_reposition >= int(REPOSITION_SHOTS[difficulty]) and _cover_cooldown == 0.0:
+				_incoming_fire = target.aim_center() + Vector3.UP * 0.4
+				_shots_since_reposition = 0
 	var distance: float = global_position.distance_to(target.global_position)
 	_strafe_left -= delta
 	if _strafe_left <= 0.0:
