@@ -145,10 +145,8 @@ func _verify_patch(path: String) -> Dictionary:
 
 
 func _mount_patch(path: String, target: String) -> String:
-	if not ProjectSettings.load_resource_pack(path):
+	if not ProjectSettings.load_resource_pack(path, true):
 		return "Не удалось загрузить патч."
-	if _read_version() != target:
-		return "Версия в патче отличается от указанной в .pck.cfg."
 	version = target
 	print("Shooter: загружен патч ", version)
 	return ""

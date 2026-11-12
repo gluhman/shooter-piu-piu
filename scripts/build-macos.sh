@@ -97,6 +97,8 @@ for plugin in gut road-generator vfx_animaiton_player; do
     sed -i '' "s|, \"res://addons/$plugin/plugin.cfg\"||g" "$snapshot/project.godot"
 done
 printf '%s\n' "$version" > "$snapshot/game/release/version.txt"
+VERSION="$version" perl -0pi -e 's/^application\/short_version=.*$/application\/short_version="$ENV{VERSION}"/m' "$snapshot/export_presets.cfg"
+VERSION="$version" perl -0pi -e 's/^application\/version=.*$/application\/version="$ENV{VERSION}"/m' "$snapshot/export_presets.cfg"
 
 printf 'Импорт ресурсов Godot\n'
 if ! "$godot" --headless --path "$snapshot" --editor --import >"$build_dir/import.log" 2>&1 ||
