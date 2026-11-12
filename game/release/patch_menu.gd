@@ -2,6 +2,7 @@ extends AcceptDialog
 
 const UPDATE_SERVER := "http://51.250.79.77/shooter/"
 const UPDATE_MANIFEST := UPDATE_SERVER + "manifest.json"
+const GITHUB_RELEASE := "https://api.github.com/repos/gluhman/shooter-piu-piu/releases/latest"
 const DIALOG_SIZE := Vector2i(680, 420)
 
 var _choose: Button
@@ -54,7 +55,7 @@ func open() -> void:
 	if not visible:
 		_candidate.clear()
 		_download.hide()
-		_set_status("Текущая версия: %s\nСервер обновлений: не проверен\n\nУстановка патча перезапустит игру." % ShooterRelease.version)
+		_set_status("Текущая версия: %s\nGitHub: не проверен\n\nУстановка патча перезапустит игру." % ShooterRelease.version)
 		popup_centered(DIALOG_SIZE)
 
 
@@ -76,20 +77,23 @@ func _install_local(source: String) -> void:
 func _find_update() -> void:
 	_candidate.clear()
 	_download.hide()
-	_set_busy(true, "Проверяем сервер обновлений…")
+	_set_busy(true, "GitHub: проверяем обновления…")
 	var response := await _request(UPDATE_MANIFEST, "", 64 * 1024, 20.0)
-	if response.code != 200:
-		_set_busy(false, "Сервер обновлений: недоступен (HTTP %d).\n\nМожно выбрать файл патча вручную." % response.code)
-		return
-	var manifest: Variant = JSON.parse_string(response.body.get_string_from_utf8())
-	if not manifest is Dictionary:
-		_set_busy(false, "Сервер обновлений: получен некорректный манифест.")
-		return
-	_candidate = _patch_from_manifest(manifest)
+	if response.code == 200:
+		var manifest: Variant = JSON.parse_string(response.body.get_string_from_utf8())
+		if manifest is Dictionary:
+			_candidate = _patch_from_manifest(manifest)
+	if _candidate.is_empty():
+		_set_busy(true, "GitHub: проверяем обновления…")
+		response = await _request(GITHUB_RELEASE, "", 128 * 1024, 20.0)
+		if response.code == 200:
+			var release: Variant = JSON.parse_string(response.body.get_string_from_utf8())
+			if release is Dictionary:
+				_candidate = _patch_from_release(release)
 	_download.visible = not _candidate.is_empty()
-	var message := "Сервер обновлений: доступен\nБаза: %s\n\nНовых патчей нет." % ShooterRelease.base_version
+	var message := "GitHub: доступен\nБаза: %s\n\nНовых патчей нет." % ShooterRelease.base_version
 	if not _candidate.is_empty():
-		message = "Сервер обновлений: доступен\nНайден патч %s · %s" % [_candidate.version, _format_bytes(_candidate.size)]
+		message = "GitHub: доступен\nНайден патч %s · %s" % [_candidate.version, _format_bytes(_candidate.size)]
 		if not _candidate.notes.is_empty():
 			message += "\n\nЧто нового:\n" + _release_notes(_candidate.notes).left(700)
 		message += "\n\nПосле установки игра перезапустится."
@@ -113,6 +117,27 @@ func _patch_from_manifest(manifest: Dictionary) -> Dictionary:
 	}
 
 
+func _patch_from_release(release: Dictionary) -> Dictionary:
+	var version := str(release.get("tag_name", "")).trim_prefix("v")
+	if not ShooterRelease.can_install_version(version):
+		return {}
+	var pck := ""
+	var cfg := ""
+	var size := 0
+	for asset: Dictionary in release.get("assets", []):
+		var name := str(asset.get("name", ""))
+		var url := str(asset.get("browser_download_url", ""))
+		if name == "Shooter-%s.pck" % version:
+			pck = url
+			size = int(asset.get("size", 0))
+		elif name == "Shooter-%s.pck.cfg" % version:
+			cfg = url
+	if pck.is_empty() or cfg.is_empty():
+		return {}
+	return {"version": version, "pck": pck, "cfg": cfg, "size": size,
+		"notes": str(release.get("body", "")).strip_edges()}
+
+
 func _is_safe_release_path(path: String) -> bool:
 	if path.is_empty() or path.begins_with("/") or path.contains("://"):
 		return false
@@ -123,7 +148,7 @@ func _is_safe_release_path(path: String) -> bool:
 
 
 func _download_update() -> void:
-	_set_busy(true, "Сервер обновлений: доступен\nПодготавливаем патч %s…" % _candidate.version)
+	_set_busy(true, "GitHub: доступен\nПодготавливаем патч %s…" % _candidate.version)
 	var path := ShooterRelease.make_patch_slot()
 	if path.is_empty():
 		_set_busy(false, "Не удалось создать папку патча.")
@@ -187,7 +212,7 @@ func _process(_delta: float) -> void:
 	var progress := ""
 	if total > 0:
 		progress = " · %.0f%%" % (100.0 * float(downloaded) / float(total))
-	_set_status("Сервер обновлений: доступен\nСкачивание %s%s\n%s из %s · %s/с" % [_download_version, progress, _format_bytes(downloaded), _format_bytes(total), _format_bytes(int(float(downloaded) / elapsed))])
+	_set_status("GitHub: доступен\nСкачивание %s%s\n%s из %s · %s/с" % [_download_version, progress, _format_bytes(downloaded), _format_bytes(total), _format_bytes(int(float(downloaded) / elapsed))])
 
 
 func _format_bytes(value: int) -> String:
