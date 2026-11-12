@@ -1,0 +1,13 @@
+services:
+  shooter-server:
+    image: ${SHOOTER_SERVER_IMAGE:?Set SHOOTER_SERVER_IMAGE to an immutable release tag}
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:uid=999,gid=999,mode=1770
+    ports:
+      - "7777:7777/udp"
+      - "7778:7778/udp"
+      - "7779:7779/udp"
+      - "7780:7780/udp"

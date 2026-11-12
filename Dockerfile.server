@@ -1,0 +1,9 @@
+FROM debian:bookworm-slim
+
+RUN useradd --system --create-home --home-dir /srv/shooter shooter
+WORKDIR /srv/shooter
+COPY build/server/shooter-server.x86_64 ./shooter-server
+RUN chmod 0555 ./shooter-server
+USER shooter
+EXPOSE 7777/udp 7778/udp 7779/udp 7780/udp
+ENTRYPOINT ["./shooter-server", "--headless", "--", "--dedicated"]

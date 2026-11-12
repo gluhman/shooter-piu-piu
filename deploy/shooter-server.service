@@ -1,0 +1,16 @@
+[Unit]
+Description=Shooter dedicated server
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/shooter
+EnvironmentFile=/etc/shooter/server.env
+ExecStart=/usr/bin/docker compose -f compose.server.yaml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f compose.server.yaml down
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target

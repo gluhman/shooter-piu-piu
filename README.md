@@ -32,6 +32,7 @@
 - [Сетевая игра и сервер комнат](docs/networking.md)
 - [Графические настройки и замеры Dust II](docs/performance.md)
 - [Сборка, версии и патчи](docs/releases.md)
+- [Выделенный сервер в Docker](docs/server-deployment.md)
 - [Журнал изменений](CHANGELOG.md)
 
 ## Breakwater 9

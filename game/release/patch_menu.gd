@@ -10,11 +10,14 @@ var _download: Button
 var _picker: FileDialog
 var _http: HTTPRequest
 var _candidate: Dictionary = {}
+var _download_started := 0
+var _download_total := 0
+var _download_version := ""
 
 
 func _ready() -> void:
 	title = "Обновление игры"
-	min_size = Vector2i(500, 150)
+	min_size = Vector2i(560, 185)
 	ok_button_text = "Закрыть"
 	_choose = add_button("Выбрать .pck", true)
 	_check = add_button("Проверить GitHub", true)
@@ -40,7 +43,7 @@ func open() -> void:
 	if not visible:
 		_candidate.clear()
 		_download.hide()
-		dialog_text = "Версия %s. Установка патча перезапустит игру." % ShooterRelease.version
+		dialog_text = "Текущая версия: %s\nGitHub: не проверен\n\nУстановка патча перезапустит игру." % ShooterRelease.version
 		if not ShooterRelease.patch_notice.is_empty():
 			dialog_text += "\n" + ShooterRelease.patch_notice
 		popup_centered()
@@ -67,17 +70,17 @@ func _find_update() -> void:
 	_set_busy(true, "Ищем обновления на GitHub…")
 	var response := await _request(RELEASES, "", 16 * 1024 * 1024, 20.0)
 	if response.code != 200:
-		_set_busy(false, "Не удалось проверить GitHub. Можно выбрать файл патча вручную.")
+		_set_busy(false, "GitHub: недоступен (HTTP %d).\n\nМожно выбрать файл патча вручную." % response.code)
 		return
 	var releases: Variant = JSON.parse_string(response.body.get_string_from_utf8())
 	if not releases is Array:
-		_set_busy(false, "GitHub вернул неожиданный ответ.")
+		_set_busy(false, "GitHub: доступен, но вернул неожиданный ответ.")
 		return
 	_candidate = _latest_patch(releases)
 	_download.visible = not _candidate.is_empty()
-	var message := "На GitHub нет нового патча для сборки %s." % ShooterRelease.base_version
+	var message := "GitHub: доступен\nБаза: %s\n\nНовых патчей нет." % ShooterRelease.base_version
 	if not _candidate.is_empty():
-		message = "На GitHub доступна версия %s. После установки игра перезапустится." % _candidate.version
+		message = "GitHub: доступен\nНайден патч %s · %s\n\nПосле установки игра перезапустится." % [_candidate.version, _format_bytes(_candidate.size)]
 	_set_busy(false, message)
 
 
@@ -91,7 +94,7 @@ func _latest_patch(releases: Array) -> Dictionary:
 		for asset: Variant in release.get("assets", []):
 			var url: String = asset.get("browser_download_url", "")
 			if url.begins_with(DOWNLOAD_PREFIX):
-				urls[asset.name] = url
+				urls[asset.name] = {"url": url, "size": int(asset.get("size", 0))}
 		for name: String in urls:
 			var parsed := pattern.search(name)
 			if parsed == null or not urls.has(name + ".cfg"):
@@ -99,19 +102,23 @@ func _latest_patch(releases: Array) -> Dictionary:
 			var target := parsed.get_string(1)
 			var revision := int(parsed.get_string(2))
 			if ShooterRelease.can_install_version(target) and revision > best.get("revision", -1):
-				best = {"version": target, "revision": revision, "pck": urls[name], "cfg": urls[name + ".cfg"]}
+				best = {"version": target, "revision": revision, "pck": urls[name].url, "cfg": urls[name + ".cfg"].url, "size": urls[name].size}
 	return best
 
 
 func _download_update() -> void:
-	_set_busy(true, "Скачиваем патч %s с GitHub…" % _candidate.version)
+	_set_busy(true, "GitHub: доступен\nПодготавливаем патч %s…" % _candidate.version)
 	var path := ShooterRelease.make_patch_slot()
 	if path.is_empty():
 		_set_busy(false, "Не удалось создать папку патча.")
 		return
 	var response := await _request(_candidate.cfg, path + ".cfg", 64 * 1024, 30.0)
 	if response.code == 200:
+		_download_version = _candidate.version
+		_download_total = int(_candidate.size)
+		_download_started = Time.get_ticks_msec()
 		response = await _request(_candidate.pck, path, 1024 * 1024 * 1024, 600.0)
+	_download_started = 0
 	if response.code != 200:
 		_finish_install(path, "Не удалось скачать патч. Попробуйте ещё раз.")
 		return
@@ -144,3 +151,23 @@ func _set_busy(busy: bool, message: String) -> void:
 	_check.disabled = busy
 	_download.disabled = busy
 	get_ok_button().disabled = busy
+
+
+func _process(_delta: float) -> void:
+	if _download_started == 0:
+		return
+	var downloaded := _http.get_downloaded_bytes()
+	var elapsed := maxf(0.001, float(Time.get_ticks_msec() - _download_started) / 1000.0)
+	var total := _download_total if _download_total > 0 else _http.get_body_size()
+	var progress := ""
+	if total > 0:
+		progress = " · %.0f%%" % (100.0 * float(downloaded) / float(total))
+	dialog_text = "GitHub: доступен\nСкачивание %s%s\n%s из %s · %s/с" % [_download_version, progress, _format_bytes(downloaded), _format_bytes(total), _format_bytes(int(float(downloaded) / elapsed))]
+
+
+func _format_bytes(value: int) -> String:
+	if value <= 0:
+		return "—"
+	if value < 1024 * 1024:
+		return "%.1f КБ" % (float(value) / 1024.0)
+	return "%.1f МБ" % (float(value) / (1024.0 * 1024.0))

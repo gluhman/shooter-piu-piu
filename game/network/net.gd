@@ -2,6 +2,7 @@ extends Node
 
 const PORT := 7777
 const CHANNEL_COUNT := 4
+const PROTOCOL_VERSION := 1
 const Balance := preload("res://game/combat/combat_balance.gd")
 const MAX_PLAYERS: int = Balance.MATCH.max_players_total
 const MAX_NAME_LENGTH := 24
@@ -28,6 +29,7 @@ var last_failure := ""
 var last_ip := ""
 var display_name := ""
 var client_session := false
+var protocol_accepted := false
 
 
 func _ready() -> void:
@@ -171,6 +173,7 @@ func join_internet() -> Error:
 
 func open_match(port: int, password: String, token: String) -> Error:
 	client_session = false
+	protocol_accepted = false
 	notice = ""
 	_close()
 	var peer := ENetMultiplayerPeer.new()
@@ -226,6 +229,31 @@ func _wants_dedicated() -> bool:
 
 
 func _on_connected() -> void:
+	net_protocol_hello.rpc_id(1, PROTOCOL_VERSION, ShooterRelease.version)
+
+
+@rpc("any_peer", "reliable")
+func net_protocol_hello(protocol: int, _client_version: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	var accepted := protocol == PROTOCOL_VERSION
+	var message := "" if accepted else "Несовместимая версия сетевого протокола. Обновите игру."
+	net_protocol_result.rpc_id(sender, accepted, message)
+	if not accepted:
+		get_tree().create_timer(0.2).timeout.connect(func():
+			var peer := multiplayer.multiplayer_peer
+			if peer:
+				peer.disconnect_peer(sender), CONNECT_ONE_SHOT)
+
+
+@rpc("authority", "reliable")
+func net_protocol_result(accepted: bool, message: String) -> void:
+	if not accepted:
+		notice = message
+		_on_connection_failed()
+		return
+	protocol_accepted = true
 	client_session = true
 	joined.emit()
 
