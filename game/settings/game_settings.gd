@@ -4,6 +4,7 @@ signal graphics_changed
 signal controls_changed
 
 const PATH := "user://settings.cfg"
+const BINDINGS_VERSION := 1
 const DEFAULT_MENU_MUSIC_VOLUME := 0.4
 const AUDIO_BUSES := {
 	&"menu_music_volume": &"Music",
@@ -30,14 +31,14 @@ const ACTIONS := {
 	&"jump": ["Прыжок", KEY_SPACE],
 	&"fire": ["Выстрел", -MOUSE_BUTTON_LEFT],
 	&"reload_weapon": ["Перезарядка", KEY_R],
-	&"interact": ["Взаимодействие", KEY_ENTER],
+	&"interact": ["Взаимодействие", KEY_F],
 	&"select_primary": ["Основное оружие", KEY_1],
 	&"select_secondary": ["Вспомогательное оружие", KEY_2],
 	&"select_knife": ["Нож", KEY_4],
 	&"use_medkit": ["Использовать аптечку", KEY_H],
 	&"open_armory": ["Открыть арсенал", KEY_B],
 	&"throw_frag": ["Бросить осколочную", KEY_G],
-	&"throw_flash": ["Бросить светошумовую", KEY_F],
+	&"throw_flash": ["Бросить светошумовую", KEY_V],
 	&"throw_grenade": ["Бросить выбранную гранату", KEY_C],
 	&"cover_left": ["Наклон влево", KEY_Q],
 	&"cover_right": ["Наклон вправо", KEY_E],
@@ -69,6 +70,7 @@ var _match_audio_enabled := true
 func _ready() -> void:
 	var config := ConfigFile.new()
 	config.load(PATH)
+	_migrate_bindings(config)
 	sensitivity = clampf(float(config.get_value("controls", "sensitivity", 1.0)), 0.25, 2.5)
 	invert_y = bool(config.get_value("controls", "invert_y", false))
 	for setting: StringName in AUDIO_BUSES:
@@ -96,8 +98,11 @@ func _ready() -> void:
 		var code := int(config.get_value("bindings", action, ACTIONS[action][1]))
 		if action == &"sprint" and code == KEY_SHIFT and not config.has_section_key("bindings", "crouch"):
 			code = KEY_ALT
-		if not config.has_section_key("bindings", action) and (action in WEAPON_SLOTS.values() or action in [&"open_armory", &"throw_frag", &"throw_flash", &"throw_smoke", &"throw_grenade", &"cover_left", &"cover_right"]) and (code in _bindings.values() or code in reserved_keys):
-			for spare in range(KEY_F1, KEY_F12 + 1):
+		if not config.has_section_key("bindings", action) and (action in WEAPON_SLOTS.values() or action in [&"interact", &"open_armory", &"throw_frag", &"throw_flash", &"throw_smoke", &"throw_grenade", &"cover_left", &"cover_right"]) and (code in _bindings.values() or code in reserved_keys):
+			var spares := range(KEY_F1, KEY_F12 + 1)
+			if action == &"interact":
+				spares.push_front(KEY_ENTER)
+			for spare in spares:
 				if spare not in _bindings.values() and spare not in reserved_keys:
 					code = spare
 					break
@@ -106,6 +111,15 @@ func _ready() -> void:
 	get_window().size_changed.connect(_apply_render_scale.call_deferred)
 	apply_display()
 	apply_graphics()
+
+
+func _migrate_bindings(config: ConfigFile) -> void:
+	if int(config.get_value("controls", "bindings_version", 0)) >= BINDINGS_VERSION:
+		return
+	var old_defaults := {&"interact": KEY_ENTER, &"throw_flash": KEY_F}
+	for action in old_defaults:
+		if int(config.get_value("bindings", action, 0)) == old_defaults[action]:
+			config.erase_section_key("bindings", action)
 
 
 func _valid_code(code: int) -> bool:
@@ -310,6 +324,7 @@ func save() -> void:
 	var config := ConfigFile.new()
 	config.set_value("controls", "sensitivity", sensitivity)
 	config.set_value("controls", "invert_y", invert_y)
+	config.set_value("controls", "bindings_version", BINDINGS_VERSION)
 	for setting: StringName in AUDIO_BUSES:
 		config.set_value("audio", setting, get(setting))
 	for action in _bindings:
