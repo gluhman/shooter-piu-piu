@@ -1162,6 +1162,14 @@ func accepts_gameplay_input() -> bool:
 	return control_enabled and GameSettings.game_window_focused() and not get_parent().input_blocked()
 
 
+func has_support_tools() -> bool:
+	return Weapon.specialization(_spawn_loadout) == "support"
+
+
+func fieldworks() -> Node:
+	return get_parent().get_node_or_null("Fieldworks")
+
+
 func _physics_process(delta: float) -> void:
 	if _dead or get_parent().round_finished():
 		return
@@ -1181,6 +1189,16 @@ func _physics_process(delta: float) -> void:
 			rotate_y(-look.x * stick_sensitivity)
 			var stick_pitch_sign := 1.0 if GameSettings.invert_y else -1.0
 			_camera.rotation.x = clampf(_camera.rotation.x + look.y * stick_sensitivity * stick_pitch_sign, deg_to_rad(-80.0), deg_to_rad(80.0))
+	var works := fieldworks()
+	if works and works.is_mounted(self):
+		velocity = Vector3.ZERO
+		sprinting = false
+		sliding = false
+		_slide_left = 0.0
+		_lean_amount = move_toward(_lean_amount, 0.0, LEAN_SPEED * delta)
+		_jump_held = Input.is_action_pressed(&"jump")
+		aiming = accepts_input and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and GameSettings.aim_pressed()
+		return
 	var jump_held := Input.is_action_pressed(&"jump")
 	var jump_pressed := jump_held and not _jump_held
 	_jump_held = jump_held
@@ -1217,7 +1235,7 @@ func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		vertical += -float(Balance.MOVEMENT.gravity_m_s2) * delta
 	if jump_pressed and is_on_floor() and not crouched:
-		vertical = JUMP_VELOCITY
+		vertical = maxf(JUMP_VELOCITY, works.jump_speed(global_position) if works else 0.0)
 		var fixtures := get_parent().get_node_or_null("Map/VillageFixtures")
 		if fixtures and not direction.is_zero_approx():
 			vertical = maxf(vertical, fixtures.window_jump_speed(global_position, direction, STANDING_HEIGHT))
@@ -1248,7 +1266,8 @@ func _physics_process(delta: float) -> void:
 
 
 func start_ladder_climb(route: PackedVector3Array) -> bool:
-	if route.is_empty() or not accepts_gameplay_input() or is_climbing_ladder():
+	var can_climb := control_enabled and _server_rules() if is_in_group("bot") else accepts_gameplay_input()
+	if route.is_empty() or not can_climb or is_climbing_ladder():
 		return false
 	var feet := global_transform
 	for point in route:

@@ -171,6 +171,9 @@ func _drop_offset(at: Vector3, offset: Vector3, ignored: Array[RID]) -> Vector3:
 func interact(actor: Node) -> void:
 	if not actor.accepts_gameplay_input():
 		return
+	var works := _match.get_node("Fieldworks")
+	if works.is_mounted(actor) and works.interact(actor):
+		return
 	var ladders := _match.get_node_or_null("Map/WorkshopLadders")
 	if ladders and (actor.is_climbing_ladder() or actor.start_ladder_climb(ladders.route_in_view(actor))):
 		return
@@ -179,6 +182,8 @@ func interact(actor: Node) -> void:
 		if fixtures:
 			fixtures.request_door(actor, _hover_door)
 			return
+	if _hover.x < 0 and works.interact(actor):
+		return
 	if _hover.x < 0:
 		return
 	if Net.active and not multiplayer.is_server():
@@ -314,6 +319,8 @@ func _update_prompt() -> void:
 			_hover_door = fixtures.door_in_view(actor)
 			if _hover_door >= 0:
 				prompt = fixtures.door_prompt(_hover_door)
+		if prompt.is_empty() or _match.get_node("Fieldworks").is_mounted(actor):
+			prompt = _match.get_node("Fieldworks").prompt(actor)
 	if prompt != "":
 		prompt = "%s — %s" % [GameSettings.binding_label(&"interact"), prompt]
 	_hud.show_loot_prompt(prompt)

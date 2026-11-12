@@ -407,6 +407,7 @@ func _clear_match_map() -> void:
 	$Ballistics.reset_round()
 	$Grenades.reset_round()
 	$Loot.clear_map()
+	$Fieldworks.reset_round()
 	$Map.clear_map()
 	if is_instance_valid(_breakwater):
 		_breakwater = null
@@ -511,6 +512,7 @@ func net_restart() -> void:
 		$HUD/MatchMenu.close()
 	$Ballistics.reset_round()
 	$Grenades.reset_round()
+	$Fieldworks.reset_round()
 	$Map.clear_bullet_holes()
 	var fixtures := get_node_or_null("Map/VillageFixtures")
 	if fixtures:
@@ -1529,6 +1531,7 @@ func net_ready(revision: int) -> void:
 		fixtures.send_state(id)
 	$Loot.send_state(id)
 	$Grenades.send_state(id)
+	$Fieldworks.send_state(id)
 	for player in get_tree().get_nodes_in_group("player"):
 		player.send_status_to(id)
 	net_score_snapshot.rpc_id(id, $HUD.score_snapshot(), _team_score)

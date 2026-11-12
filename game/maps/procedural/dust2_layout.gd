@@ -1,5 +1,6 @@
 extends RefCounted
 
+const EarthSurface := preload("res://game/maps/procedural/earth_surface.gd")
 const WIDTH := 120.0
 const WALL_THICKNESS := 0.65
 const FLOOR_BASE := -3.0
@@ -72,7 +73,6 @@ func build(width: float) -> Array[Transform3D]:
 		return compact_supplies
 	_add_sectors()
 	for sector in _sectors:
-		_floor(sector)
 		_boundary_walls(sector)
 	_landmarks()
 	for point in SPAWNS:
@@ -88,6 +88,8 @@ func build(width: float) -> Array[Transform3D]:
 	for point in PATROL:
 		_patrol.append(_position(point, 0.2))
 	_fit_full_layout(width, supplies)
+	for sector in _sectors:
+		_floor(sector, width / WIDTH, Vector2(5.5, 0.0))
 	_add_wall_occluder()
 	_batch_shell()
 	return supplies
@@ -211,37 +213,13 @@ func _position(point: Vector2, offset: float = 0.0) -> Vector3:
 	return Vector3(point.x, offset, point.y)
 
 
-func _floor(sector: Sector) -> void:
-	var start := sector.bounds.position
-	var end := sector.bounds.end
-	if sector.near_height == sector.far_height:
-		var height := sector.near_height - FLOOR_BASE
-		var center := sector.bounds.get_center()
-		_shell_box(Vector3(center.x, FLOOR_BASE + height * 0.5, center.y),
-			Vector3(sector.bounds.size.x, height, sector.bounds.size.y), _ground)
-		return
-	var top := PackedVector3Array()
-	for point: Vector2 in [start, Vector2(end.x, start.y), end, Vector2(start.x, end.y)]:
-		top.append(Vector3(point.x, sector.height_at(point), point.y))
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	surface.set_material(_ground)
-	for index in [0, 1, 2, 0, 2, 3]:
-		surface.add_vertex(top[index])
-	surface.generate_normals()
-	var visual := MeshInstance3D.new()
-	visual.mesh = surface.commit()
-	var body := StaticBody3D.new()
-	body.set_meta(&"impact_surface", "concrete")
-	body.add_child(visual)
-	var shape := ConvexPolygonShape3D.new()
-	var points := top.duplicate()
-	for point in top:
-		points.append(Vector3(point.x, FLOOR_BASE, point.z))
-	shape.points = points
-	var collision := CollisionShape3D.new()
-	collision.shape = shape
-	body.add_child(collision)
+func _floor(sector: Sector, ratio := 1.0, origin := Vector2.ZERO) -> void:
+	var body := EarthSurface.new()
+	body.name = "DustTerrain%d" % _sectors.find(sector)
+	var dirt: Material = _map._world_mat("dust2/sand", Color(0.79, 0.70, 0.56), 0.0, 0.68, 1.1, false)
+	var area := Rect2((sector.bounds.position - origin) * ratio, sector.bounds.size * ratio)
+	var sample := func(point: Vector2) -> float: return sector.height_at(point / ratio + origin)
+	body.configure(area, sample, _ground, dirt)
 	_map.add_child(body)
 
 

@@ -18,6 +18,8 @@
 [ext_resource type="Script" path="res://addons/sky_3d/src/TimeOfDay.gd" id="13_time"]
 [ext_resource type="Shader" path="res://addons/sky_3d/shaders/SkyMaterial.gdshader" id="14_sky_shader"]
 
+[ext_resource type="Script" path="res://game/match/fieldworks.gd" id="17_fieldworks"]
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
 resource_local_to_scene = true
 shader = ExtResource("14_sky_shader")
@@ -84,6 +86,9 @@ script = ExtResource("15_grenades")
 
 [node name="Loot" type="Node3D" parent="."]
 script = ExtResource("10_loot")
+
+[node name="Fieldworks" type="Node3D" parent="."]
+script = ExtResource("17_fieldworks")
 
 [node name="Ambience" type="AudioStreamPlayer" parent="."]
 volume_db = 6.0

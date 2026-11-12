@@ -41,7 +41,7 @@ const SPECIALIZATIONS := {
 	},
 	"support": {
 		"name": "Поддержка", "weapons": ["m249", "launcher"],
-		"hint": "Пулемёт для подавления или гранатомёт против укрытий. Долгая перезарядка.",
+		"hint": "Лопата для траншей и мешков. Станок для M249 уменьшает разброс вдвое.",
 		"aim_seconds": 0.28,
 	},
 }
@@ -334,6 +334,9 @@ func _update_sprint_recovery(delta: float) -> void:
 
 
 func _can_fire() -> bool:
+	var works: Node = _player.fieldworks()
+	if works and (works.is_building(_player) or (works.is_mounted(_player) and not works.steadies_weapon(_player))):
+		return false
 	if not _active or not _player.control_enabled or _player.sprinting or _sprint_recovery > 0.0:
 		return false
 	return _cooldown <= 0.0 and not _player.weapon_switch_pending() and (
@@ -415,7 +418,8 @@ func _shoot() -> void:
 	var target := _sight_target(camera)
 	var aligned := _converge_view(_view.global_transform, camera, target)
 	var barrel := aligned * _muzzle.transform
-	_view.global_transform = aligned.interpolate_with(_view.global_transform, aim_blend())
+	var works: Node = _player.fieldworks()
+	_view.global_transform = aligned if works and works.steadies_weapon(_player) else aligned.interpolate_with(_view.global_transform, aim_blend())
 	if _player._server_rules():
 		_player.cancel_spawn_protection()
 		_launch_sighted(barrel, camera, target)
@@ -453,6 +457,14 @@ func _sight_target(camera: Transform3D, rewind: float = -1.0) -> Vector3:
 
 func _converge_view(view: Transform3D, camera: Transform3D, target: Vector3) -> Transform3D:
 	var forward := -camera.basis.z.normalized()
+	if _weapon_id == "m249":
+		var works: Node = _player.fieldworks()
+		var rest: Vector3 = works.weapon_rest(_player) if works else Vector3.INF
+		if rest.is_finite():
+			var direction := (target - rest).normalized()
+			if direction.dot(forward) > 0.85:
+				var basis := Basis.looking_at(direction, Vector3.UP)
+				return Transform3D(basis, rest + direction * 0.19 - basis * _muzzle.position)
 	# Turn around the grip at hip fire and around the rear sight in ADS.
 	var pivot := view * (Vector3.ZERO.lerp(_rear_sight.position, aim_blend()))
 	var barrel := view * _muzzle.transform
@@ -491,7 +503,9 @@ func _current_spread() -> float:
 			float(Balance.ACCURACY.moving_ads_spread_add_deg), aim)
 	if not _player.combat_grounded():
 		spread += float(Balance.MOVEMENT.airborne_spread_bonus_deg)
-	return spread + _burst_heat
+	var works: Node = _player.fieldworks()
+	var steady: bool = _weapon_id == "m249" and works != null and works.steadies_weapon(_player)
+	return (spread + _burst_heat) * (0.5 if steady else 1.0)
 
 
 func _accuracy_aim_amount() -> float:
@@ -830,6 +844,8 @@ func update_pose(delta: float) -> void:
 func _apply_view(delta: float, converge: bool = true) -> void:
 	if _view == null:
 		return
+	var works: Node = _player.fieldworks()
+	_view.visible = not (works and works.is_building(_player))
 	var speed: float = _player.visual_speed()
 	var firing := _trigger_held or not _kick_pos.is_zero_approx() or not is_zero_approx(_kick_rot)
 	var carry_target := smoothstep(2.65, 3.9, speed) if not _player.crouched and not firing else 0.0
@@ -893,6 +909,9 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	elif converge and not bot and not _player.sprinting:
 		var camera := _camera.global_transform
 		var target := _sight_target(camera)
+		if works and works.steadies_weapon(_player):
+			_view.global_transform = _converge_view(_view.global_transform, camera, target)
+			return
 		# Near targets require a steeper bore angle than the visible sights.
 		if blend < 1.0:
 			var aligned := _converge_view(_view.global_transform, camera, target)

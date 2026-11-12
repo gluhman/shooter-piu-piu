@@ -1,5 +1,6 @@
 extends RefCounted
 
+const EarthSurface := preload("res://game/maps/procedural/earth_surface.gd")
 const Terrain := preload("res://game/maps/procedural/village_terrain.gd")
 const Fixtures := preload("res://game/maps/procedural/village_fixtures.gd")
 const GROUND_SHADER := preload("res://game/maps/procedural/village_ground.gdshader")
@@ -108,15 +109,17 @@ func _build_ground(half: float) -> void:
 	landscape.position.y = Terrain.HORIZON_Y - 0.02
 	landscape.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_map.add_child(landscape)
-	var mesh := _terrain.make_mesh()
-	var body := StaticBody3D.new()
+	var extent := half + 4.0
+	var body := EarthSurface.new()
 	body.name = "VillageTerrain"
-	body.set_meta(&"impact_surface", "concrete")
-	var shape := CollisionShape3D.new()
-	shape.shape = mesh.create_trimesh_shape()
-	body.add_child(shape)
+	body.paving = _terrain_pads.duplicate()
+	var dirt: Material = _map._world_mat("village/dirt", Color(0.74, 0.60, 0.45), 0.0, 0.9, 1.15, false)
+	# Capture the terrain so it outlives this layout builder.
+	var terrain := _terrain
+	var sample := func(point: Vector2) -> float: return terrain.height_at(point)
+	body.configure(Rect2(-Vector2.ONE * extent, Vector2.ONE * extent * 2.0),
+		sample, ground, dirt, terrain.make_mesh())
 	_map.add_child(body)
-	_mesh(mesh, ground, Transform3D.IDENTITY)
 
 
 func _build_boundary(half: float) -> void:

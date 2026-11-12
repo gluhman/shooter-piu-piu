@@ -178,6 +178,13 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		return
 
+	if is_climbing_ladder():
+		_climb_ladder(delta)
+		return
+	var works := fieldworks()
+	if is_on_floor() and works and start_ladder_climb(works.exit_route(self)):
+		return
+
 	_loot_scan -= delta
 	if _loot_scan <= 0.0:
 		_loot_scan = randf_range(0.25, 0.45)
