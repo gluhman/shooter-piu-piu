@@ -29,6 +29,7 @@ const SIZE_WIDTHS := [20.0, 40.0, ARENA_WIDTH]
 const SIZE_NAMES := ["Маленькая", "Средняя", "Большая"]
 const DEFAULT_SIZE := 2
 const VILLAGE_ID := 3
+const VILLAGE_MIN_SIZE := 1
 const DUST2_ID := 4
 const WORKSHOP_ID := 5
 const BREAKWATER_ID := 6
@@ -72,6 +73,7 @@ var _passages: Array[Transform3D] = []
 var _wood_floors: Array[Rect2] = []
 var _initial_spawns := PackedVector3Array()
 var respawn_points := PackedVector3Array()
+var market_supply_count := 0
 var _patrol: Array[Vector3] = []
 var _half_extent := 35.0
 var _district_origin := Vector3.ZERO
@@ -90,6 +92,12 @@ const DUST2_TEXTURES := {
 	"dust2/sandstone": ["color", "normal", "roughness"],
 	"dust2/sand": ["color", "normal", "roughness"],
 }
+const VILLAGE_TEXTURES := {
+	"village/cobble": ["color", "normal", "roughness", "ao"],
+	"village/dirt": ["color", "normal", "roughness"],
+	"village/plaster": ["color", "normal", "roughness", "ao"],
+	"village/roof": ["color", "normal", "roughness", "ao"],
+}
 
 var _textures: Dictionary[String, Texture2D] = {}
 
@@ -105,6 +113,12 @@ func preload_textures(map_id: int) -> void:
 	else:
 		for material in DUST2_TEXTURES:
 			for kind in DUST2_TEXTURES[material]:
+				_textures.erase(_texture_path(material, kind))
+	if map_id == VILLAGE_ID:
+		materials.merge(VILLAGE_TEXTURES)
+	else:
+		for material in VILLAGE_TEXTURES:
+			for kind in VILLAGE_TEXTURES[material]:
 				_textures.erase(_texture_path(material, kind))
 	if map_id == WORKSHOP_ID:
 		return
@@ -146,15 +160,25 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 		return supplies
 	if map_id == TEST_RANGE_ID:
 		return _build_test_range(width)
+	if map_id == VILLAGE_ID:
+		var village_width := maxf(width, SIZE_WIDTHS[VILLAGE_MIN_SIZE])
+		_half_extent = village_width * 0.5
+		var layout := VILLAGE.new(self)
+		var supplies := layout.build(village_width, rng)
+		market_supply_count = layout.market_supply_count
+		_build_respawn_grid(floori((_half_extent - 1.0) / 5.6), 5.6, _half_extent, layout.ground_height)
+		_patrol.assign(respawn_points)
+		# Keep respawn candidates out of the contested market.
+		var outer_candidates := PackedVector3Array()
+		for point in respawn_points:
+			if absf(point.x) >= 6.0 or absf(point.z) >= 6.0:
+				outer_candidates.append(point)
+		respawn_points = outer_candidates
+		return supplies
 
 	_build_spawn_ring(_half_extent - (2.25 if width == 70.0 else 1.35))
 	var spacing := 2.8 if width == 20.0 else 5.6
 	var steps := floori((_half_extent - 1.0) / spacing)
-	if map_id == VILLAGE_ID:
-		var supplies := VILLAGE.new(self).build(width, rng)
-		_build_respawn_grid(steps, spacing, _half_extent)
-		_patrol.assign(respawn_points)
-		return supplies
 
 	_load_textures()
 	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(width + 2.0, 0.5, width + 2.0), _floor_mat)
@@ -308,6 +332,7 @@ func clear_map() -> void:
 	_wood_floors.clear()
 	_initial_spawns.clear()
 	respawn_points.clear()
+	market_supply_count = 0
 	_patrol.clear()
 	_district_origin = Vector3.ZERO
 	_district_yaw = 0.0
@@ -320,13 +345,14 @@ func _build_spawn_ring(radius: float) -> void:
 		_initial_spawns.append(Vector3(along, 0.2, radius).rotated(Vector3.UP, side * PI * 0.5))
 
 
-func _build_respawn_grid(steps: int, spacing: float, limit: float) -> void:
+func _build_respawn_grid(steps: int, spacing: float, limit: float, ground_height := Callable()) -> void:
 	respawn_points = _initial_spawns.duplicate()
 	for x in range(-steps, steps + 1):
 		for z in range(-steps, steps + 1):
 			var center := Vector2(x, z) * spacing
 			if _is_clear(_footprint(center, Vector2.ONE * 1.8), limit, 0.0):
-				respawn_points.append(Vector3(center.x, 0.2, center.y))
+				var height: float = ground_height.call(center) if ground_height.is_valid() else 0.0
+				respawn_points.append(Vector3(center.x, height + 0.2, center.y))
 
 
 func initial_spawn(index: int) -> Vector3:

@@ -20,6 +20,18 @@ const FABRIC_TEXTURES := {
 	],
 }
 
+const TEAM_ALBEDO := [
+	{
+		"Mil_Suit_R5": preload("res://assets/operator/textures/blue_uniform.jpg"),
+		"Mil_Suit_R5__Plate": preload("res://assets/operator/textures/blue_vest.jpg"),
+		"Mil_Suit_R5_Puches": preload("res://assets/operator/textures/blue_pouches.jpg"),
+	}, {
+		"Mil_Suit_R5": preload("res://assets/operator/textures/red_uniform.jpg"),
+		"Mil_Suit_R5__Plate": preload("res://assets/operator/textures/red_vest.jpg"),
+		"Mil_Suit_R5_Puches": preload("res://assets/operator/textures/red_pouches.jpg"),
+	},
+]
+
 const RIGHT_ARM := [&"mixamorig_RightArm_09", &"mixamorig_RightForeArm_010", &"mixamorig_RightHand_011"]
 const LEFT_ARM := [&"mixamorig_LeftArm_033", &"mixamorig_LeftForeArm_034", &"mixamorig_LeftHand_035"]
 const RIGHT_LEG := [&"mixamorig_RightUpLeg_057", &"mixamorig_RightLeg_058", &"mixamorig_RightFoot_059", &"mixamorig_RightToeBase_060"]
@@ -459,18 +471,19 @@ func _align_hinge(basis: Basis, segment: Vector3, hinge: Vector3, weight: float)
 static var _fabric_materials: Dictionary = {}
 
 
-static func apply_textures(avatar: Node3D) -> void:
+static func apply_textures(avatar: Node3D, team := -1) -> void:
 	for mesh: MeshInstance3D in avatar.find_children("*", "MeshInstance3D", true, false):
 		for surface in mesh.mesh.get_surface_count():
-			var original := mesh.get_active_material(surface) as BaseMaterial3D
+			var original := mesh.mesh.surface_get_material(surface) as BaseMaterial3D
 			if original == null or not FABRIC_TEXTURES.has(original.resource_name):
 				continue
 			var name := original.resource_name
-			if not _fabric_materials.has(name):
+			var key := "%d/%s" % [team, name]
+			if not _fabric_materials.has(key):
 				var material := original.duplicate() as BaseMaterial3D
-				material.albedo_texture = FABRIC_TEXTURES[name][0]
+				material.albedo_texture = TEAM_ALBEDO[team][name] if team in [0, 1] else FABRIC_TEXTURES[name][0]
 				material.normal_texture = FABRIC_TEXTURES[name][1]
 				material.normal_enabled = true
 				material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-				_fabric_materials[name] = material
-			mesh.set_surface_override_material(surface, _fabric_materials[name])
+				_fabric_materials[key] = material
+			mesh.set_surface_override_material(surface, _fabric_materials[key])

@@ -93,6 +93,8 @@ var _jump_held := false
 var _recoil_pitch := 0.0
 var _recoil_yaw := 0.0
 var _dead := false
+var _respawn_selection := PackedStringArray()
+var _respawn_ready := false
 var _respawn_timer: SceneTreeTimer
 var _hurt_lock := 0.0
 var _avatar: Node3D
@@ -381,6 +383,35 @@ func choose_loadout(primary: String, sidearm: String, grenade: String) -> void:
 		_send_equipment(primary)
 	else:
 		net_choose_loadout.rpc_id(1, primary, sidearm, grenade)
+
+
+func choose_respawn_loadout(primary: String, sidearm: String, grenade: String) -> void:
+	if not _dead or get_parent().round_finished() or not _valid_loadout(primary, sidearm, grenade):
+		return
+	if _server_rules():
+		_accept_respawn_loadout(primary, sidearm, grenade, _spawn_revision)
+	else:
+		net_choose_respawn_loadout.rpc_id(1, primary, sidearm, grenade, _spawn_revision)
+
+
+@rpc("any_peer", "reliable")
+func net_choose_respawn_loadout(primary: String, sidearm: String, grenade: String, revision: int) -> void:
+	if multiplayer.is_server() and _is_owner_request(multiplayer.get_remote_sender_id()):
+		_accept_respawn_loadout(primary, sidearm, grenade, revision)
+
+
+func _accept_respawn_loadout(primary: String, sidearm: String, grenade: String, revision: int) -> void:
+	if not _dead or revision != _spawn_revision or get_parent().round_finished():
+		return
+	if not _valid_loadout(primary, sidearm, grenade) or not _respawn_selection.is_empty():
+		return
+	_respawn_selection = PackedStringArray([primary, sidearm, grenade])
+	if _respawn_ready:
+		_request_respawn.call_deferred()
+
+
+func _requires_respawn_selection() -> bool:
+	return score_id() > 0 and not get_parent().is_training_range()
 
 
 func _valid_loadout(primary: String, sidearm: String, grenade: String) -> bool:
@@ -760,8 +791,12 @@ func net_choose_loadout(primary: String, sidearm: String, grenade: String) -> vo
 
 
 @rpc("any_peer", "reliable")
-func net_respawn(id: String, at: Vector3, revision: int) -> void:
-	if multiplayer.get_remote_sender_id() == 1:
+func net_respawn(id: String, at: Vector3, revision: int, loadout := PackedStringArray()) -> void:
+	if multiplayer.get_remote_sender_id() == 1 and revision > _spawn_revision:
+		if loadout.size() == 3:
+			_spawn_loadout = loadout[0]
+			_spawn_sidearm = loadout[1]
+			_spawn_grenade = loadout[2]
 		_apply_respawn(id, at, revision)
 
 
@@ -857,6 +892,8 @@ func _commit(killer_id: int, impact: Dictionary = {}) -> void:
 		_respawn_timer.timeout.connect(_request_respawn)
 	_clear_inventory()
 	inventory_changed.emit()
+	if _is_local() and _requires_respawn_selection():
+		get_parent().get_node("HUD/WeaponSelect").show_respawn_selection.call_deferred()
 
 
 func _clear_inventory() -> void:
@@ -885,17 +922,25 @@ func _reset_support() -> void:
 
 func _request_respawn() -> void:
 	_respawn_timer = null
-	if get_parent().round_finished():
+	if not _dead or get_parent().round_finished():
+		return
+	_respawn_ready = true
+	if _requires_respawn_selection() and _respawn_selection.is_empty():
 		return
 	var at: Vector3 = get_parent().choose_respawn(self, _last_spawn_position)
 	if not at.is_finite():
 		_respawn_timer = get_tree().create_timer(0.25, false, true)
 		_respawn_timer.timeout.connect(_request_respawn)
 		return
+	var loadout := _respawn_selection.duplicate()
+	if loadout.size() == 3:
+		_spawn_loadout = loadout[0]
+		_spawn_sidearm = loadout[1]
+		_spawn_grenade = loadout[2]
 	var id := _next_respawn_weapon()
 	var revision := _spawn_revision + 1
 	for peer in get_parent().match_peers():
-		net_respawn.rpc_id(peer, id, at, revision)
+		net_respawn.rpc_id(peer, id, at, revision, loadout)
 	_apply_respawn(id, at, revision)
 
 
@@ -929,12 +974,15 @@ func stop_round() -> void:
 
 
 func _cancel_respawn() -> void:
+	_respawn_ready = false
+	_respawn_selection.clear()
 	if _respawn_timer and _respawn_timer.timeout.is_connected(_request_respawn):
 		_respawn_timer.timeout.disconnect(_request_respawn)
 	_respawn_timer = null
 
 
 func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
+	_cancel_respawn()
 	_clear_inventory()
 	_reset_support()
 	_restore_starting_supplies()
@@ -1160,6 +1208,9 @@ func _physics_process(delta: float) -> void:
 		vertical += -float(Balance.MOVEMENT.gravity_m_s2) * delta
 	if jump_pressed and is_on_floor() and not crouched:
 		vertical = JUMP_VELOCITY
+		var fixtures := get_parent().get_node_or_null("Map/VillageFixtures")
+		if fixtures and not direction.is_zero_approx():
+			vertical = maxf(vertical, fixtures.window_jump_speed(global_position, direction, STANDING_HEIGHT))
 
 	var speed := WALK_SPEED
 	if crouched:
@@ -1240,7 +1291,7 @@ func _build_operator() -> void:
 	_avatar.scale = Vector3.ONE * 0.96
 	_avatar.position = Vector3(0.169, 0.0, -0.041)
 	add_child(_avatar)
-	OperatorPose.apply_textures(_avatar)
+	OperatorPose.apply_textures(_avatar, team_id() if get_parent().team_deathmatch else -1)
 	_skeleton = _avatar.find_child("Skeleton3D", true, false) as Skeleton3D
 	_skeleton.reset_bone_poses()
 	_pose = OperatorPose.new()

@@ -151,10 +151,15 @@ func _card(parent: Control, width := 84.0) -> VBoxContainer:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(width, 0)
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_theme_stylebox_override(&"panel", UI.style(Color("#111816eb"), UI.LINE, 7, 4, 6))
+	panel.add_theme_stylebox_override(&"panel", UI.style(Color(0.035, 0.065, 0.085, 0.70), Color(0.40, 0.54, 0.61, 0.29), 7, 4, 6))
 	parent.add_child(panel)
 	var column := VBoxContainer.new()
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_theme_constant_override("separation", 1)
 	panel.add_child(column)
 	return column
+
+
+func use_modern_equipment() -> void:
+	_grenade_key.get_parent().get_parent().hide()
+	_medkit_key.get_parent().get_parent().hide()

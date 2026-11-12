@@ -80,22 +80,22 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
-	draw_style_box(UI.style(Color("#111816eb"), UI.LINE, 0, 0, 8), Rect2(Vector2.ZERO, size))
+	draw_style_box(UI.style(Color("#0d1b24"), Color("#536b79"), 0, 0, 8), Rect2(Vector2.ZERO, size))
 
 
 func _draw_layout() -> void:
 	var side := _layout.size.x
 	for index in range(1, 4):
 		var line := side * index / 4.0
-		_layout.draw_line(Vector2(line, 0), Vector2(line, side), Color("#28332e"))
-		_layout.draw_line(Vector2(0, line), Vector2(side, line), Color("#28332e"))
+		_layout.draw_line(Vector2(line, 0), Vector2(line, side), Color("#263a46"))
+		_layout.draw_line(Vector2(0, line), Vector2(side, line), Color("#263a46"))
 	for polygon in _outline:
 		var points := PackedVector2Array()
 		for point in polygon:
 			points.append(_project(point))
-		_layout.draw_colored_polygon(points, Color("#52645a"))
+		_layout.draw_colored_polygon(points, Color("#496371"))
 		points.append(points[0])
-		_layout.draw_polyline(points, Color("#64776c"), 0.8, true)
+		_layout.draw_polyline(points, Color("#7995a3"), 0.8, true)
 	_layout.draw_rect(Rect2(Vector2.ZERO, _layout.size), UI.LINE, false)
 
 

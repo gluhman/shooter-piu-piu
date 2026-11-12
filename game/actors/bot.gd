@@ -484,6 +484,9 @@ func _follow_path(target: Vector3) -> Vector3:
 	var next := _navigation.get_next_path_position()
 	if _navigation.is_navigation_finished():
 		return Vector3.ZERO
+	var fixtures := get_parent().get_node_or_null("Map/VillageFixtures")
+	if fixtures:
+		fixtures.open_door_on_path(global_position, next)
 	return _flat_direction(next - global_position)
 
 

@@ -2,6 +2,11 @@ extends CanvasLayer
 
 const MINIMAP := preload("res://game/ui/minimap.gd")
 const INVENTORY_HUD := preload("res://game/ui/inventory_hud.gd")
+const BREAKWATER_HUD := preload("res://game/ui/breakwater_hud.gd")
+const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
+const WEAPON_ICONS := {"knife": "knife", "shotgun": "shotgun", "m249": "lmg", "m700": "sniper",
+	"m14": "dmr", "m1": "dmr", "mp5": "smg", "mac10": "smg", "tec9": "pistol",
+	"m1911": "pistol", "deagle": "pistol", "launcher": "target"}
 const UI := preload("res://game/ui/menu_ui.gd")
 const HEALTH_GOOD := Color("#b7d884")
 const HEALTH_WOUNDED := Color("#efc173")
@@ -36,6 +41,11 @@ var _last_health := 100
 var _player: Node
 var _inventory_hud: VBoxContainer
 var _round_scores: Dictionary = {}
+var _modern: Control
+var _hud_update_left := 0.0
+var _feed: Array[Dictionary] = []
+var _hud_clock := ""
+var _hud_limit := 0
 
 
 func _ready() -> void:
@@ -43,6 +53,7 @@ func _ready() -> void:
 	_refresh_score()
 	_update_hint()
 	GameSettings.controls_changed.connect(_update_hint)
+	get_parent().damage_resolved.connect(_on_damage)
 
 
 func attach_local(player: Node) -> void:
@@ -76,6 +87,7 @@ func detach_local() -> void:
 	$Hint.hide()
 	$Crosshair.hide()
 	hide_host_ip()
+	_modern.hide()
 
 
 func set_minimap_layout(map: Node3D, width: float, bounds: Rect2 = Rect2()) -> void:
@@ -121,6 +133,13 @@ func _process(delta: float) -> void:
 		_loot_notice_left -= delta
 		if _loot_notice_left <= 0.0:
 			_loot_notice.hide()
+	if is_instance_valid(_player) and _modern:
+		_modern.damage_left = maxf(0.0, _modern.damage_left - delta)
+		_modern.kill_left = maxf(0.0, _modern.kill_left - delta)
+		_hud_update_left -= delta
+		if _hud_update_left <= 0.0:
+			_hud_update_left = 1.0 / 30.0
+			_refresh_modern()
 	if _flash.color.a > 0.0:
 		var color := _flash.color
 		color.a = maxf(color.a - delta * 1.8, 0.0)
@@ -172,6 +191,15 @@ func show_flashbang(strength: float, duration: float) -> void:
 
 
 func on_frag(killer_id: int, victim_id: int) -> void:
+	var game := get_parent()
+	var killer: Node = game.combatant(killer_id)
+	_feed.push_front({"killer": _combatant_name(killer_id), "victim": _combatant_name(victim_id),
+		"team": "red" if killer and game.team_deathmatch and killer.team_id() == 1 else "blue",
+		"expires": Time.get_ticks_msec() + 5500})
+	if _feed.size() > 5:
+		_feed.pop_back()
+	if killer_id == Net.local_id() and killer_id != victim_id:
+		_modern.kill_left = 1.0
 	if killer_id != victim_id:
 		_round_scores[killer_id] = _score_for(killer_id) + Vector2i(1, 0)
 	_round_scores[victim_id] = _score_for(victim_id) + Vector2i(0, 1)
@@ -182,6 +210,9 @@ func on_frag(killer_id: int, victim_id: int) -> void:
 
 
 func reset_round() -> void:
+	_feed.clear()
+	_modern.damage_left = 0.0
+	_modern.kill_left = 0.0
 	_minimap.clear_shots()
 	_round_scores.clear()
 	_death.hide()
@@ -249,6 +280,8 @@ func _score_for(id: int) -> Vector2i:
 
 
 func show_round_status(seconds: int, timed: bool, kill_limit: int) -> void:
+	_hud_limit = kill_limit
+	_hud_clock = "%02d:%02d" % [floori(seconds / 60.0), seconds % 60] if timed else ""
 	_round_rules.visible = timed or kill_limit > 0
 	_round_clock.visible = timed
 	_round_clock.text = "%02d:%02d" % [floori(seconds / 60.0), seconds % 60]
@@ -277,8 +310,93 @@ func _update_hint() -> void:
 
 func _on_respawn() -> void:
 	_death.visible = false
+	_modern.damage_left = 0.0
+	$Crosshair.show()
 	_blind_time = 0.0
 	_blind.color.a = 0.0
+
+
+func _combatant_name(id: int) -> String:
+	var game := get_parent()
+	var slot: int = game.player_slots.find(id)
+	if id > 0 and slot >= 0:
+		return game.player_label(slot)
+	return "Бот %d" % (1 - id) if id <= 0 else "Игрок"
+
+
+func _on_damage(event: Dictionary) -> void:
+	if not is_instance_valid(_player) or int(event.victim_peer_id) != _player.score_id():
+		return
+	var attacker: Node3D = get_parent().combatant(int(event.attacker_peer_id))
+	if not is_instance_valid(attacker) or attacker == _player:
+		return
+	var direction: Vector3 = _player.global_basis.inverse() * (attacker.global_position - _player.global_position)
+	_modern.damage_direction = atan2(direction.x, -direction.z)
+	_modern.damage_left = 0.65
+
+
+func set_modern_scoreboard(visible: bool) -> void:
+	if not _modern:
+		return
+	_modern.scoreboard_visible = visible
+	_modern.z_index = 9 if visible else 1
+	_refresh_modern()
+
+
+func _refresh_modern() -> void:
+	var game := get_parent()
+	var menu_open: bool = $Lobby.visible or $MatchMenu.visible or $WeaponSelect.visible
+	_modern.visible = is_instance_valid(_player) and not menu_open and not game.round_finished()
+	_minimap.modulate.a = 1.0 if _modern.visible and not _modern.scoreboard_visible else 0.0
+	if not _modern.visible:
+		return
+	var scale_factor: float = _modern.view_scale()
+	_minimap.position = _modern.view_origin() + Vector2(62, 65) * scale_factor
+	_minimap.scale = Vector2.ONE * (218.0 / MINIMAP.SIDE) * scale_factor
+	var roster: Array = []
+	var live_count := 0
+	for fighter in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
+		if fighter.get_parent() == game and fighter.control_enabled and fighter.health > 0.0:
+			live_count += 1
+	if _modern.scoreboard_visible:
+		for row in score_rows():
+			roster.append({"name": row[0], "kills": row[1], "deaths": row[2], "self": row[3],
+				"team": "blue" if row[4] == 0 else "red"})
+	var score := _score_for(Net.local_id())
+	var team_score: Vector2i = game._team_score
+	while not _feed.is_empty() and _feed.back().expires <= Time.get_ticks_msec():
+		_feed.pop_back()
+	var grenade: String = _player.carried_grenade()
+	var equipment: Array = []
+	if grenade != "":
+		equipment.append({"icon": "flash" if grenade == "flash" else "frag", "label": ARSENAL.GRENADE_LABELS[grenade],
+			"count": _player.grenade_stock(grenade), "key": GameSettings.binding_label(ARSENAL.GRENADE_ACTIONS[grenade])})
+	equipment.append({"icon": "medkit", "label": "Аптечка", "count": _player.medkits,
+		"key": GameSettings.binding_label(&"use_medkit")})
+	var ping := "—"
+	var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if Net.active and not multiplayer.is_server() and transport:
+		var peer := transport.get_peer(1)
+		if peer:
+			ping = "%d ms" % peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME)
+	var data := {
+		"alive": _player.control_enabled and _player.health > 0.0,
+		"health": ceili(_player.health), "max_health": _player.MAX_HEALTH,
+		"armor": ceili(_player.armor) if _player.health > 0.0 else 0, "max_armor": _player.armor_capacity(),
+		"map_name": game.MAP_NAMES[game.map_id], "heading_deg": fposmod(-rad_to_deg(_player.rotation.y), 360.0),
+		"mode": "tdm" if game.team_deathmatch else "ffa", "local_team": _player.team_id(),
+		"team_blue_score": team_score.x, "team_red_score": team_score.y,
+		"kills": score.x, "deaths": score.y, "clock": _hud_clock, "score_limit": _hud_limit,
+		"alive_players": live_count, "ping": ping, "network": "NET" if Net.internet else ("LAN" if Net.active else "SOLO"),
+		"online": Net.active,
+		"kill_feed": _feed.duplicate(), "scoreboard_rows": roster, "equipment_slots": equipment,
+		"weapon_icon": WEAPON_ICONS.get(_player.weapon_id, "rifle"),
+		"medkit_hint": _medkit_hint.text if _health_notice.visible and _medkit_hint.visible else "",
+	}
+	if $Ammo.visible:
+		data.merge($Ammo.hud_values())
+	_modern.data = data
+	_modern.queue_redraw()
 
 
 func _build() -> void:
@@ -299,6 +417,16 @@ func _build() -> void:
 	_build_round_panel()
 	_minimap = MINIMAP.new()
 	add_child(_minimap)
+	_minimap.z_index = 2
+	_modern = BREAKWATER_HUD.new()
+	_modern.name = "BreakwaterHUD"
+	_modern.z_index = 1
+	_modern.hide()
+	add_child(_modern)
+	$Ammo.modulate.a = 0.0
+	$Hint.modulate.a = 0.0
+	_health_panel.modulate.a = 0.0
+	_score_panel.modulate.a = 0.0
 
 	_net_label = Label.new()
 	_net_label.visible = false
@@ -331,6 +459,7 @@ func _build() -> void:
 	_loot_notice = _build_loot_label(57.0, Color(0.76, 0.87, 0.56))
 	_inventory_hud = INVENTORY_HUD.new()
 	add_child(_inventory_hud)
+	_inventory_hud.use_modern_equipment()
 
 
 func _build_round_panel() -> void:

@@ -3,6 +3,7 @@ extends Control
 enum Screen { MAIN, SOLO, HOST, GUEST, LOADING, SETUP, WAIT, BROWSER, JOIN }
 
 const UI := preload("res://game/ui/menu_ui.gd")
+const TEAM_BOARD := preload("res://game/ui/team_lobby.gd")
 const MENU_BACKGROUND := preload("res://assets/menu/container_yard.webp")
 const MENU_MUSIC := preload("res://assets/menu/yard_theme.ogg")
 const PatchMenu := preload("res://game/release/patch_menu.gd")
@@ -34,6 +35,13 @@ var _host_button: Button
 var _internet_button: Button
 var _join_button: Button
 var _cancel_button: Button
+var _random_map: CheckButton
+var _team_board: VBoxContainer
+var _solo_bots: SpinBox
+var _ffa_bots_row: Control
+var _roster_card: Control
+var _room_scroll: ScrollContainer
+var _room_body: HBoxContainer
 var _map: OptionButton
 var _map_size: OptionButton
 var _weapons: OptionButton
@@ -117,6 +125,13 @@ func set_modal_open(open: bool) -> void:
 	_frame.visible = not open
 	if not open:
 		UI.reveal(_panel, 0.0, 0.7)
+
+
+func return_from_match() -> void:
+	show()
+	_show_room(Screen.SOLO if Net.solo else (Screen.HOST if _match().room_owner == Net.local_id() else Screen.GUEST))
+	if not _music.playing:
+		_music.play()
 
 
 func show_guest_room() -> void:
@@ -276,7 +291,8 @@ func refresh_room() -> void:
 	var game := _match()
 	if _screen != Screen.SETUP:
 		_map.select(game.map_id)
-		_map_size.select(game.map_size)
+		_random_map.set_pressed_no_signal(game.random_map_each_match)
+		_map_size.select(game.lobby_map_size)
 		_weapons.select(game.weapon_set)
 		_mode.select(int(game.team_deathmatch))
 		_time_limit.select(game.time_option)
@@ -284,11 +300,13 @@ func refresh_room() -> void:
 		_difficulty.select(game.bot_difficulty)
 		_lan_bots.select(game.lan_bot_count)
 	_refresh_map_size_labels()
+	_refresh_team_board(_lan_bots.selected, game.blue_bot_count)
 	var local := Net.local_id()
 	var connected_count: int = Net.MAX_PLAYERS - game.player_slots.count(0)
 	_roster_title.text = "Игроки  %d / %d" % [connected_count, Net.MAX_PLAYERS]
 	for slot in Net.MAX_PLAYERS:
 		var peer: int = game.player_slots[slot]
+		_player_names[slot].get_parent().visible = peer != 0
 		_player_names[slot].text = game.player_label(slot) + (" (вы)" if peer == local else "")
 		if peer == 0:
 			_player_states[slot].text = "Не подключён"
@@ -351,6 +369,7 @@ func _update_insets() -> void:
 	_frame.add_theme_constant_override(&"margin_right", inset)
 	_frame.add_theme_constant_override(&"margin_top", 16)
 	_frame.add_theme_constant_override(&"margin_bottom", 16)
+	_fit_room_scroll()
 
 
 func _set_panel(main: bool, width: float) -> void:
@@ -435,7 +454,15 @@ func _show_room(screen: Screen) -> void:
 	UI.label(_column, title, 32, UI.INK, true)
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override(&"separation", 14)
-	_column.add_child(body)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_room_body = body
+	_room_scroll = ScrollContainer.new()
+	_room_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_room_scroll.follow_focus = true
+	_column.add_child(_room_scroll)
+	_room_scroll.add_child(body)
+	body.minimum_size_changed.connect(_fit_room_scroll)
+	_fit_room_scroll.call_deferred()
 	var setup := VBoxContainer.new()
 	setup.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	setup.add_theme_constant_override(&"separation", 10)
@@ -445,10 +472,15 @@ func _show_room(screen: Screen) -> void:
 
 	var game := _match()
 	_map = _options(game.MAP_NAMES, game.map_id)
-	_map_size = _options(game.MAP.SIZE_NAMES, game.map_size)
+	_map_size = _options(game.MAP.SIZE_NAMES, game.lobby_map_size)
 	_first_action = _map
 	_weapons = _options(game.WEAPON_SET_NAMES, game.weapon_set)
 	UI.row(rules, "Карта", _map)
+	_random_map = CheckButton.new()
+	_random_map.button_pressed = game.random_map_each_match
+	_random_map.disabled = not (solo or host)
+	UI.row(rules, "Случайная карта каждый матч", _random_map)
+	_random_map.toggled.connect(func(_enabled: bool) -> void: _refresh_map_size_labels())
 	UI.row(rules, "Размер карты", _map_size)
 	_map.item_selected.connect(func(_index: int) -> void: _refresh_map_size_labels())
 	_refresh_map_size_labels()
@@ -461,25 +493,41 @@ func _show_room(screen: Screen) -> void:
 	UI.row(rules, "Лимит убийств", _kill_limit)
 	_difficulty = _options(game.DIFFICULTY_NAMES, game.bot_difficulty)
 	UI.row(opponents, "Сложность", _difficulty)
+	_team_board = TEAM_BOARD.new()
+	body.add_child(_team_board)
+	_team_board.player_moved.connect(_move_team_player)
+	_team_board.bot_counts_changed.connect(func() -> void:
+		if _screen == Screen.HOST:
+			_on_rules_changed(0))
+	_mode.item_selected.connect(func(_value: int) -> void:
+		var blue: int = _team_board.bot_counts().x
+		_refresh_team_board(_ffa_bot_count(), blue if _team_board.visible else -1))
 
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_END
 	actions.add_theme_constant_override(&"separation", 8)
 
 	if solo:
-		var bots := SpinBox.new()
-		bots.min_value = 0
-		bots.max_value = 10
-		bots.step = 1
-		bots.custom_minimum_size.x = 92
-		MenuFeedback.wire(bots.get_line_edit())
-		bots.value_changed.connect(MenuFeedback.change)
-		UI.row(opponents, "Количество", bots)
+		_solo_bots = SpinBox.new()
+		_solo_bots.min_value = 0
+		_solo_bots.max_value = game.MAX_BOTS
+		_solo_bots.step = 1
+		_solo_bots.custom_minimum_size.x = 92
+		_solo_bots.value = game._solo_bot_count
+		MenuFeedback.wire(_solo_bots.get_line_edit())
+		_solo_bots.value_changed.connect(MenuFeedback.change)
+		UI.row(opponents, "Количество", _solo_bots)
+		_ffa_bots_row = _solo_bots.get_parent()
+		_refresh_team_board(int(_solo_bots.value), game.blue_bot_count)
 		_column.add_child(actions)
 		UI.button(actions, "Назад", _show_main, &"", true)
 		UI.button(actions, "Начать матч", func() -> void:
-			bots.apply()
-			game.start_solo(int(bots.value), _difficulty.selected, _weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _map_size.selected, _mode.selected == 1)
+			_solo_bots.apply()
+			_team_board.apply_bot_inputs()
+			var bots := _bot_settings()
+			game.start_solo(bots.x, _difficulty.selected, _weapons.selected, _map.selected,
+				Vector2i(_time_limit.selected, _kill_limit.selected), _map_size.selected,
+				_mode.selected == 1, _random_map.button_pressed, bots.y)
 		, &"PrimaryButton")
 		_first_action.grab_focus()
 		UI.reveal(_panel)
@@ -488,6 +536,7 @@ func _show_room(screen: Screen) -> void:
 	_lan_bots = _options(range(game.MAX_BOTS + 1), game.lan_bot_count)
 	_lan_bots.disabled = not host
 	UI.row(opponents, "Количество", _lan_bots)
+	_ffa_bots_row = _lan_bots.get_parent()
 	_display_name = LineEdit.new()
 	_display_name.max_length = Net.MAX_NAME_LENGTH
 	_display_name.placeholder_text = "Имя игрока"
@@ -505,7 +554,8 @@ func _show_room(screen: Screen) -> void:
 		UI.row(rules, "Пароль", _password)
 
 	var roster_card := UI.card(body, "")
-	roster_card.get_parent().custom_minimum_size.x = 252
+	_roster_card = roster_card.get_parent()
+	_roster_card.custom_minimum_size.x = 252
 	_roster_title = UI.label(roster_card, "", 15, UI.ACCENT, true)
 	var roster := VBoxContainer.new()
 	roster.add_theme_constant_override(&"separation", 4)
@@ -518,6 +568,7 @@ func _show_room(screen: Screen) -> void:
 		player_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		_player_names.append(player_name)
 		_player_states.append(UI.label(row, "", 13))
+
 	refresh_room()
 
 	if screen == Screen.HOST:
@@ -537,6 +588,7 @@ func _show_room(screen: Screen) -> void:
 		_kill_limit.item_selected.connect(_on_rules_changed)
 		_difficulty.item_selected.connect(_on_rules_changed)
 		_lan_bots.item_selected.connect(_on_rules_changed)
+		_random_map.toggled.connect(func(_enabled: bool) -> void: _on_rules_changed(0))
 	elif screen == Screen.SETUP:
 		var hint := UI.label(setup, "Выбери карту, правила и пароль. Без пароля в комнату не войти.", 14, UI.MUTED)
 		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -566,8 +618,14 @@ func _show_room(screen: Screen) -> void:
 
 
 func _clear() -> void:
+	_room_scroll = null
+	_room_body = null
 	_player_names.clear()
 	_player_states.clear()
+	_team_board = null
+	_solo_bots = null
+	_ffa_bots_row = null
+	_roster_card = null
 	for child in _column.get_children():
 		_column.remove_child(child)
 		child.queue_free()
@@ -598,13 +656,21 @@ func _save_display_name() -> void:
 
 func _refresh_map_size_labels() -> void:
 	var game := _match()
-	var training: bool = _map.selected == game.MAP.TEST_RANGE_ID
+	var random: bool = _random_map.button_pressed
+	_map.disabled = random or _screen == Screen.GUEST
+	var training: bool = not random and _map.selected == game.MAP.TEST_RANGE_ID
+	var village: bool = not random and _map.selected == game.MAP.VILLAGE_ID
 	if training:
 		_map_size.select(game.MAP.DEFAULT_SIZE)
-	_map_size.disabled = training
+	elif village and _map_size.selected < game.MAP.VILLAGE_MIN_SIZE:
+		_map_size.select(game.MAP.VILLAGE_MIN_SIZE)
+	_map_size.disabled = training or _screen == Screen.GUEST
 	for index in _map_size.item_count:
+		_map_size.set_item_disabled(index, village and index < game.MAP.VILLAGE_MIN_SIZE)
 		var label: String = game.MAP.SIZE_NAMES[index]
-		if _map.selected == game.MAP.BREAKWATER_ID:
+		if random:
+			_map_size.set_item_text(index, label)
+		elif _map.selected == game.MAP.BREAKWATER_ID:
 			var dimensions: Vector2 = game.BREAKWATER.SIZE_BOUNDS[index].size
 			_map_size.set_item_text(index, "%s · %.1f × %.1f м" % [label, dimensions.x, dimensions.y])
 		elif training:
@@ -614,8 +680,55 @@ func _refresh_map_size_labels() -> void:
 			_map_size.set_item_text(index, "%s · %d × %d м" % [label, width, width])
 
 
+func _fit_room_scroll() -> void:
+	if is_instance_valid(_room_scroll) and is_instance_valid(_room_body):
+		_room_scroll.custom_minimum_size.y = minf(_room_body.get_combined_minimum_size().y, maxf(120.0, size.y - 184.0))
+
+
+func _ffa_bot_count() -> int:
+	return int(_solo_bots.value) if _screen == Screen.SOLO else _lan_bots.selected
+
+
+func _bot_settings() -> Vector2i:
+	if _mode.selected != 1:
+		return Vector2i(_ffa_bot_count(), -1)
+	var counts: Vector2i = _team_board.bot_counts()
+	return Vector2i(counts.x + counts.y, counts.x)
+
+
+func _refresh_team_board(total: int, blue: int) -> void:
+	var teams := _mode.selected == 1
+	_team_board.visible = teams
+	_ffa_bots_row.visible = not teams
+	if is_instance_valid(_roster_card):
+		_roster_card.visible = not teams
+	if not teams:
+		return
+	var game := _match()
+	var local := Net.local_id()
+	var players: Array = []
+	for slot in game.player_slots.size():
+		var peer: int = game.player_slots[slot]
+		if peer > 0:
+			var title: String = game.player_label(slot)
+			if peer == local:
+				title = "Вы" if _screen == Screen.SOLO else title + " (вы)"
+			players.append({"peer": peer, "team": slot % 2, "name": title})
+	_team_board.configure(players, total, blue, _screen in [Screen.SOLO, Screen.HOST, Screen.SETUP])
+
+
+func _move_team_player(peer: int, team: int, swap: int) -> void:
+	var bots := _bot_settings()
+	_match().move_lobby_player(peer, team, swap)
+	if _screen == Screen.SOLO:
+		_refresh_team_board(bots.x, bots.y)
+
+
 func _on_rules_changed(_index: int) -> void:
-	_match().update_host_rules(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, _lan_bots.selected, _map_size.selected, _mode.selected == 1)
+	var bots := _bot_settings()
+	_match().update_host_rules(_weapons.selected, _map.selected,
+		Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, bots.x, _map_size.selected,
+		_mode.selected == 1, _random_map.button_pressed, bots.y)
 
 
 func _on_solo() -> void:
@@ -633,17 +746,23 @@ func _create_directory_room() -> void:
 	var arena := _map.selected
 	var limits := Vector2i(_time_limit.selected, _kill_limit.selected)
 	var difficulty := _difficulty.selected
-	var bots := _lan_bots.selected
+	_team_board.apply_bot_inputs()
+	var bots := _bot_settings()
 	var size := _map_size.selected
 	var teams := _mode.selected == 1
+	var random_map := _random_map.button_pressed
+	var blue_bots := bots.y
 	_save_display_name()
 	show_internet_wait("Создаём комнату…")
-	RoomDirectory.request_create(password, weapons, arena, limits, difficulty, bots, size, teams)
+	RoomDirectory.request_create(password, weapons, arena, limits, difficulty, bots.x, size, teams, random_map, blue_bots)
 
 
 func _create_internet_room() -> void:
 	_save_display_name()
-	_match().create_internet_room(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, _lan_bots.selected, _map_size.selected, _mode.selected == 1)
+	_team_board.apply_bot_inputs()
+	var bots := _bot_settings()
+	_match().create_internet_room(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected),
+		_difficulty.selected, bots.x, _map_size.selected, _mode.selected == 1, _random_map.button_pressed, bots.y)
 
 
 func _on_internet() -> void:

@@ -31,9 +31,9 @@ func _process(delta: float) -> void:
 		_broadcast()
 
 
-func request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
+func request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1) -> void:
 	_typed_password = password.strip_edges()
-	net_request_create.rpc_id(1, _typed_password, weapons, arena, limits, difficulty, bot_count, size, teams)
+	net_request_create.rpc_id(1, _typed_password, weapons, arena, limits, difficulty, bot_count, size, teams, random_map, blue_bots)
 
 
 func request_join(room_id: int, password: String) -> void:
@@ -42,7 +42,7 @@ func request_join(room_id: int, password: String) -> void:
 
 
 @rpc("any_peer", "reliable")
-func net_request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false) -> void:
+func net_request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1) -> void:
 	if not Net.directory or not multiplayer.is_server():
 		return
 	var sender := multiplayer.get_remote_sender_id()
@@ -76,6 +76,8 @@ func net_request_create(password: String, weapons: int, arena: int, limits: Vect
 	cfg.set_value("room", "bots", rules.bots)
 	cfg.set_value("room", "size", rules.size)
 	cfg.set_value("room", "teams", teams)
+	cfg.set_value("room", "random_map", random_map)
+	cfg.set_value("room", "blue_bots", clampi(blue_bots, -1, 10))
 	if cfg.save(room_path) != OK:
 		_starting_ports.erase(port)
 		_reply(sender, false, 0, "", "Не удалось создать комнату.")
@@ -232,9 +234,11 @@ func _refresh_records() -> bool:
 		if status.load(str(record.status)) == OK:
 			var players := int(status.get_value("room", "players", 0))
 			var playing := bool(status.get_value("room", "playing", false))
-			if players != int(record.players) or playing != bool(record.playing):
+			var arena := int(status.get_value("room", "arena", record.map_id))
+			if players != int(record.players) or playing != bool(record.playing) or arena != int(record.map_id):
 				record.players = players
 				record.playing = playing
+				record.map_id = arena
 				changed = true
 		if int(record.players) == 0 and now - float(record.born) > EMPTY_GRACE:
 			OS.kill(pid)

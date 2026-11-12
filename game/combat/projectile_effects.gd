@@ -8,6 +8,9 @@ const GRENADE_EXPLOSION := preload("res://game/combat/grenade_explosion.tscn")
 const FRAG_EXPLOSION := preload("res://game/combat/frag_explosion.tscn")
 const SHOT_HEARING_DISTANCE := 125.0
 const SHOT_DISTANCE_LOSS_DB := 16.0
+const GLASS_SHATTER := preload("res://assets/match_audio/hit_glass.wav")
+const GLASS_HEARING_DISTANCE := 20.0
+const GLASS_VOICE_LIMIT := 8
 
 const SURFACES := {
 	"metal": [Color(1.0, 0.61, 0.22), Color(0.38, 0.42, 0.44), 11, 0.0],
@@ -67,6 +70,8 @@ var _burst_curves: Dictionary[bool, Curve] = {}
 var _combat_voices: Dictionary[StringName, Array] = {}
 var _voice_cursor: Dictionary[StringName, int] = {}
 var _impact_voices: Array[AudioStreamPlayer3D] = []
+var _glass_voices: Array[AudioStreamPlayer3D] = []
+var _glass_cursor := 0
 
 
 func _ready() -> void:
@@ -93,6 +98,14 @@ func prepare_acoustics() -> void:
 		voice.attenuation_filter_db = -8.0
 		add_child(voice)
 		_impact_voices.append(voice)
+	for index in GLASS_VOICE_LIMIT:
+		var voice := AudioStreamPlayer3D.new()
+		voice.bus = &"Gunfire"
+		voice.stream = GLASS_SHATTER
+		voice.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
+		voice.attenuation_filter_db = 0.0
+		add_child(voice)
+		_glass_voices.append(voice)
 	for bus: StringName in [&"Gunfire", &"Explosions"]:
 		var voices: Array[SpatialAudio] = []
 		for index in (24 if bus == &"Gunfire" else 6):
@@ -125,6 +138,8 @@ func clear() -> void:
 		elif child is AudioStreamPlayer3D and child in _impact_voices:
 			child.stop()
 			child.remove_meta(&"impact_started")
+		elif child is AudioStreamPlayer3D and child in _glass_voices:
+			child.stop()
 		elif child is CPUParticles3D:
 			child.emitting = false
 			child.hide()
@@ -133,6 +148,7 @@ func clear() -> void:
 			child.queue_free()
 	_active_bursts = 0
 	_marks.clear()
+	_glass_cursor = 0
 
 
 func warm_rendering(ammo: Dictionary) -> void:
@@ -203,7 +219,8 @@ func _play_spatial_shot(profile: String, at: Vector3) -> void:
 	play_combat_sound(shot_sound(profile), at, level, SHOT_HEARING_DISTANCE, &"Gunfire")
 
 
-func play_combat_sound(clip: AudioStream, at: Vector3, gain: float, reach: float, bus: StringName) -> void:
+func play_combat_sound(clip: AudioStream, at: Vector3, gain: float, reach: float, bus: StringName,
+		occlusion_floor_hz: int = 120) -> void:
 	var camera := get_viewport().get_camera_3d()
 	if not camera or not _combat_voices.has(bus):
 		return
@@ -228,6 +245,8 @@ func play_combat_sound(clip: AudioStream, at: Vector3, gain: float, reach: float
 			player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
 			player.max_db = level
 			player.max_distance = 0.0 if is_gunfire else reach
+			if not is_gunfire:
+				player.occlusion_min_lp_cutoff = occlusion_floor_hz
 		var travel_time := distance / float(voice.speed_of_sound)
 		var pitch := randf_range(0.97, 1.03)
 		var tail := 0.35 if bus == &"Explosions" else 0.08
@@ -261,7 +280,28 @@ func _play_impact_sound(at: Vector3, surface: String, strength: float) -> void:
 	available.play()
 
 
+func glass_shatter(at: Vector3, normal: Vector3) -> void:
+	var camera := get_viewport().get_camera_3d()
+	if not camera or DisplayServer.get_name() == "headless":
+		return
+	var distance := camera.global_position.distance_to(at)
+	if distance <= MAX_IMPACT_VISUAL_DISTANCE:
+		_burst(at + normal * 0.012, normal, Color(0.69, 0.91, 0.94), 28, 0.64, 6.9,
+			94.0, 0.032, Vector3.DOWN * 13.0, "glass")
+	if distance > GLASS_HEARING_DISTANCE or _glass_voices.is_empty():
+		return
+	var voice := _glass_voices[_glass_cursor]
+	_glass_cursor = (_glass_cursor + 1) % _glass_voices.size()
+	voice.stop()
+	voice.global_position = at
+	voice.volume_db = lerpf(-1.0, -6.0, distance / GLASS_HEARING_DISTANCE)
+	voice.play()
+
+
 func impact(at: Vector3, normal: Vector3, surface: String, profile: String, remaining_force: float = 1.0, leave_mark: bool = true) -> void:
+	if surface == "glass":
+		glass_shatter(at, normal)
+		return
 	var power := 0.68 if profile == "shotgun" else sqrt(float(Weapon.WEAPONS[profile].damage) / 45.0)
 	var strength := clampf(power * remaining_force, 0.32, 1.45)
 	_play_impact_sound(at, surface, strength)
@@ -418,7 +458,9 @@ func _burst(at: Vector3, axis: Vector3, tint: Color, amount: int, duration: floa
 	particles.damping_max = 2.4
 	particles.scale_amount_min = size * 0.45
 	particles.scale_amount_max = size
-	particles.particle_flag_align_y = kind != "smoke"
+	particles.particle_flag_align_y = kind not in ["smoke", "glass"]
+	particles.angular_velocity_min = -420.0 if kind == "glass" else 0.0
+	particles.angular_velocity_max = 560.0 if kind == "glass" else 0.0
 	particles.mesh = _particle_mesh(kind, stretch)
 	if not _burst_gradients.has(tint):
 		var gradient := Gradient.new()
@@ -453,6 +495,17 @@ func _particle_mesh(kind: String, stretch: float) -> Mesh:
 		var quad := QuadMesh.new()
 		quad.material = _sprite(_soft, Color.WHITE, true)
 		mesh = quad
+	elif kind == "glass":
+		var shard := PrismMesh.new()
+		shard.size = Vector3(0.72, 1.9, 0.12)
+		shard.left_to_right = 0.34
+		var material := StandardMaterial3D.new()
+		material.vertex_color_use_as_albedo = true
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.roughness = 0.18
+		material.metallic = 0.28
+		shard.material = material
+		mesh = shard
 	else:
 		var chip := BoxMesh.new()
 		chip.size = Vector3(0.43, 2.7 + stretch, 0.43) if kind == "spark" else Vector3(0.68, 1.0 + stretch, 0.37)

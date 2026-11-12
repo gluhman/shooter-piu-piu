@@ -14,12 +14,17 @@ const AUTO_REACH := 1.35
 const CRATE_SCALE := 1.65
 const CRATE_RESPAWN_S := 28.0
 const CRATE_PICKUP_DELAY_S := 0.55
+const MARKET_REWARDS := [
+	[Kind.WEAPON, "launcher"], [Kind.WEAPON, "m249"], [Kind.ARMOR, ""], [Kind.MEDKIT, ""],
+]
 
 var _crates: Array[StaticBody3D] = []
 var _lids: Array[Node3D] = []
 var _open: Array[bool] = []
 var _crate_respawns: Array[float] = []
 var _crate_drop_ids: Array[int] = []
+var _market_crate_count := 0
+var _market_drops: Dictionary[int, int] = {}
 var _lid_tweens: Dictionary[int, Tween] = {}
 var _drops: Dictionary[int, Dictionary] = {}
 var _requests: Dictionary[int, Vector2i] = {}
@@ -28,13 +33,15 @@ var _clock := 0.0
 var _armor_respawns: Array[Dictionary] = []
 var _prompt_wait := 0.0
 var _auto_pickup_wait := 0.0
+var _hover_door := -1
 var _hover := Vector2i(-1, -1)
 
 @onready var _match := get_parent()
 @onready var _hud := get_node("../HUD")
 
 
-func build_crates(placements: Array[Transform3D]) -> void:
+func build_crates(placements: Array[Transform3D], market_crate_count := 0) -> void:
+	_market_crate_count = market_crate_count
 	for placement in placements:
 		var crate := StaticBody3D.new()
 		crate.name = "SupplyCrate%d" % _crates.size()
@@ -76,6 +83,7 @@ func warm_rendering() -> Node3D:
 
 func reset_round() -> void:
 	_armor_respawns.clear()
+	_market_drops.clear()
 	for index in _crate_respawns.size():
 		_crate_respawns[index] = 0.0
 		_crate_drop_ids[index] = -1
@@ -85,6 +93,7 @@ func reset_round() -> void:
 		_set_open(index, false, false)
 	_requests.clear()
 	_hover = Vector2i(-1, -1)
+	_hover_door = -1
 	_hud.show_loot_prompt("")
 
 
@@ -98,6 +107,7 @@ func clear_map() -> void:
 	_open.clear()
 	_crate_respawns.clear()
 	_crate_drop_ids.clear()
+	_market_crate_count = 0
 	_lid_tweens.clear()
 
 
@@ -128,6 +138,7 @@ func drop_combatant(actor: Node, impact: Dictionary) -> void:
 	for index in skeleton.get_bone_count():
 		pose.append(skeleton.get_bone_pose(index))
 	body_state["pose"] = pose
+	body_state["team"] = actor.team_id() if _match.team_deathmatch else -1
 	_add_drop(Kind.BODY, "", ceili(actor.armor), actor.global_position, actor.rotation.y, true, body_state)
 	var items: Array[Dictionary] = []
 	var inventory: Dictionary[String, Vector2i] = actor.inventory_stock()
@@ -158,7 +169,14 @@ func _drop_offset(at: Vector3, offset: Vector3, ignored: Array[RID]) -> Vector3:
 
 
 func interact(actor: Node) -> void:
-	if _hover.x < 0 or not actor.accepts_gameplay_input():
+	if not actor.accepts_gameplay_input():
+		return
+	if _hover_door >= 0:
+		var fixtures := _match.get_node_or_null("Map/VillageFixtures")
+		if fixtures:
+			fixtures.request_door(actor, _hover_door)
+			return
+	if _hover.x < 0:
 		return
 	if Net.active and not multiplayer.is_server():
 		net_interact.rpc_id(1, _hover)
@@ -207,6 +225,9 @@ func _physics_process(delta: float) -> void:
 				_armor_respawns.remove_at(index)
 		for index in _crate_respawns.size():
 			if _crate_respawns[index] > 0.0 and _crate_respawns[index] <= _clock:
+				if _market_drops.has(index):
+					_remove_drop(_market_drops[index])
+					_market_drops.erase(index)
 				_crate_respawns[index] = 0.0
 				_remove_crate_drop(index)
 				_set_open(index, false, true)
@@ -255,6 +276,7 @@ func _pick_up_nearby() -> void:
 func _update_prompt() -> void:
 	var actor: Node = _match.combatant(Net.local_id())
 	_hover = Vector2i(-1, -1)
+	_hover_door = -1
 	var prompt := ""
 	if actor and actor.accepts_gameplay_input():
 		var best := INF
@@ -269,13 +291,19 @@ func _update_prompt() -> void:
 				prompt = "открыть ящик"
 		for id in _drops:
 			var drop := _drops[id]
-			if drop.kind != Kind.WEAPON or not _can_take(actor, drop, true):
+			var swap_grenades: bool = drop.kind == Kind.GRENADE and actor.carried_grenade() not in ["", drop.weapon]
+			if (drop.kind != Kind.WEAPON and not swap_grenades) or not _can_take(actor, drop, true):
 				continue
 			var score := _target_score(actor, drop.position + Vector3.UP * 0.18)
 			if score < best:
 				best = score
 				_hover = Vector2i(drop.kind, id)
-				prompt = "забрать %s гранату" % ARSENAL.GRENADE_LABELS[drop.weapon] if drop.kind == Kind.GRENADE else _weapon_pickup_label(actor, drop)
+				prompt = "заменить гранаты на «%s»" % ARSENAL.GRENADE_LABELS[drop.weapon] if swap_grenades else _weapon_pickup_label(actor, drop)
+		var fixtures := _match.get_node_or_null("Map/VillageFixtures")
+		if fixtures:
+			_hover_door = fixtures.door_in_view(actor)
+			if _hover_door >= 0:
+				prompt = fixtures.door_prompt(_hover_door)
 	if prompt != "":
 		prompt = "%s — %s" % [GameSettings.binding_label(&"interact"), prompt]
 	_hud.show_loot_prompt(prompt)
@@ -332,7 +360,7 @@ func _collect_drop(actor: Node, id: int, drop: Dictionary, manual := false) -> v
 	var reward := {"kind": drop.kind, "weapon": drop.weapon, "amount": amount}
 	_give(actor, reward)
 	_hud_pickup(actor, reward)
-	if drop.kind == Kind.ARMOR:
+	if drop.kind == Kind.ARMOR and id not in _market_drops.values():
 		_schedule_armor_respawn(drop.position, drop.yaw)
 	if amount < int(drop.amount):
 		var remaining := int(drop.amount) - amount
@@ -356,10 +384,22 @@ func _open_crate(actor: Node, index: int, at: Vector3) -> void:
 		net_open_crate.rpc_id(peer, index, true, drop_id)
 	var kind: int = [Kind.AMMO, Kind.MEDKIT, Kind.ARMOR, Kind.GRENADE].pick_random()
 	var weapon: String = actor.ammo_reward_weapon()
-	if kind == Kind.GRENADE:
-		weapon = ARSENAL.GRENADE_IDS.pick_random()
 	var amount := 1
-	if kind == Kind.AMMO:
+	if index < _market_crate_count:
+		var reward: Array = MARKET_REWARDS[index]
+		kind = reward[0]
+		weapon = reward[1]
+		if kind == Kind.WEAPON and not _match.allows_weapon(weapon):
+			kind = Kind.ARMOR if index == 0 else Kind.MEDKIT
+			weapon = ""
+		if kind == Kind.WEAPON:
+			amount = int(WEAPON.WEAPONS[weapon].mag)
+		elif kind == Kind.MEDKIT:
+			amount = 2
+		_market_drops[index] = _next_id
+	elif kind == Kind.GRENADE:
+		weapon = ARSENAL.GRENADE_IDS.pick_random()
+	elif kind == Kind.AMMO:
 		amount = int(WEAPON.WEAPONS[weapon].mag) * 2
 	_add_drop(kind, weapon, amount, at, _crates[index].rotation.y, true, {}, CRATE_PICKUP_DELAY_S)
 	_crate_respawns[index] = _clock + CRATE_RESPAWN_S

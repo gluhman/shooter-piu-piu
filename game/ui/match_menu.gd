@@ -39,6 +39,8 @@ func _ready() -> void:
 	_score_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_score_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_score_overlay.theme = theme
+	_score_overlay.modulate.a = 0.0
+	_score_overlay.visibility_changed.connect(func() -> void: _hud.set_modern_scoreboard(_score_overlay.visible))
 	add_sibling.call_deferred(_score_overlay)
 	_score_overlay.hide()
 	_score_rows = _layout(_score_overlay, Vector2(540, 0), false)
@@ -162,24 +164,31 @@ func show_results(reason: String, rows: Array) -> void:
 	if table_height > 260.0:
 		table.add_theme_constant_override(&"margin_right", 10)
 	if _match.can_choose_next_map():
-		var map_picker := OptionButton.new()
-		for map_name: String in _match.MAP_NAMES:
-			map_picker.add_item(map_name)
-		map_picker.select(_match.map_id)
-		UI.row(_panel, "Следующая карта", map_picker)
+		var map_picker: OptionButton
+		var random: bool = _match.random_map_each_match
+		if not random:
+			map_picker = OptionButton.new()
+			for map_name: String in _match.MAP_NAMES:
+				map_picker.add_item(map_name)
+			map_picker.select(_match.map_id)
+			UI.row(_panel, "Следующая карта", map_picker)
 		var actions := HBoxContainer.new()
 		actions.add_theme_constant_override(&"separation", 10)
 		_panel.add_child(actions)
-		var start_label := "Начать одиночный матч" if not Net.active and not Net.solo else "Начать на выбранной карте"
+		var start_label := "Случайная карта" if random else "Начать на выбранной карте"
 		var next := UI.button(actions, start_label, func() -> void:
-			_match.start_next_map(map_picker.selected)
+			_match.start_next_map(_match.map_id if random else map_picker.selected)
 		, &"PrimaryButton")
 		next.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		if _match.can_restart():
+		if _match.can_restart() and not random:
 			UI.button(actions, "Реванш", _match.restart_round)
-		map_picker.grab_focus()
+		if random:
+			next.grab_focus()
+		else:
+			map_picker.grab_focus()
 	else:
 		_label(_panel, "Хост выбирает следующую карту", 16, MUTED)
+	UI.button(_panel, "Выйти в лобби", _match.exit_to_lobby, &"", true)
 	var leave := UI.button(_panel, "Выйти в главное меню", _leave, &"", true)
 	if not _match.can_choose_next_map():
 		leave.grab_focus()
@@ -240,6 +249,7 @@ func _show_pause() -> void:
 		restart.disabled = not _match.can_restart()
 		if restart.disabled:
 			_label(round_actions, "Раунд перезапускает хост", 14, MUTED)
+		UI.button(round_actions, "Выйти в лобби", _match.exit_to_lobby, &"", true)
 		UI.button(round_actions, "Выйти в главное меню", _leave, &"", true)
 
 
@@ -602,7 +612,7 @@ func _ping_text(value: Variant) -> String:
 
 func _layout(parent: Control, minimum: Vector2, modal: bool) -> VBoxContainer:
 	var dim := ColorRect.new()
-	dim.color = Color(0.012, 0.019, 0.017, 0.75 if modal else 0.46)
+	dim.color = Color(0.012, 0.022, 0.032, 0.75 if modal else 0.46)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(dim)
@@ -612,7 +622,11 @@ func _layout(parent: Control, minimum: Vector2, modal: bool) -> VBoxContainer:
 	parent.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = minimum
-	panel.add_theme_stylebox_override("panel", UI.panel_style())
+	var panel_style := UI.panel_style()
+	panel_style.bg_color = Color(0.033, 0.063, 0.082, 0.97)
+	panel_style.border_color = Color("#e0bc46")
+	panel_style.border_width_top = 3
+	panel.add_theme_stylebox_override("panel", panel_style)
 	center.add_child(panel)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 12)

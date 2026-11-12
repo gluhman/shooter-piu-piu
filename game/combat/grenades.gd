@@ -6,6 +6,7 @@ const SMOKE_SHADER := preload("res://game/combat/smoke_cloud.gdshader")
 const EXPLOSION := preload("res://assets/match_audio/explosion_body.wav")
 const DISTANT_EXPLOSION := preload("res://assets/match_audio/explosion_distant.wav")
 const DISTANT_EXPLOSION_DISTANCE := 35.0
+const EXPLOSION_OCCLUSION_FLOOR_HZ := 5500
 const FLASH_BANG := preload("res://assets/arsenal/flash_bang.wav")
 const SMOKE_HISS := preload("res://assets/arsenal/smoke_hiss.wav")
 const GRAVITY: Vector3 = Vector3.DOWN * Balance.MOVEMENT.gravity_m_s2
@@ -18,6 +19,7 @@ const SMOKE_MAX_DRIFT := 4.0
 const SMOKE_WIND_COUPLING := 0.65
 const SMOKE_CENTER_HEIGHT := 1.45
 const ROUND_RADIUS := 5.0
+const GLASS_BLAST_RADIUS := 4.0
 
 class Flight:
 	var id: int
@@ -50,6 +52,7 @@ var _sync_left := 0.0
 var _puff := QuadMesh.new()
 
 @onready var _match := get_parent()
+@onready var _ballistics := get_node("../Ballistics")
 @onready var _hud := get_node("../HUD")
 @onready var _sky := get_node("../WorldEnvironment")
 
@@ -274,6 +277,12 @@ func _step(flight: Flight, delta: float, space: PhysicsDirectSpaceState3D, autho
 		if flight.source.is_valid():
 			query.exclude = [flight.source]
 		var hit := space.intersect_ray(query) if authority else {}
+		if flight.kind != "round" and not hit.is_empty():
+			var excluded := query.exclude
+			while _ballistics.shatter_glass(hit):
+				excluded.append(hit.rid)
+				query.exclude = excluded
+				hit = space.intersect_ray(query)
 		flight.velocity += GRAVITY * delta
 		if hit.is_empty():
 			flight.at = next
@@ -305,7 +314,7 @@ func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) ->
 	var preset: Dictionary = Balance.GRENADES.get(kind, {})
 	var radius := float(preset.get("blast_radius_m", preset.get("effect_radius_m", ROUND_RADIUS)))
 	var space := get_world_3d().direct_space_state
-	var query: PhysicsRayQueryParameters3D = _match.get_node("Ballistics").world_query()
+	var query: PhysicsRayQueryParameters3D = _ballistics.world_query()
 	query.hit_from_inside = false
 	for actor in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
 		if not actor.control_enabled or not _match.allows_damage(shooter, actor.score_id()):
@@ -317,7 +326,7 @@ func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) ->
 		query.from = at
 		for target: Vector3 in actor.blast_samples():
 			query.to = target
-			if at.is_equal_approx(target) or space.intersect_ray(query).is_empty():
+			if at.is_equal_approx(target) or _ballistics.ray_through_glass(space, query).is_empty():
 				clear += 1
 		if clear == 0:
 			continue
@@ -335,6 +344,9 @@ func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) ->
 			var amount := Balance.frag_damage(distance, clear) if kind == "frag" else damage * Balance.blast_fraction(distance, radius, clear)
 			actor.take_damage(amount, shooter, "chest", 0.0,
 				{"velocity": (target - at).normalized() * 2.0, "point": target, "zone": "blast", "source": kind})
+	var fixtures := _match.get_node_or_null("Map/VillageFixtures")
+	if fixtures:
+		fixtures.shatter_near(at, minf(radius, GLASS_BLAST_RADIUS), space)
 
 
 @rpc("authority", "reliable")
@@ -355,7 +367,7 @@ func net_detonate(id: int, kind: String, at: Vector3) -> void:
 			var camera := get_viewport().get_camera_3d()
 			var distant := camera != null and camera.global_position.distance_to(at) >= DISTANT_EXPLOSION_DISTANCE
 			effects.play_explosion_sound(DISTANT_EXPLOSION if distant else EXPLOSION, at,
-				-10.0 if distant else -3.0, 155.0)
+				-10.0 if distant else -3.0, 155.0, EXPLOSION_OCCLUSION_FLOOR_HZ)
 		effects.grenade_effect(at, flash, float(Balance.GRENADES.frag.blast_radius_m) if kind == "frag" else ROUND_RADIUS, kind == "round")
 
 
