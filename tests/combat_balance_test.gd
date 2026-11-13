@@ -189,6 +189,7 @@ func _run() -> void:
 
 	await _check_aim_alignment()
 	_check_probabilistic_accuracy()
+	await _check_m79()
 	await _check_projectile_flight()
 	await _check_ballistic_aim()
 	_check_hurtbox_lifetime()
@@ -343,6 +344,34 @@ func _ballistic_aim_error(eye: Vector3, muzzle: Vector3, point: Vector3, directi
 		if not ballistics._shots.has(id):
 			return projectile.position.distance_to(point)
 	return INF
+
+
+func _check_m79() -> void:
+	var gun: Node3D = shooter.gun
+	var camera: Camera3D = shooter._camera
+	var floor := _wall(Vector3(0, -0.1, -18), Vector3(20, 0.2, 52))
+	for distance: float in [8.0, 20.0]:
+		_reset_target("none")
+		target.position.z = -distance
+		shooter.rotation = Vector3.ZERO
+		target._hurtboxes.update_pose()
+		await _flush_physics()
+		camera.look_at(target.hurtbox_center("chest"))
+		shooter._recoil_pitch = 0.0
+		gun.equip("launcher")
+		shooter.aiming = true
+		gun._aim_amount = 1.0
+		await _flush_physics()
+		gun._try_fire()
+		for tick in 180:
+			grenades._physics_process(1.0 / 60.0)
+			if grenades._flights.is_empty():
+				break
+		_check("M79 damages an exposed target at %d m" % distance, target.health < 100.0)
+	shooter.aiming = false
+	camera.rotation = Vector3.ZERO
+	floor.queue_free()
+	grenades.reset_round()
 
 
 func _check_projectile_flight() -> void:

@@ -553,11 +553,13 @@ func fire_bot(target: Vector3, aim_error: float) -> bool:
 	_player.cancel_spawn_protection()
 	_apply_view(0.0)
 	var barrel := _muzzle.global_transform
-	var bore_target := target
+	var direction := (target - barrel.origin).normalized()
 	if _weapon_id == "launcher":
-		bore_target.y += 0.5 * float(Balance.MOVEMENT.gravity_m_s2) * pow(barrel.origin.distance_to(target) / _grenades.LAUNCH_SPEED, 2.0)
+		var arc: Vector3 = _grenades.round_aim_direction(barrel.origin, target, _player.shot_motion())
+		if not arc.is_zero_approx():
+			direction = arc
 
-	var aim := Basis.looking_at((bore_target - barrel.origin).normalized(), _camera.global_basis.y)
+	var aim := Basis.looking_at(direction, _camera.global_basis.y)
 	var cone := tan(deg_to_rad(aim_error))
 	var offset := Vector2.from_angle(randf() * TAU) * sqrt(randf()) * cone
 	var bore := aim * Vector3(offset.x, offset.y, -1.0).normalized()
@@ -571,7 +573,11 @@ func fire_bot(target: Vector3, aim_error: float) -> bool:
 func _launch_sighted(barrel: Transform3D, camera: Transform3D, target: Vector3, rewind: float = -1.0) -> void:
 	var aim := barrel.basis
 	var works: Node = _player.fieldworks()
-	if _weapon_id != "launcher" and not (works and works.is_mounted(_player)):
+	if _weapon_id == "launcher":
+		var direction: Vector3 = _grenades.round_aim_direction(barrel.origin, target, _player.shot_motion())
+		if not direction.is_zero_approx():
+			aim = Basis.looking_at(direction, camera.basis.y)
+	elif not (works and works.is_mounted(_player)):
 		var direction: Vector3 = _ballistics.aim_direction(_weapon_id, barrel.origin, target, _player.shot_motion())
 		if not direction.is_zero_approx():
 			aim = Basis.looking_at(direction, camera.basis.y)

@@ -10,7 +10,10 @@ const COVER_DIRECTIONS := 8
 const HEARING_RANGE := 34.0
 const HEARING_MEMORY := 2.4
 const ENGAGE_DELAY := [Vector2(0.45, 0.75), Vector2(0.24, 0.42), Vector2(0.12, 0.26), Vector2(0.08, 0.17), Vector2(0.05, 0.11)]
-const REPOSITION_SHOTS := [5, 7, 9, 11, 13]
+const REPOSITION_SHOTS := [10, 8, 6, 5, 4]
+const RETREAT_HEALTH := [0.0, 28.0, 40.0, 52.0, 62.0]
+const COVER_RESERVE := [1, 2, 3, 4, 5]
+const PEEK_EXPOSURE := [0.0, 0.0, 1.25, 1.0, 0.8]
 const DIFFICULTY := [
 	{"speed": 0.85, "shot_delay": 1.35, "spread": 2.4, "vision": Vector2(0.20, 0.30), "hearing": 26.0, "search_time": 4.0, "flank": 3.0, "cover_cooldown": Vector2(4.0, 5.0)},
 	{"speed": 1.0, "shot_delay": 1.0, "spread": 1.15, "vision": Vector2(0.12, 0.19), "hearing": HEARING_RANGE, "search_time": SEARCH_TIME, "flank": 5.0, "cover_cooldown": Vector2(3.5, 4.5)},
@@ -61,6 +64,11 @@ var _cover_threat := Vector3.INF
 var _cover_travel_left := 0.0
 var _cover_hold_left := 0.0
 var _holding_cover := false
+var _return_to_cover := Vector3.INF
+var _peek_goal := Vector3.INF
+var _peek_left := 0.0
+var _peek_travel_left := 0.0
+var _peeked_from_cover := false
 var _cover_cooldown := 0.0
 var _training_pose_left := 0.0
 var _sight_ray := PhysicsRayQueryParameters3D.new()
@@ -104,7 +112,6 @@ func take_damage(amount: float, killer_id: int = 0, zone: String = "chest", head
 	if is_instance_valid(attacker) and attacker != self:
 		_incoming_fire = attacker.aim_center() + Vector3.UP * 0.4
 		if attacker is Node3D and attacker.control_enabled and attacker.health > 0 and not get_parent().same_team(score_id(), attacker.score_id()):
-			_target = attacker
 			_last_seen = attacker.global_position
 			_search_left = SEARCH_TIME
 			_flank_point = Vector3.INF
@@ -159,6 +166,11 @@ func _reset_behavior() -> void:
 	_cover_hold_left = 0.0
 	_holding_cover = false
 	_cover_cooldown = 0.0
+	_return_to_cover = Vector3.INF
+	_peek_goal = Vector3.INF
+	_peek_left = 0.0
+	_peek_travel_left = 0.0
+	_peeked_from_cover = false
 	_training_pose_left = 0.0
 
 
@@ -224,8 +236,10 @@ func _physics_process(delta: float) -> void:
 
 	var wish := Vector3.ZERO
 	var speed := BOT_SPEED * float(modifiers.speed)
-	if _cover_goal.is_finite():
-		wish = _use_cover(delta, ammo)
+	if _return_to_cover.is_finite():
+		wish = _peek(target, profile, modifiers, ammo, delta)
+	elif _cover_goal.is_finite():
+		wish = _use_cover(delta, ammo, target)
 		speed *= 1.15
 	else:
 		_update_crouch(false)
@@ -263,13 +277,14 @@ func _physics_process(delta: float) -> void:
 		_path_target = Vector3.INF
 
 
-func _fight(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Vector2i, delta: float) -> Vector3:
+func _fight(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Vector2i, delta: float, strafe: bool = true) -> Vector3:
 	aiming = true
 	var to_target: Vector3 = target.aim_center() - _camera.global_position
 	_face(to_target, delta)
 	_camera.rotation.x = clampf(asin(to_target.normalized().y), -0.78, 0.78)
 	var direction := _flat_direction(to_target)
-	if ammo.x > 0 and _engage_left <= 0.0 and _shoot_wait <= 0.0 and (-global_basis.z).dot(direction) > 0.985 and _has_sight(target):
+	var distance: float = global_position.distance_to(target.global_position)
+	if ammo.x > 0 and distance >= float(profile.get("minimum", 0.0)) and _engage_left <= 0.0 and _shoot_wait <= 0.0 and (-global_basis.z).dot(direction) > 0.985 and _has_sight(target):
 		if gun.fire_bot(target.aim_center(), float(modifiers.spread)):
 			var cadence := float(profile.delay) * float(modifiers.shot_delay) * randf_range(0.88, 1.14)
 			_shoot_wait = maxf(float(Weapon.WEAPONS[weapon_id].cooldown), cadence)
@@ -277,14 +292,15 @@ func _fight(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Ve
 			if _shots_since_reposition >= int(REPOSITION_SHOTS[_difficulty_index()]) and _cover_cooldown == 0.0:
 				_incoming_fire = target.aim_center() + Vector3.UP * 0.4
 				_shots_since_reposition = 0
-	var distance: float = global_position.distance_to(target.global_position)
+	if not strafe:
+		return Vector3.ZERO
 	_strafe_left -= delta
 	if _strafe_left <= 0.0:
 		_strafe_left = randf_range(0.65, 1.35)
 		_strafe_side *= -1.0
 	var side := direction.cross(Vector3.UP) * _strafe_side
-	var advance := ammo.x > 0 and distance > float(profile.preferred) * 1.15
-	var retreat := ammo.x == 0 or distance < float(profile.preferred) * 0.78
+	var retreat: bool = ammo.x == 0 or distance < float(profile.preferred) * 0.78 or health <= RETREAT_HEALTH[_difficulty_index()]
+	var advance := not retreat and distance > float(profile.preferred) * 1.15
 	var back := -direction * (0.9 if retreat else 0.0)
 	var forward := _follow_path(target.global_position) if advance else Vector3.ZERO
 	var wish := (side * (0.45 if advance else 1.0) + back + forward * (1.35 if advance else 0.0)).normalized()
@@ -301,8 +317,22 @@ func _search(preferred: float, flank_offset: float) -> Vector3:
 	if not _flank_point.is_finite():
 		var toward := _flat_direction(_last_seen - global_position)
 		var side := toward.cross(Vector3.UP) * _strafe_side
-		var sample := _last_seen - toward * clampf(preferred * 0.75, 5.0, 10.0) + side * flank_offset
-		_flank_point = NavigationServer3D.map_get_closest_point(_navigation.get_navigation_map(), sample)
+		var navigation_map := _navigation.get_navigation_map()
+		if NavigationServer3D.map_get_iteration_id(navigation_map) == 0:
+			return Vector3.ZERO
+		var center := _last_seen - toward * clampf(preferred * 0.75, 5.0, 10.0)
+		_flank_point = NavigationServer3D.map_get_closest_point(navigation_map, center + side * flank_offset)
+		if _difficulty_index() >= 2:
+			var opposite := NavigationServer3D.map_get_closest_point(navigation_map, center - side * flank_offset)
+			var chosen_path := NavigationServer3D.map_get_path(navigation_map, global_position, _flank_point, true)
+			var other_path := NavigationServer3D.map_get_path(navigation_map, global_position, opposite, true)
+			var threat := Vector2(_last_seen.x, _last_seen.z)
+			var chosen_length := _cover_path_length(chosen_path, threat, 2.0)
+			var other_length := _cover_path_length(other_path, threat, 2.0)
+			if not other_path.is_empty() and other_path[-1].distance_squared_to(opposite) <= 0.25 and (
+				chosen_path.is_empty() or chosen_path[-1].distance_squared_to(_flank_point) > 0.25 or other_length < chosen_length
+			):
+				_flank_point = opposite
 	var wish := _follow_path(_flank_point)
 	if _navigation.is_navigation_finished():
 		_search_left = 0.0
@@ -310,12 +340,13 @@ func _search(preferred: float, flank_offset: float) -> Vector3:
 
 
 func _try_take_cover(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Vector2i) -> void:
-	if _cover_goal.is_finite() or _cover_cooldown > 0.0:
+	if _cover_goal.is_finite() or _return_to_cover.is_finite() or _cover_cooldown > 0.0:
 		return
-	var low_ammo: bool = ammo.x == 0 or (ammo.y > 0 and ammo.x <= 1 and not gun.is_reloading())
+	var low_ammo: bool = ammo.x == 0 or (ammo.y > 0 and ammo.x <= COVER_RESERVE[_difficulty_index()] and not gun.is_reloading())
 	var threat := _incoming_fire
-	var approach := target != null and not threat.is_finite() and not low_ammo and float(profile.range) <= 24.0 and global_position.distance_to(target.global_position) > float(profile.preferred) + 4.0
-	if not threat.is_finite() and target and (low_ammo or approach):
+	var wounded: bool = health <= RETREAT_HEALTH[_difficulty_index()]
+	var approach := target != null and not threat.is_finite() and not low_ammo and not wounded and float(profile.range) <= 24.0 and global_position.distance_to(target.global_position) > float(profile.preferred) + 4.0
+	if not threat.is_finite() and target and (low_ammo or approach or wounded):
 		threat = target.aim_center() + Vector3.UP * 0.4
 	if not threat.is_finite():
 		return
@@ -324,6 +355,7 @@ func _try_take_cover(target: Node3D, profile: Dictionary, modifiers: Dictionary,
 	_incoming_fire = Vector3.INF
 	_cover_goal = _find_cover(threat, approach)
 	if _cover_goal.is_finite():
+		_peeked_from_cover = false
 		_cover_threat = threat
 		_cover_travel_left = COVER_TRAVEL_TIME
 		_cover_hold_left = randf_range(0.65, 1.05)
@@ -331,7 +363,7 @@ func _try_take_cover(target: Node3D, profile: Dictionary, modifiers: Dictionary,
 		_blocked_time = 0.0
 
 
-func _use_cover(delta: float, ammo: Vector2i) -> Vector3:
+func _use_cover(delta: float, ammo: Vector2i, target: Node3D) -> Vector3:
 	aiming = false
 	_camera.rotation.x = move_toward(_camera.rotation.x, 0.0, delta * 2.5)
 	if not _holding_cover:
@@ -344,14 +376,61 @@ func _use_cover(delta: float, ammo: Vector2i) -> Vector3:
 
 	_update_crouch(true)
 	_face(_cover_threat - global_position, delta)
-	if ammo.y > 0 and ammo.x <= 1:
+	if ammo.y > 0 and ammo.x <= COVER_RESERVE[_difficulty_index()]:
 		gun.reload_bot()
 	_cover_hold_left -= delta
 	if _cover_hold_left <= 0.0 and not gun.is_reloading():
+		if _difficulty_index() >= 2 and ammo.x > 0 and not _peeked_from_cover:
+			_plan_peek(target.aim_center() if target else _cover_threat)
 		_cover_goal = Vector3.INF
 		_holding_cover = false
 		_cover_cooldown = maxf(_cover_cooldown, 1.2)
 	return Vector3.ZERO
+
+
+func _plan_peek(threat: Vector3) -> void:
+	var side := _flat_direction(threat - global_position).cross(Vector3.UP) * _strafe_side
+	var query := _cover_query(threat)
+	var space := get_world_3d().direct_space_state
+	for direction in [side, -side]:
+		for distance in [0.8, 1.5, 2.2]:
+			var offset: Vector3 = direction * distance
+			if test_move(global_transform, offset):
+				continue
+			query.to = _camera.global_position + offset + Vector3.UP * CROUCH_DROP
+			if space.intersect_ray(query).is_empty():
+				_return_to_cover = global_position
+				_peek_goal = global_position + offset
+				_peek_travel_left = 1.5
+				_peek_left = PEEK_EXPOSURE[_difficulty_index()]
+				_shots_since_reposition = 0
+				return
+
+
+func _peek(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Vector2i, delta: float) -> Vector3:
+	_update_crouch(false)
+	if _peek_travel_left > 0.0:
+		_peek_travel_left -= delta
+		if global_position.distance_squared_to(_peek_goal) > 0.1:
+			_face(_cover_threat - global_position, delta)
+			return _follow_path(_peek_goal)
+		_peek_travel_left = 0.0
+	_peek_left -= delta
+	if target and _peek_left > 0.0:
+		_fight(target, profile, modifiers, ammo, delta, false)
+		if _shots_since_reposition >= 2 or gun.ammo_counts().x == 0:
+			_peek_left = 0.0
+	if _peek_left > 0.0:
+		return Vector3.ZERO
+
+	_peeked_from_cover = true
+	_cover_goal = _return_to_cover
+	_cover_travel_left = COVER_TRAVEL_TIME
+	_cover_hold_left = 0.65
+	_return_to_cover = Vector3.INF
+	# Reassess after a peek instead of repeating the same angle indefinitely.
+	_cover_cooldown = maxf(_cover_cooldown, 1.5)
+	return _move_to_cover(delta)
 
 
 func _move_to_cover(delta: float) -> Vector3:
@@ -434,7 +513,7 @@ func _visible_target(reach: float) -> Node3D:
 		if enemy == self or not enemy.control_enabled or enemy.health <= 0 or get_parent().same_team(score_id(), enemy.score_id()):
 			continue
 		var distance: float = global_position.distance_squared_to(enemy.global_position)
-		if distance >= reach * reach or get_parent().get_node("Grenades").obscures(_camera.global_position, enemy.aim_center()):
+		if distance >= reach * reach:
 			continue
 		var direction := _flat_direction(enemy.global_position - global_position)
 		if distance > 25.0 and direction.dot(-global_basis.z) < -0.20 and enemy != _target:
@@ -468,6 +547,8 @@ func _audible_enemy(hearing_range: float) -> Node3D:
 func _has_sight(enemy: Node3D) -> bool:
 	_sight_ray.from = _camera.global_position
 	_sight_ray.to = enemy.aim_center()
+	if get_parent().get_node("Grenades").obscures(_sight_ray.from, _sight_ray.to):
+		return false
 	var hit := get_world_3d().direct_space_state.intersect_ray(_sight_ray)
 	return hit.is_empty() or hit.collider == enemy
 

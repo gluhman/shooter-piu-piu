@@ -20,6 +20,24 @@ func _run() -> void:
 		if bot.difficulty != ELITE:
 			_fail("elite difficulty was not passed to every bot")
 			return
+	var bot: CharacterBody3D = bots[0]
+	var player: CharacterBody3D = arena.combatant(1)
+	for actor in [bot, player, bots[1]]:
+		actor.set_physics_process(false)
+	bot.global_position = Vector3(0, 20, 0)
+	player.global_position = Vector3(0, 20, -8)
+	bot.health = 50
+	bot._engage_left = 1.0
+	bot._strafe_left = 1.0
+	var toward := (player.global_position - bot.global_position).normalized()
+	var profile := {"preferred": 8.0, "delay": 1.0}
+	bot.difficulty = 0
+	var easy: Vector3 = bot._fight(player, profile, bot._difficulty_modifiers(), Vector2i(10, 20), 0.016)
+	bot.difficulty = ELITE
+	var elite: Vector3 = bot._fight(player, profile, bot._difficulty_modifiers(), Vector2i(10, 20), 0.016)
+	if absf(easy.dot(toward)) > 0.05 or elite.dot(toward) >= -0.4:
+		_fail("elite must retreat when wounded while easy keeps strafing")
+		return
 	print("BOT_DIFFICULTY_OK")
 	arena.queue_free()
 	await create_timer(0.25).timeout

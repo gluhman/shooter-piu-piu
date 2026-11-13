@@ -83,6 +83,20 @@ func drop_cooked(actor: Node) -> void:
 			time, int(Balance.GRENADES.frag.max_damage))
 
 
+func round_aim_direction(origin: Vector3, target: Vector3, motion: Vector3) -> Vector3:
+	var offset := target - origin
+	var time := offset.length() / LAUNCH_SPEED
+	for _iteration in 12:
+		var displacement := offset - motion * time - GRAVITY * (0.5 * time * time)
+		var next := displacement.length() / LAUNCH_SPEED
+		if next > ROUND_FUSE:
+			return Vector3.ZERO
+		if absf(next - time) < 0.0005:
+			return displacement.normalized()
+		time = next
+	return Vector3.ZERO
+
+
 func launch_round(actor: Node, barrel: Transform3D, direction: Vector3, length: float, damage: int) -> void:
 	var query := PhysicsRayQueryParameters3D.create(barrel.origin + barrel.basis.z * length, barrel.origin, Balance.WORLD_AND_CAPSULES, [actor.get_rid()])
 	var wall := get_world_3d().direct_space_state.intersect_ray(query)
