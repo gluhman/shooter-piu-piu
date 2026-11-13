@@ -18,6 +18,9 @@ const SMOKE_PUFFS := 16
 const SMOKE_MAX_DRIFT := 4.0
 const SMOKE_WIND_COUPLING := 0.65
 const SMOKE_CENTER_HEIGHT := 1.45
+const SMOKE_SECTORS := 64
+const SMOKE_PROBE_RADIUS := 7.0
+const SMOKE_PROBE_INTERVAL := 0.16
 const ROUND_RADIUS := 5.0
 const GLASS_BLAST_RADIUS := 4.0
 
@@ -36,6 +39,11 @@ class Flight:
 class Cloud:
 	var at: Vector3
 	var wind: Vector3
+	var indoor := false
+	var center: Vector3
+	var ceiling := 0.0
+	var limits := PackedFloat32Array()
+	var probe_left := 0.0
 	var left: float
 	var age: float
 	var node: Node3D
@@ -50,6 +58,7 @@ var _cooking: Dictionary[int, float] = {}
 var _next_id := 1
 var _sync_left := 0.0
 var _puff := QuadMesh.new()
+var _smoke_ray := PhysicsRayQueryParameters3D.new()
 
 @onready var _match := get_parent()
 @onready var _ballistics := get_node("../Ballistics")
@@ -141,12 +150,31 @@ func send_state(peer: int) -> void:
 
 func obscures(from: Vector3, to: Vector3) -> bool:
 	for cloud in _clouds:
-		var center := _smoke_position(cloud) + Vector3.UP * SMOKE_CENTER_HEIGHT
-		var closest := Geometry3D.get_closest_point_to_segment(center, from, to)
+		if cloud.limits.is_empty() or cloud.age < float(Balance.GRENADES.smoke.time_to_full_density_s) or cloud.left <= 1.0:
+			continue
 		var radius := SMOKE_RADIUS * _smoke_growth(cloud.age)
-		if cloud.age >= float(Balance.GRENADES.smoke.time_to_full_density_s) and cloud.left > 1.0 and center.distance_squared_to(closest) < radius * radius:
+		var closest := Geometry3D.get_closest_point_to_segment(cloud.center, from, to)
+		if cloud.center.distance_squared_to(closest) >= radius * radius:
+			continue
+		if _inside_smoke(cloud, closest, radius):
 			return true
+		# A wall can clip the closest point while an earlier part of the ray crosses smoke.
+		var direction := (to - from).normalized()
+		for step in range(1, 8):
+			for side in [-1.0, 1.0]:
+				var sample: Vector3 = closest + direction * (side * step * 0.5)
+				if (sample - from).dot(direction) >= 0.0 and (to - sample).dot(direction) >= 0.0 \
+						and _inside_smoke(cloud, sample, radius):
+					return true
 	return false
+
+
+func _inside_smoke(cloud: Cloud, point: Vector3, radius: float) -> bool:
+	var offset := point - cloud.center
+	if point.y >= cloud.ceiling or offset.length_squared() >= radius * radius:
+		return false
+	var sector := posmod(floori(atan2(offset.z, offset.x) * SMOKE_SECTORS / TAU + 0.5), SMOKE_SECTORS)
+	return Vector2(offset.x, offset.z).length() < cloud.limits[sector]
 
 
 func _physics_process(delta: float) -> void:
@@ -154,6 +182,11 @@ func _physics_process(delta: float) -> void:
 		return
 	var authority := not Net.active or multiplayer.is_server()
 	var space := get_world_3d().direct_space_state
+	for cloud in _clouds:
+		cloud.probe_left -= delta
+		if cloud.probe_left <= 0.0:
+			cloud.probe_left = SMOKE_PROBE_INTERVAL
+			_probe_smoke(cloud, space)
 	if authority:
 		for request in _requests:
 			_throw(_match.combatant(request[0]), request[1], request[2], space)
@@ -193,7 +226,7 @@ func _process(delta: float) -> void:
 
 func _update_cloud_visuals(cloud: Cloud) -> void:
 	var growth := _smoke_growth(cloud.age)
-	cloud.node.global_position = _smoke_position(cloud)
+	cloud.node.global_position = cloud.center - Vector3.UP * SMOKE_CENTER_HEIGHT
 	cloud.material.set_shader_parameter("density", minf(1.0, cloud.left / float(Balance.GRENADES.smoke.fade_out_s)) * growth)
 	for j in cloud.offsets.size():
 		var puff := cloud.node.get_child(j) as MeshInstance3D
@@ -396,6 +429,8 @@ func warm_smoke() -> void:
 		return
 	var at := camera.global_position - camera.global_basis.z * 5.0 - Vector3.UP
 	var cloud := _make_smoke(at, SMOKE_TIME, 1.8)
+	await get_tree().physics_frame
+	_probe_smoke(cloud, get_world_3d().direct_space_state)
 	await RenderingServer.frame_post_draw
 	await get_tree().process_frame
 	cloud.node.queue_free()
@@ -405,6 +440,7 @@ func _make_smoke(at: Vector3, left: float, age: float) -> Cloud:
 	var cloud := Cloud.new()
 	cloud.node = Node3D.new()
 	cloud.at = at
+	cloud.center = at + Vector3.UP * SMOKE_CENTER_HEIGHT
 	var heading: float = _sky.wind_direction
 	cloud.wind = Vector3(-sin(heading), 0.0, cos(heading)) * _sky.wind_speed
 	cloud.left = left
@@ -412,6 +448,7 @@ func _make_smoke(at: Vector3, left: float, age: float) -> Cloud:
 	add_child(cloud.node)
 	cloud.material = ShaderMaterial.new()
 	cloud.material.shader = SMOKE_SHADER
+	cloud.node.visible = false
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(at)
 	for i in SMOKE_PUFFS:
@@ -439,3 +476,36 @@ func _smoke_position(cloud: Cloud) -> Vector3:
 	var speed := cloud.wind.length() * SMOKE_WIND_COUPLING
 	var distance := SMOKE_MAX_DRIFT * (1.0 - exp(-speed * cloud.age / SMOKE_MAX_DRIFT))
 	return cloud.at + cloud.wind.normalized() * distance
+
+
+func _probe_smoke(cloud: Cloud, space: PhysicsDirectSpaceState3D) -> void:
+	_smoke_ray.collision_mask = Balance.WORLD_MASK
+	if cloud.limits.is_empty():
+		_smoke_ray.from = cloud.at + Vector3.UP * SMOKE_CENTER_HEIGHT
+		_smoke_ray.to = cloud.at + Vector3.UP * 12.0
+		var roof := space.intersect_ray(_smoke_ray)
+		cloud.indoor = not roof.is_empty()
+		cloud.ceiling = roof.position.y if cloud.indoor else cloud.at.y + SMOKE_PROBE_RADIUS
+		if cloud.indoor:
+			cloud.wind = Vector3.ZERO
+		cloud.limits.resize(SMOKE_SECTORS)
+	var origin := cloud.at + Vector3.UP * SMOKE_CENTER_HEIGHT
+	origin.y = minf(origin.y, cloud.ceiling - 0.20)
+	cloud.center = origin
+	if not cloud.indoor and not cloud.wind.is_zero_approx():
+		var drift := _smoke_position(cloud) - cloud.at
+		if drift.length_squared() > 0.0001:
+			_smoke_ray.from = origin
+			_smoke_ray.to = origin + drift
+			var obstacle := space.intersect_ray(_smoke_ray)
+			cloud.center = _smoke_ray.to if obstacle.is_empty() else obstacle.position - drift.normalized() * 0.08
+	_smoke_ray.from = cloud.center
+	for sector in SMOKE_SECTORS:
+		var direction := Vector2.from_angle(float(sector) * TAU / SMOKE_SECTORS)
+		_smoke_ray.to = cloud.center + Vector3(direction.x, 0.0, direction.y) * SMOKE_PROBE_RADIUS
+		var wall := space.intersect_ray(_smoke_ray)
+		cloud.limits[sector] = SMOKE_PROBE_RADIUS if wall.is_empty() else cloud.center.distance_to(wall.position)
+	cloud.material.set_shader_parameter("smoke_center", cloud.center)
+	cloud.material.set_shader_parameter("smoke_ceiling", cloud.ceiling)
+	cloud.material.set_shader_parameter("wall_limits", cloud.limits)
+	cloud.node.visible = true

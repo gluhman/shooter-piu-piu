@@ -4,6 +4,9 @@ render_mode unshaded, cull_disabled, shadows_disabled, depth_draw_never;
 uniform sampler2D scene_depth : hint_depth_texture, repeat_disable, filter_nearest;
 uniform float density : hint_range(0.0, 1.0) = 1.0;
 uniform vec4 tint : source_color = vec4(0.67, 0.70, 0.69, 1.0);
+uniform vec3 smoke_center;
+uniform float smoke_ceiling;
+uniform float wall_limits[64];
 instance uniform float puff_seed = 0.0;
 
 float hash(vec2 p) {
@@ -28,6 +31,15 @@ void vertex() {
 }
 
 void fragment() {
+	vec3 world = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	vec2 offset = world.xz - smoke_center.xz;
+	float angle = length(offset) > 0.0001 ? atan(offset.y, offset.x) : 0.0;
+	int sector = int(mod(floor(angle * (64.0 / TAU) + 0.5), 64.0));
+	float wall_edge = wall_limits[sector] - length(offset);
+	float ceiling_edge = smoke_ceiling - world.y;
+	if (wall_edge <= 0.0 || ceiling_edge <= 0.0) {
+		discard;
+	}
 	vec2 p = UV * 2.0 - 1.0;
 	vec2 flow = p * 3.8 + vec2(puff_seed * 18.0, -TIME * 0.29);
 	float billows = noise(flow) * 0.71 + noise(flow * 2.13 + TIME * 0.1) * 0.29;
@@ -41,5 +53,5 @@ void fragment() {
 #endif
 	vec4 surface = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
 	float soft_edge = smoothstep(0.0, 0.60, -surface.z / surface.w + VERTEX.z);
-	ALPHA = density * opacity * (1.55 - 0.55 * opacity) * soft_edge;
+	ALPHA = density * opacity * (1.55 - 0.55 * opacity) * soft_edge * smoothstep(0.0, 0.2, min(wall_edge, ceiling_edge));
 }

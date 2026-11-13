@@ -4,7 +4,7 @@ signal graphics_changed
 signal controls_changed
 
 const PATH := "user://settings.cfg"
-const BINDINGS_VERSION := 1
+const BINDINGS_VERSION := 2
 const DEFAULT_MENU_MUSIC_VOLUME := 0.4
 const AUDIO_BUSES := {
 	&"menu_music_volume": &"Music",
@@ -43,12 +43,9 @@ const ACTIONS := {
 	&"select_knife": ["Нож", KEY_4],
 	&"use_medkit": ["Использовать аптечку", KEY_H],
 	&"open_armory": ["Открыть арсенал", KEY_B],
-	&"throw_frag": ["Бросить осколочную", KEY_G],
-	&"throw_flash": ["Бросить светошумовую", KEY_V],
-	&"throw_grenade": ["Бросить выбранную гранату", KEY_C],
+	&"throw_grenade": ["Бросить выбранную гранату", KEY_G],
 	&"cover_left": ["Наклон влево", KEY_Q],
 	&"cover_right": ["Наклон вправо", KEY_E],
-	&"throw_smoke": ["Бросить дымовую", KEY_T],
 }
 const MOVEMENT_ALTERNATES := {
 	&"move_forward": KEY_UP,
@@ -139,7 +136,7 @@ func _ready() -> void:
 		var code := int(config.get_value("bindings", action, ACTIONS[action][1]))
 		if action == &"sprint" and code == KEY_SHIFT and not config.has_section_key("bindings", "crouch"):
 			code = KEY_ALT
-		if not config.has_section_key("bindings", action) and (action in WEAPON_SLOTS.values() or action in [&"interact", &"open_armory", &"throw_frag", &"throw_flash", &"throw_smoke", &"throw_grenade", &"cover_left", &"cover_right"]) and (code in _bindings.values() or code in reserved_keys):
+		if not config.has_section_key("bindings", action) and (action in WEAPON_SLOTS.values() or action in [&"interact", &"open_armory", &"throw_grenade", &"cover_left", &"cover_right"]) and (code in _bindings.values() or code in reserved_keys):
 			var spares := range(KEY_F1, KEY_F12 + 1)
 			if action == &"interact":
 				spares.push_front(KEY_ENTER)
@@ -155,12 +152,17 @@ func _ready() -> void:
 
 
 func _migrate_bindings(config: ConfigFile) -> void:
-	if int(config.get_value("controls", "bindings_version", 0)) >= BINDINGS_VERSION:
+	var version := int(config.get_value("controls", "bindings_version", 0))
+	if version < 1 and int(config.get_value("bindings", "interact", 0)) == KEY_ENTER:
+		config.erase_section_key("bindings", "interact")
+	if version >= BINDINGS_VERSION:
 		return
-	var old_defaults := {&"interact": KEY_ENTER, &"throw_flash": KEY_F}
-	for action in old_defaults:
-		if int(config.get_value("bindings", action, 0)) == old_defaults[action]:
+	for action in ["throw_frag", "throw_flash", "throw_smoke"]:
+		if config.has_section_key("bindings", action):
 			config.erase_section_key("bindings", action)
+	# Keep custom bindings for the shared action and avoid stealing G from another action.
+	if int(config.get_value("bindings", "throw_grenade", 0)) == KEY_C:
+		config.erase_section_key("bindings", "throw_grenade")
 
 
 func _valid_code(code: int) -> bool:

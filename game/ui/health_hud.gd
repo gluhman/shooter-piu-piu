@@ -370,7 +370,7 @@ func _refresh_modern() -> void:
 	var equipment: Array = []
 	if grenade != "":
 		equipment.append({"icon": "flash" if grenade == "flash" else "frag", "label": ARSENAL.GRENADE_LABELS[grenade],
-			"count": _player.grenade_stock(grenade), "key": GameSettings.binding_label(ARSENAL.GRENADE_ACTIONS[grenade])})
+			"count": _player.grenade_stock(grenade), "key": GameSettings.binding_label(&"throw_grenade")})
 	equipment.append({"icon": "medkit", "label": "Аптечка", "count": _player.medkits,
 		"key": GameSettings.binding_label(&"use_medkit")})
 	var ping := "—"

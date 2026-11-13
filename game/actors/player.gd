@@ -57,7 +57,7 @@ var flash_left := 0.0
 var _grenades: Dictionary[String, int] = {}
 var _selected_grenade := ""
 var _throw_wait := 0.0
-var _frag_button: StringName
+var _frag_held := false
 var _pose_sequence := 0
 var _latest_pose := PackedFloat32Array()
 var _pose_received_at := 0.0
@@ -746,6 +746,7 @@ func set_weapon_grips(right: Marker3D, left: Marker3D, knife: bool, mounted := f
 	_pose.left_wrist = left
 	_pose.knife_grip = knife
 	_pose.mounted_grip = mounted
+	_pose.shoulder_brace = 0.0
 	_pose.shovel_grip = false
 	_pose.shovel_lean = Vector2.ZERO
 
@@ -762,6 +763,14 @@ func set_support_grip(reload_blend: float) -> void:
 
 func weapon_carry_anchor() -> Vector3:
 	return _pose.weapon_carry_anchor()
+
+
+func weapon_stock_anchor() -> Vector3:
+	return _pose.weapon_stock_anchor()
+
+
+func set_shoulder_brace(weight: float) -> void:
+	_pose.shoulder_brace = weight
 
 
 func weapon_reach_correction(two_handed: bool) -> Vector3:
@@ -949,7 +958,7 @@ func _reset_support() -> void:
 	_regen_left = 0.0
 	_regen_sync_left = 0.0
 	_throw_wait = 0.0
-	_frag_button = &""
+	_frag_held = false
 
 
 func _request_respawn() -> void:
@@ -1129,8 +1138,8 @@ func _look(yaw_delta: float, pitch_delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _is_local() and _frag_button != &"" and event.is_action_released(_frag_button):
-		_frag_button = &""
+	if _is_local() and _frag_held and event.is_action_released(&"throw_grenade"):
+		_frag_held = false
 		get_parent().get_node("Grenades").request_throw(self, "frag", true)
 		get_viewport().set_input_as_handled()
 		return
@@ -1156,18 +1165,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cycle_weapon(-1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
 			get_viewport().set_input_as_handled()
 			return
-	for kind: String in ARSENAL.GRENADE_IDS:
-		var action: StringName = ARSENAL.GRENADE_ACTIONS[kind]
-		if action != &"throw_grenade" and event.is_action_pressed(action):
-			_throw_grenade(kind, action)
-			get_viewport().set_input_as_handled()
-			return
 	if event.is_action_pressed(&"use_medkit"):
 		use_medkit()
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"throw_grenade"):
-		_throw_grenade(carried_grenade(), &"throw_grenade")
+		_throw_selected_grenade()
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"interact"):
@@ -1182,12 +1185,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		_look(-event.relative.x * sensitivity, event.relative.y * sensitivity * pitch_sign)
 
 
-func _throw_grenade(kind: String, action: StringName) -> void:
-	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not sprinting and grenade_stock(kind) > 0:
-		select_grenade(kind)
-		if kind == "frag":
-			_frag_button = action
-		get_parent().get_node("Grenades").request_throw(self, kind)
+func _throw_selected_grenade() -> void:
+	if _frag_held or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or sprinting:
+		return
+	var kind := carried_grenade()
+	if grenade_stock(kind) <= 0:
+		return
+	_frag_held = kind == "frag"
+	get_parent().get_node("Grenades").request_throw(self, kind)
 
 
 func _ensure_selected_grenade() -> void:

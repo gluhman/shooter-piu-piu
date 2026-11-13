@@ -23,6 +23,7 @@ const KNIFE_GRIP_IN_WRIST := Vector3(-0.012, 0.101, 0.021)
 const KNIFE_IN_WRIST := Basis(Vector3.UP, -PI * 0.5)
 const M249_RELOAD_ACTION_START := 0.34
 const M249_TRIPOD_FROM_MUZZLE := Vector3(0.0, -0.105, 0.19)
+const STOCKED_WEAPONS := ["ak47", "shotgun", "mp5", "m700", "lever", "m14", "launcher", "m249", "m1"]
 const SIDEARMS := ["deagle", "m1911", "tec9"]
 const SPECIALIZATIONS := {
 	"assault": {
@@ -134,6 +135,7 @@ var _aim_amount := 0.0
 var _run_carry := 0.0
 var _switch_left := 0.0
 var _aim_pose: Transform3D
+var _stock_contact := Vector3.ZERO
 var _aim_depth_limit := 0.0
 var _scope_view := false
 var _reload_units := 0
@@ -920,13 +922,24 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 		var carry_basis := _camera.global_basis.inverse() * body_basis * carry_rotation * handling_rotation
 		hip_position = hip_position.lerp(_camera.to_local(carry_origin), run_carry)
 		hip_basis = hip_basis.slerp(carry_basis.orthonormalized(), run_carry)
-	_view.position = hip_position.lerp(_aim_pose.origin + Vector3.BACK * _kick_pos.z, blend)
+	var bot: bool = _player.is_in_group("bot")
+	var aimed_position := _aim_pose.origin
+	if bot:
+		if _weapon_id in STOCKED_WEAPONS:
+			# Center the stock on the bot's shoulder instead of aligning the sights with its camera.
+			_player.set_shoulder_brace(lerpf(0.85, 1.0, blend))
+			if blend > 0.0:
+				aimed_position = _camera.to_local(_player.weapon_stock_anchor()) - _aim_pose.basis * _stock_contact
+		elif blend > 0.0:
+			var hands := Vector3(0.035, 0.06, -0.39)
+			var chest: Vector3 = _player.weapon_carry_anchor()
+			aimed_position = _camera.to_local(chest + _camera.global_basis * hands)
+	_view.position = hip_position.lerp(aimed_position + Vector3.BACK * _kick_pos.z, blend)
 	_view.basis = hip_basis.orthonormalized().slerp(_aim_pose.basis, blend)
 	if _switch_left > 0.0:
 		var switch_pose := _switch_left / 0.22
 		_view.position += Vector3(0.06 * switch_pose, -0.28 * switch_pose, 0.12 * switch_pose)
 		_view.basis = _view.basis * Basis.from_euler(Vector3(0.16 * switch_pose, 0.0, -0.24 * switch_pose))
-	var bot: bool = _player.is_in_group("bot")
 	if bot or blend < 1.0:
 		var reach_weight := 1.0 if bot else 1.0 - blend
 		_view.global_position += _player.weapon_reach_correction(not _reloading) * reach_weight
@@ -1057,6 +1070,11 @@ func _build_viewmodel(weapon_id: String) -> void:
 	elif weapon_id == "shotgun":
 		bore = Vector3.LEFT
 	_muzzle.basis = Basis.looking_at((model.basis * bore).normalized())
+	if _player.is_in_group("bot") and weapon_id in STOCKED_WEAPONS:
+		var bounds := _view_bounds(model, _view)
+		var rearward := _muzzle.basis.z
+		var bore_at_stock := _muzzle.position + rearward * ((bounds.end.z - _muzzle.position.z) / rearward.z)
+		_stock_contact = Vector3(bore_at_stock.x, lerpf(_right_wrist.position.y, bore_at_stock.y, 0.5), bounds.end.z)
 	_tripod_legs.clear()
 	if weapon_id == "m249":
 		_add_tripod(model)

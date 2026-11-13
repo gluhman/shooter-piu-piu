@@ -9,6 +9,7 @@ const COVER_ARRIVAL := 0.4
 const COVER_DIRECTIONS := 8
 const HEARING_RANGE := 34.0
 const HEARING_MEMORY := 2.4
+const HEARING_INTERVAL := 0.12
 const ENGAGE_DELAY := [Vector2(0.45, 0.75), Vector2(0.24, 0.42), Vector2(0.12, 0.26), Vector2(0.08, 0.17), Vector2(0.05, 0.11)]
 const REPOSITION_SHOTS := [10, 8, 6, 5, 4]
 const RETREAT_HEALTH := [0.0, 28.0, 40.0, 52.0, 62.0]
@@ -43,6 +44,7 @@ var patrol_route: Array
 var _waypoint := 0
 var _patrol_direction := 1
 var _vision_wait := 0.0
+var _hearing_wait := 0.0
 var _engage_left := 0.0
 var _target: Node3D
 var _strafe_side := 1.0
@@ -148,6 +150,7 @@ func _reset_behavior() -> void:
 	_target = null
 	var vision: Vector2 = modifiers.vision
 	_vision_wait = randf_range(0.0, vision.y)
+	_hearing_wait = float(absi(combatant_id) % 7) * HEARING_INTERVAL / 7.0
 	_engage_left = 0.0
 	_strafe_side = -1.0 if randf() < 0.5 else 1.0
 	_strafe_left = randf_range(0.5, 1.4)
@@ -217,7 +220,9 @@ func _physics_process(delta: float) -> void:
 				_engage_left = randf_range(delay.x, delay.y)
 				_shots_since_reposition = 0
 	var target := _target if flash_left < 0.2 and is_instance_valid(_target) and _target.control_enabled and _target.health > 0 else null
-	if target == null:
+	_hearing_wait -= delta
+	if target == null and _hearing_wait <= 0.0:
+		_hearing_wait = HEARING_INTERVAL
 		var heard := _audible_enemy(float(modifiers.hearing))
 		if heard and (_last_seen.distance_squared_to(heard.global_position) > 2.25 or _search_left <= 0.0):
 			_last_seen = heard.global_position

@@ -1,5 +1,6 @@
 extends Node3D
 
+const ARENA_SCENE := "res://game/match/arena.tscn"
 const ROUND_OVERVIEW := preload("res://game/ui/round_overview.gd")
 
 const MAX_BOTS := 10
@@ -27,6 +28,8 @@ const ARENA_WEATHER := {
 	MAP.WORKSHOP_ID: {"hour": 13.5, "wind": Vector2(60, 0.8)},
 	MAP.TEST_RANGE_ID: {"hour": 13.0, "wind": Vector2(0, 0.2)},
 	MAP.OFFICE_ID: {"hour": 12.0, "wind": Vector2.ZERO},
+	MAP.OUTPOST_ID: {"hour": 11.0, "wind": Vector2(35, 1.0)},
+	MAP.STATION_ID: {"hour": 16.0, "wind": Vector2(-45, 0.6)},
 }
 const MIN_RESPAWN_DISTANCE := 12.0
 const TRAINING_RESPAWN_DELAY := 0.75
@@ -537,23 +540,35 @@ func _reload_main_menu() -> void:
 	if _reloading:
 		return
 	_reloading = true
+	_return_to_main_menu.call_deferred()
+
+
+func _return_to_main_menu() -> void:
+	var tree := get_tree()
+	var scene := load(ARENA_SCENE) as PackedScene
+	if scene == null:
+		_reloading = false
+		push_error("Не удалось загрузить главное меню.")
+		return
 	GameSettings.set_match_audio_enabled(false)
 	_stop_round_effects()
+	$Ambience.stop()
 	Net.leave_game()
-	get_tree().paused = false
+	tree.paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	get_tree().reload_current_scene()
+	var error := tree.change_scene_to_packed(scene)
+	if error != OK:
+		_reloading = false
+		push_error("Не удалось открыть главное меню: %s" % error_string(error))
 
 
 @rpc("authority", "reliable")
 func net_restart() -> void:
 	_stop_overview()
-	$HUD/WeaponSelect.close_armory()
-	var finished := round_finished()
+	$HUD/WeaponSelect.hide_for_results()
+	$HUD/MatchMenu.close()
 	_finish_reason = ""
 	_final_rows.clear()
-	if finished:
-		$HUD/MatchMenu.close()
 	$Ballistics.reset_round()
 	$Grenades.reset_round()
 	$Fieldworks.reset_round()
@@ -571,7 +586,7 @@ func net_restart() -> void:
 	GameSettings.set_match_audio_enabled(true)
 	_play_ambience()
 	var local := combatant(Net.local_id())
-	if finished and local:
+	if local:
 		if local.control_enabled:
 			$HUD/Crosshair.show()
 			GameSettings.capture_gameplay_mouse()
@@ -900,8 +915,7 @@ func _load_arena(layout_seed: int, bot_count: int, difficulty: int, token: int =
 	await _loading_stage("Подгружаем текстуры…")
 	if token >= 0 and not _load_current(token):
 		return
-	if map_id != MAP.BREAKWATER_ID:
-		await $Map.preload_textures(map_id)
+	await $Map.preload_textures(map_id)
 	if token >= 0 and not _load_current(token):
 		return
 	await _loading_stage("Собираем карту…")

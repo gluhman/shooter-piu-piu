@@ -21,6 +21,7 @@ const YARD_GROUND := preload("res://game/maps/procedural/yard_ground.gdshader")
 const ROAD_BARRIER := "res://game/maps/breakwater/art/models/concrete_road_barrier.glb"
 const OFFICE := preload("res://game/maps/procedural/office_layout.gd")
 const WORKSHOP := preload("res://game/maps/procedural/workshop_layout.gd")
+const KENNEY_OUTPOST := preload("res://game/maps/procedural/kenney_outpost_layout.gd")
 
 const CONTAINER_HEIGHT := 2.59
 const CONTAINER_WIDTH := 2.44
@@ -41,6 +42,8 @@ const WORKSHOP_ID := 5
 const BREAKWATER_ID := 6
 const TEST_RANGE_ID := 7
 const OFFICE_ID := 8
+const OUTPOST_ID := 9
+const STATION_ID := 10
 const OFFICE_BOUNDS := Rect2(-OFFICE.HALF_X, -OFFICE.HALF_Z, OFFICE.HALF_X * 2.0, OFFICE.HALF_Z * 2.0)
 
 class Cover:
@@ -54,7 +57,7 @@ const COLOR_GREEN := Color(0.28, 0.52, 0.34)
 const COLOR_ORANGE := Color(0.95, 0.48, 0.14)
 const COLOR_GREY := Color(0.72, 0.74, 0.72)
 
-const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон", "Малый офис"]
+const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон", "Малый офис", "Форпост", "Станция"]
 
 const PATROL_ROUTES := [
 	[
@@ -89,22 +92,24 @@ var _district_origin := Vector3.ZERO
 var _district_yaw := 0.0
 var _wall_mat: StandardMaterial3D
 var _wood_mat: StandardMaterial3D
-const ARENA_TEXTURES := {
-	"concrete": ["color", "normal", "roughness"],
-	"bricks": ["color", "normal", "roughness", "ao"],
-	"planks": ["color", "normal", "roughness", "ao"],
-	"corrugated": ["color", "normal", "roughness", "ao", "metalness"],
+const BASE_TEXTURE_KINDS := ["color", "normal", "roughness"]
+const TEXTURE_EXTRA_KINDS := {
+	"bricks": ["ao"],
+	"planks": ["ao"],
+	"corrugated": ["ao", "metalness"],
+	"village/cobble": ["ao"],
+	"village/plaster": ["ao"],
+	"village/roof": ["ao"],
 }
-
-const DUST2_TEXTURES := {
-	"dust2/sandstone": ["color", "normal", "roughness"],
-	"dust2/sand": ["color", "normal", "roughness"],
-}
-const VILLAGE_TEXTURES := {
-	"village/cobble": ["color", "normal", "roughness", "ao"],
-	"village/dirt": ["color", "normal", "roughness"],
-	"village/plaster": ["color", "normal", "roughness", "ao"],
-	"village/roof": ["color", "normal", "roughness", "ao"],
+const YARD_MATERIALS := ["bricks", "planks", "corrugated"]
+const MAP_MATERIALS := {
+	DUST2_ID: ["dust2/sandstone", "dust2/sand", "concrete", "planks"],
+	VILLAGE_ID: ["planks", "village/cobble", "village/dirt", "village/plaster", "village/roof"],
+	OFFICE_ID: ["concrete", "planks", "office/carpet", "brushed", "rubber"],
+	WORKSHOP_ID: ["bricks", "corrugated"],
+	BREAKWATER_ID: [],
+	OUTPOST_ID: [],
+	STATION_ID: [],
 }
 
 var _textures: Dictionary[String, Texture2D] = {}
@@ -115,28 +120,17 @@ func patrol_route() -> Array[Vector3]:
 
 
 func preload_textures(map_id: int) -> void:
-	var materials := ARENA_TEXTURES.duplicate()
-	if map_id == DUST2_ID:
-		materials.merge(DUST2_TEXTURES)
-	else:
-		for material in DUST2_TEXTURES:
-			for kind in DUST2_TEXTURES[material]:
-				_textures.erase(_texture_path(material, kind))
-	if map_id == OFFICE_ID:
-		for texture in ["office/carpet", "brushed", "rubber"]:
-			materials[texture] = ["color", "normal", "roughness"]
-	if map_id == VILLAGE_ID:
-		materials.merge(VILLAGE_TEXTURES)
-	else:
-		for material in VILLAGE_TEXTURES:
-			for kind in VILLAGE_TEXTURES[material]:
-				_textures.erase(_texture_path(material, kind))
+	var paths := PackedStringArray()
+	for material: String in MAP_MATERIALS.get(map_id, YARD_MATERIALS):
+		for kind: String in BASE_TEXTURE_KINDS + TEXTURE_EXTRA_KINDS.get(material, []):
+			paths.append(_texture_path(material, kind))
+	for path in _textures.keys():
+		if not paths.has(path):
+			_textures.erase(path)
 	var pending: Array[String] = []
-	for material in materials:
-		for kind in materials[material]:
-			var path := _texture_path(material, kind)
-			if not _textures.has(path) and ResourceLoader.load_threaded_request(path, "Texture2D") == OK:
-				pending.append(path)
+	for path in paths:
+		if not _textures.has(path) and ResourceLoader.load_threaded_request(path, "Texture2D") == OK:
+			pending.append(path)
 	while not pending.is_empty():
 		for index in range(pending.size() - 1, -1, -1):
 			var path := pending[index]
@@ -159,6 +153,8 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = layout_seed
 	_half_extent = width * 0.5
+	if map_id == OUTPOST_ID or map_id == STATION_ID:
+		return KENNEY_OUTPOST.new(self).build(width, map_id == STATION_ID)
 	if map_id == OFFICE_ID:
 		return OFFICE.new(self).build()
 	if map_id == WORKSHOP_ID:
@@ -426,6 +422,8 @@ func clear_map() -> void:
 	_perforated.clear()
 	_occupied.clear()
 	_cover.clear()
+	_wall_mat = null
+	_wood_mat = null
 	_passages.clear()
 	_wood_floors.clear()
 	_initial_spawns.clear()

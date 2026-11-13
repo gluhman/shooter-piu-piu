@@ -6,7 +6,7 @@ const MUTED := UI.MUTED
 const ACCENT := UI.ACCENT
 const CONTROL_GROUPS := {
 	"Движение": [&"move_forward", &"move_back", &"move_left", &"move_right", &"sprint", &"crouch", &"jump"],
-	"Бой и действия": [&"fire", &"aim_sights", &"aim_sights_alt", &"reload_weapon", &"interact", &"use_medkit", &"open_armory", &"throw_frag", &"throw_flash", &"throw_smoke", &"select_grenade", &"throw_grenade", &"cover_left", &"cover_right"],
+	"Бой и действия": [&"fire", &"aim_sights", &"aim_sights_alt", &"reload_weapon", &"interact", &"use_medkit", &"open_armory", &"select_grenade", &"throw_grenade", &"cover_left", &"cover_right"],
 }
 
 @onready var _match := get_parent().get_parent()
@@ -58,7 +58,7 @@ func _input(event: InputEvent) -> void:
 		if _match.round_finished():
 			_leave()
 			return
-		if _hud.get_node("WeaponSelect").close_selection():
+		if not visible and _hud.get_node("WeaponSelect").close_selection():
 			MenuFeedback.back()
 			return
 		if visible:
@@ -136,6 +136,7 @@ func show_results(reason: String, rows: Array) -> void:
 	_resume_capture = false
 	_score_overlay.hide()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_hud.get_node("WeaponSelect").set_modal_open(true)
 	show()
 	_clear_menu()
 	_panel = _layout(self, Vector2(540, 0), true)
@@ -188,7 +189,7 @@ func show_results(reason: String, rows: Array) -> void:
 			map_picker.grab_focus()
 	else:
 		_label(_panel, "Хост выбирает следующую карту", 16, MUTED)
-	UI.button(_panel, "Выйти в лобби", _match.exit_to_lobby, &"", true)
+	_add_lobby_exit(_panel)
 	var leave := UI.button(_panel, "Выйти в главное меню", _leave, &"", true)
 	if not _match.can_choose_next_map():
 		leave.grab_focus()
@@ -202,10 +203,12 @@ func close() -> void:
 	_confirming_exit = false
 	_score_overlay.hide()
 	hide()
-	if _restore_lobby and not _match.has_started():
+	_hud.get_node("WeaponSelect").set_modal_open(false)
+	if _restore_lobby:
 		var lobby := _hud.get_node("Lobby")
 		lobby.set_modal_open(false)
-		lobby.restore_focus(_lobby_focus)
+		if not _match.has_started():
+			lobby.restore_focus(_lobby_focus)
 	_restore_lobby = false
 	_lobby_focus = null
 	if Net.solo:
@@ -223,6 +226,7 @@ func _open() -> void:
 	_resume_capture = Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_score_overlay.hide()
+	_hud.get_node("WeaponSelect").set_modal_open(true)
 	show()
 	if Net.solo:
 		get_tree().paused = true
@@ -249,8 +253,13 @@ func _show_pause() -> void:
 		restart.disabled = not _match.can_restart()
 		if restart.disabled:
 			_label(round_actions, "Раунд перезапускает хост", 14, MUTED)
-		UI.button(round_actions, "Выйти в лобби", _match.exit_to_lobby, &"", true)
+		_add_lobby_exit(round_actions)
 		UI.button(round_actions, "Выйти в главное меню", _leave, &"", true)
+
+
+func _add_lobby_exit(parent: Control) -> void:
+	if not Net.active or multiplayer.is_server() or _match.room_owner == Net.local_id():
+		UI.button(parent, "Выйти в лобби", _match.exit_to_lobby, &"", true)
 
 
 func _restart() -> void:
@@ -259,8 +268,10 @@ func _restart() -> void:
 
 
 func _leave() -> void:
-	if _confirming_exit:
+	if _confirming_exit or _match.is_loading():
 		return
+	if not visible:
+		_open()
 	_confirming_exit = true
 	_clear_menu()
 	_panel = _layout(self, Vector2(440, 0), true)
@@ -268,7 +279,12 @@ func _leave() -> void:
 	if Net.active and multiplayer.is_server():
 		_label(_panel, "Сетевая комната закроется для всех игроков.", 15, MUTED)
 	UI.button(_panel, "Остаться", _cancel_exit, &"PrimaryButton", true).grab_focus()
-	UI.button(_panel, "Выйти в главное меню", _match.leave_round)
+	UI.button(_panel, "Выйти в главное меню", _confirm_exit)
+
+
+func _confirm_exit() -> void:
+	if _confirming_exit:
+		_match.leave_round()
 
 
 func _cancel_exit() -> void:
@@ -557,6 +573,7 @@ func _cancel_binding(_tab: int) -> void:
 
 
 func _reset_controls() -> void:
+	_binding = &""
 	GameSettings.reset_controls()
 	_show_settings(0)
 

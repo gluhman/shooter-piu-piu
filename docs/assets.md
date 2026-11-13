@@ -63,6 +63,17 @@
 godot --headless --path . --script res://addons/gut/gut_cmdln.gd -gdir=res://tests/gut -gexit
 ```
 
+## Наборы и инструменты для карт
+
+| Пакет | Применение в Shooter |
+| --- | --- |
+| Kenney Starter Kit FPS | Использованы две модели стен, платформа и общий атлас. Модели и атлас распространяются по CC0. Исходная сцена MIT послужила основой раскладки «Форпоста», из тех же моделей собрана «Станция». [Исходный пакет](https://github.com/KenneyNL/Starter-Kit-FPS/tree/185fd2326d74a5cf858cffc616f87cf9696f9cc0) и [копия лицензии в репозитории](../game/maps/kenney_outpost/art/LICENSE.md). |
+| Quaternius Modular Sci-Fi MegaKit | Набор CC0 для следующей интерьерной карты. У него есть модульные стены, двери и элементы окружения. В прототипе стоит проверить единый материал и простые коллайдеры для повторяющихся модулей. [Страница автора в Godot Asset Store](https://store.godotengine.org/asset/quaternius/modular-sci-fi-megakit/). |
+| FuncGodot | Кандидат для карт, построенных в TrenchBroom. Импортирует MAP в Godot и сопоставляет объекты карты с игровыми сущностями. Перед подключением стоит проверить масштаб, коллизии и сохранение маркеров спавна и лута на одной тестовой арене. [Репозиторий FuncGodot](https://github.com/func-godot/func_godot_plugin). |
+| Cyclops Level Builder | Кандидат для быстрого проектирования уровней внутри Godot. Блоки можно преобразовать в обычные меши и коллайдеры для экспорта. [Документация Cyclops](https://github.com/blackears/cyclopsLevelBuilder/blob/master/doc/index.md). |
+
+Для производительности уровней сначала проверяем встроенные возможности Godot: импорт LOD, окклюзию за крупными непрозрачными стенами и MultiMesh для одинаковых объектов внутри небольших участков карты. Godot отсекает MultiMesh целиком, поэтому объединение экземпляров по всей арене может увеличить число видимых полигонов. [Оптимизация 3D](https://docs.godotengine.org/en/stable/tutorials/performance/optimizing_3d_performance.html), [MultiMesh](https://docs.godotengine.org/en/stable/tutorials/performance/using_multimesh.html).
+
 ## Как добавить ресурс
 
 Поиск новых пакетов начинаем с [бесплатных ассетов для Godot на itch.io](https://itch.io/game-assets/free/tag-godot).

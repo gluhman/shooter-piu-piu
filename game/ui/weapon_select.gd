@@ -21,6 +21,8 @@ var _for_respawn := false
 var _cards: Dictionary[String, Button] = {}
 var _armory_player: Node
 var _loadout_reconfigure := false
+var _modal_open := false
+var _selection_focus: Control
 var _active_style: StyleBoxFlat
 var _card_style: StyleBoxFlat
 
@@ -91,7 +93,10 @@ func _show_loadout(for_respawn := false) -> void:
 		player.control_enabled = false
 	get_parent().get_node("Hint").hide()
 	get_parent().get_node("Ammo").hide()
-	_class_buttons[_specialization].grab_focus()
+	if not _modal_open:
+		_class_buttons[_specialization].grab_focus()
+	else:
+		_selection_focus = _class_buttons[_specialization]
 
 
 func _open_loadout(player: Node) -> void:
@@ -121,8 +126,26 @@ func armory_open() -> bool:
 
 func hide_for_results() -> void:
 	close_armory()
-	hide()
+	_loadout_reconfigure = false
+	_for_respawn = false
+	_selection_focus = null
+	_set_open(false)
 	get_parent().get_node("Crosshair").hide()
+
+
+func set_modal_open(open: bool) -> void:
+	if _modal_open == open:
+		return
+	_modal_open = open
+	if open and visible:
+		_selection_focus = get_viewport().gui_get_focus_owner()
+		for picker in [_sidearm_picker, _grenade_picker]:
+			picker.get_popup().hide()
+	_update_input()
+	if not open:
+		if visible and is_instance_valid(_selection_focus) and is_ancestor_of(_selection_focus):
+			_selection_focus.grab_focus()
+		_selection_focus = null
 
 
 func _open_armory(player: Node) -> void:
@@ -178,11 +201,17 @@ func selection_open() -> bool:
 
 func _set_open(open: bool) -> void:
 	visible = open
-	mouse_filter = Control.MOUSE_FILTER_STOP if open else Control.MOUSE_FILTER_IGNORE
+	_update_input()
 	get_parent().get_node("Crosshair").visible = not open
 	if open:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		UI.reveal(_panel)
+
+
+func _update_input() -> void:
+	mouse_behavior_recursive = Control.MOUSE_BEHAVIOR_DISABLED if _modal_open else Control.MOUSE_BEHAVIOR_INHERITED
+	focus_behavior_recursive = Control.FOCUS_BEHAVIOR_DISABLED if _modal_open else Control.FOCUS_BEHAVIOR_INHERITED
+	mouse_filter = Control.MOUSE_FILTER_STOP if visible and not _modal_open else Control.MOUSE_FILTER_IGNORE
 
 
 func _focus_card(preferred: String = "") -> void:
@@ -196,6 +225,8 @@ func _focus_card(preferred: String = "") -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _modal_open:
+		return
 	if event.is_action_pressed(&"open_armory"):
 		if armory_open():
 			close_armory()
@@ -329,7 +360,7 @@ func _build() -> void:
 
 
 func _choose(id: String) -> void:
-	if not visible or _match().round_finished() or not _cards[id].visible or _cards[id].disabled:
+	if not visible or _modal_open or _match().round_finished() or not _cards[id].visible or _cards[id].disabled:
 		return
 	if armory_open():
 		if _armory_player.weapon_switch_pending():
@@ -338,14 +369,12 @@ func _choose(id: String) -> void:
 		close_armory()
 		MenuFeedback.confirm()
 		return
-	if _match().input_blocked():
-		return
 	_primary = id
 	_refresh_cards()
 
 
 func _confirm_loadout() -> void:
-	if _primary == "" or _sidearm_picker.selected < 0 or _match().input_blocked():
+	if _primary == "" or _sidearm_picker.selected < 0 or _modal_open or _match().is_loading() or _match().round_finished():
 		return
 	var player := _local_player()
 	if player:
