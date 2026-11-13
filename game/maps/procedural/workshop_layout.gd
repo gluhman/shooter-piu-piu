@@ -16,6 +16,7 @@ var _scale: float
 var _compact: bool
 var _brick: StandardMaterial3D
 var _slab: ORMMaterial3D
+var _foundation: ORMMaterial3D
 var _steel: ORMMaterial3D
 var _oxide: ORMMaterial3D
 var _blue: ORMMaterial3D
@@ -49,8 +50,8 @@ func build(width: float) -> Array[Transform3D]:
 		ground.set_shader_parameter("slab_" + kind, _texture("concrete_floor_worn_001", kind))
 	_block(Vector3(0, -0.25, 0), Vector3(71.5, 0.5, 71.5), ground)
 	for side in [-1.0, 1.0]:
-		_block(Vector3(side * 35.4, 1.6, 0), Vector3(0.8, 3.2, 71.6), _brick, "brick")
-		_block(Vector3(0, 1.6, side * 35.4), Vector3(70, 3.2, 0.8), _brick, "brick")
+		_block(Vector3(side * 35.4, 1.6, 0), Vector3(0.8, 3.2, 71.6), _foundation)
+		_block(Vector3(0, 1.6, side * 35.4), Vector3(70, 3.2, 0.8), _foundation)
 		_block(Vector3(side * 35.4, 5.25, 0), Vector3(0.55, 4.1, 71.6), _deck, "metal")
 		_block(Vector3(0, 5.25, side * 35.4), Vector3(70, 4.1, 0.55), _deck, "metal")
 		_hall(side)
@@ -68,6 +69,7 @@ func build(width: float) -> Array[Transform3D]:
 
 func _materials() -> void:
 	_brick = _map._world_mat("bricks", Color("#c49b81"), 0.0, 0.64, 1.1, true)
+	_foundation = load("res://game/maps/lighting/weathered_concrete.tres")
 	_slab = _packed_material("concrete_floor_worn_001", Color("#c6c2b3"), 0.48)
 	_steel = _packed_material("rusty_metal_sheet", Color("#707c80"), 0.8)
 	_oxide = _packed_material("painted_metal_008", Color("#ca8768"), 0.72)
@@ -203,8 +205,8 @@ func _hall_ceiling(x: float, side: float) -> void:
 		_model("hall_pendant", Vector3(x, 3.93, z), Vector3(0.8, 1.30, 0.8), 0, "", false)
 		var lamp := OmniLight3D.new()
 		lamp.position = _point(Vector3(x, 3.8, z))
-		lamp.light_color = Color("#ffe1b3") if side < 0.0 else Color("#f5deb7")
-		lamp.light_energy = 2.75
+		lamp.light_intensity_lumens = 48000.0
+		lamp.light_temperature = 4200.0 if side < 0.0 else 5000.0
 		lamp.omni_range = maxf(5.1, 9.5 * _scale)
 		_map.add_child(lamp)
 	_wall_pipes(side)

@@ -53,5 +53,7 @@ enabled=PackedStringArray("res://addons/sky_3d/plugin.cfg", "res://addons/godot_
 
 [rendering]
 
+lights_and_shadows/use_physical_light_units=true
+
 rendering_device/driver.windows="d3d12"
 textures/vram_compression/import_etc2_astc=true

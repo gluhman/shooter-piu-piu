@@ -555,13 +555,14 @@ func _crate_open_effect(crate: Node3D) -> void:
 	material.albedo_color = Color(0.95, 0.76, 0.28, 0.85)
 	material.emission_enabled = true
 	material.emission = Color(1.0, 0.54, 0.12)
-	material.emission_energy_multiplier = 3.2
+	material.emission_intensity = 24000.0
 	mesh.material = material
 	ring.mesh = mesh
 	burst.add_child(ring)
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.62, 0.23)
-	light.light_energy = 2.4
+	light.light_intensity_lumens = 18000.0
+	light.light_bake_mode = Light3D.BAKE_DISABLED
 	light.omni_range = 3.2
 	burst.add_child(light)
 	var tween := create_tween().set_parallel()

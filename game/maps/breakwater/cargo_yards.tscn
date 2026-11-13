@@ -242,7 +242,7 @@ material_override = SubResource("pole")
 position = Vector3(-29.7, 9.93, -17.8)
 rotation = Vector3(-1.16, -1.5708, 0)
 light_color = Color(0.8, 0.87, 1, 1)
-light_energy = 2.4
+light_intensity_lumens = 33600.0
 spot_range = 19
 spot_angle = 36
 
@@ -266,7 +266,7 @@ material_override = SubResource("pole")
 position = Vector3(-29.7, 9.93, 16.6)
 rotation = Vector3(-1.16, -1.5708, 0)
 light_color = Color(0.8, 0.87, 1, 1)
-light_energy = 2.4
+light_intensity_lumens = 33600.0
 spot_range = 19
 spot_angle = 36
 
@@ -505,7 +505,7 @@ material_override = SubResource("pole")
 position = Vector3(29.7, 9.93, -17.8)
 rotation = Vector3(-1.16, 1.5708, 0)
 light_color = Color(0.8, 0.87, 1, 1)
-light_energy = 2.4
+light_intensity_lumens = 33600.0
 spot_range = 19
 spot_angle = 36
 
@@ -529,7 +529,7 @@ material_override = SubResource("pole")
 position = Vector3(29.7, 9.93, 16.6)
 rotation = Vector3(-1.16, 1.5708, 0)
 light_color = Color(0.8, 0.87, 1, 1)
-light_energy = 2.4
+light_intensity_lumens = 33600.0
 spot_range = 19
 spot_angle = 36
 

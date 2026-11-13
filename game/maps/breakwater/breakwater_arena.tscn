@@ -1,5 +1,8 @@
 [gd_scene format=3]
 
+[ext_resource type="VoxelGIData" path="res://game/maps/lighting/turbine_hall_bounce.res" id="hall_bounce"]
+[ext_resource type="Material" path="res://game/maps/lighting/weathered_concrete.tres" id="weathered_concrete"]
+[ext_resource type="CameraAttributesPhysical" path="res://game/maps/lighting/industrial_exposure.tres" id="industrial_exposure"]
 [ext_resource type="Script" path="res://game/maps/breakwater/scripts/arena_controller.gd" id="ctrl"]
 [ext_resource type="Script" path="res://game/maps/breakwater/scripts/spawn_point.gd" id="spawn"]
 [ext_resource type="Texture2D" path="res://game/maps/breakwater/art/materials/asphalt_01_color.jpg" id="asphalt_01_color"]
@@ -62,18 +65,6 @@ normal_scale = 0.52
 normal_texture = ExtResource("concrete_floor_worn_001_normal")
 texture_filter = 5
 uv1_scale = Vector3(0.4, 0.4, 0.4)
-uv1_triplanar = true
-uv1_triplanar_sharpness = 8.0
-
-[sub_resource type="ORMMaterial3D" id="mat_concrete_dark"]
-albedo_color = Color(0.81, 0.85, 0.87, 1)
-albedo_texture = ExtResource("concrete_floor_worn_001_color")
-orm_texture = ExtResource("concrete_floor_worn_001_orm")
-normal_enabled = true
-normal_scale = 0.52
-normal_texture = ExtResource("concrete_floor_worn_001_normal")
-texture_filter = 5
-uv1_scale = Vector3(0.38, 0.38, 0.38)
 uv1_triplanar = true
 uv1_triplanar_sharpness = 8.0
 
@@ -153,7 +144,9 @@ radiance_size = 2
 sky_material = SubResource("station_panorama")
 
 [sub_resource type="Environment" id="env"]
+resource_local_to_scene = true
 background_mode = 2
+background_intensity = 23000.0
 sky = SubResource("station_sky")
 sky_rotation = Vector3(0, 0.8, 0)
 ambient_light_source = 2
@@ -344,12 +337,22 @@ script = ExtResource("ctrl")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("env")
+camera_attributes = ExtResource("industrial_exposure")
+
+[node name="HallBounce" type="VoxelGI" parent="."]
+visible = false
+position = Vector3(0, 3.2, 0)
+subdiv = 1
+size = Vector3(22, 8, 23)
+camera_attributes = ExtResource("industrial_exposure")
+data = ExtResource("hall_bounce")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 rotation = Vector3(-0.64, -0.94, 0)
 light_color = Color(1, 0.89, 0.74, 1)
-light_energy = 1.42
-light_angular_distance = 3.0
+light_intensity_lux = 45000.0
+light_temperature = 6100.0
+light_angular_distance = 1.2
 shadow_enabled = true
 directional_shadow_max_distance = 58.0
 
@@ -530,7 +533,7 @@ collision_mask = 1
 
 [node name="Mesh" type="MeshInstance3D" parent="Structures/SpawnScreen_-13_3"]
 mesh = SubResource("m7")
-material_override = SubResource("mat_concrete_dark")
+material_override = ExtResource("weathered_concrete")
 
 [node name="Collision" type="CollisionShape3D" parent="Structures/SpawnScreen_-13_3"]
 shape = SubResource("s5")
@@ -566,7 +569,7 @@ collision_mask = 1
 
 [node name="Mesh" type="MeshInstance3D" parent="Structures/SpawnScreen_13_3"]
 mesh = SubResource("m7")
-material_override = SubResource("mat_concrete_dark")
+material_override = ExtResource("weathered_concrete")
 
 [node name="Collision" type="CollisionShape3D" parent="Structures/SpawnScreen_13_3"]
 shape = SubResource("s5")
@@ -602,7 +605,7 @@ collision_mask = 1
 
 [node name="Mesh" type="MeshInstance3D" parent="Structures/CrossLaneWall_-7_2_-10_1"]
 mesh = SubResource("m9")
-material_override = SubResource("mat_concrete_dark")
+material_override = ExtResource("weathered_concrete")
 
 [node name="Collision" type="CollisionShape3D" parent="Structures/CrossLaneWall_-7_2_-10_1"]
 shape = SubResource("s7")
@@ -614,7 +617,7 @@ collision_mask = 1
 
 [node name="Mesh" type="MeshInstance3D" parent="Structures/CrossLaneWall_-7_2_10_1"]
 mesh = SubResource("m9")
-material_override = SubResource("mat_concrete_dark")
+material_override = ExtResource("weathered_concrete")
 
 [node name="Collision" type="CollisionShape3D" parent="Structures/CrossLaneWall_-7_2_10_1"]
 shape = SubResource("s7")
@@ -626,7 +629,7 @@ collision_mask = 1
 
 [node name="Mesh" type="MeshInstance3D" parent="Structures/CrossLaneWall_7_2_-10_1"]
 mesh = SubResource("m9")
-material_override = SubResource("mat_concrete_dark")
+material_override = ExtResource("weathered_concrete")
 
 [node name="Collision" type="CollisionShape3D" parent="Structures/CrossLaneWall_7_2_-10_1"]
 shape = SubResource("s7")
@@ -638,7 +641,7 @@ collision_mask = 1
 
 [node name="Mesh" type="MeshInstance3D" parent="Structures/CrossLaneWall_7_2_10_1"]
 mesh = SubResource("m9")
-material_override = SubResource("mat_concrete_dark")
+material_override = ExtResource("weathered_concrete")
 
 [node name="Collision" type="CollisionShape3D" parent="Structures/CrossLaneWall_7_2_10_1"]
 shape = SubResource("s7")
@@ -2054,28 +2057,28 @@ position = Vector3(0, 0.12, 17)
 [node name="AreaLamp_0" type="OmniLight3D" parent="Lights"]
 position = Vector3(-13, 4.7, -2)
 light_color = Color(0.38, 0.74, 1, 1)
-light_energy = 0.9
+light_intensity_lumens = 18000.0
 omni_range = 13
 shadow_enabled = false
 
 [node name="AreaLamp_1" type="OmniLight3D" parent="Lights"]
 position = Vector3(13, 4.7, 2)
 light_color = Color(1, 0.67, 0.34, 1)
-light_energy = 0.9
+light_intensity_lumens = 18000.0
 omni_range = 13
 shadow_enabled = false
 
 [node name="AreaLamp_2" type="OmniLight3D" parent="Lights"]
 position = Vector3(0, 4.7, -14)
 light_color = Color(0.8, 0.91, 1, 1)
-light_energy = 0.9
+light_intensity_lumens = 18000.0
 omni_range = 13
 shadow_enabled = false
 
 [node name="AreaLamp_3" type="OmniLight3D" parent="Lights"]
 position = Vector3(0, 4.7, 14)
 light_color = Color(0.8, 0.91, 1, 1)
-light_energy = 0.9
+light_intensity_lumens = 18000.0
 omni_range = 13
 shadow_enabled = false
 

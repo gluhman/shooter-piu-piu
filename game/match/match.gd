@@ -18,6 +18,11 @@ const TIME_LIMITS := [0, 60, 180, 300, 600, 900, 1200, 1800, 3600]
 const KILL_LIMITS := [0, 1, 5, 10, 15, 20, 30, 50, 100]
 const Balance := preload("res://game/combat/combat_balance.gd")
 const POSE_INTERVAL: float = 1.0 / Balance.NETWORK.snapshot_hz
+const DAYLIGHT_EXPOSURE := preload("res://game/maps/lighting/daylight_exposure.tres")
+const OFFICE_ENVIRONMENT := preload("res://game/maps/lighting/office_environment.tres")
+const OFFICE_EXPOSURE := preload("res://game/maps/lighting/office_exposure.tres")
+const SHADOW_GRADE := preload("res://game/maps/lighting/shadow_grade.tres")
+const OFFICE_BOUNCE := "res://game/maps/lighting/office_bounce.res"
 const ARENA_WEATHER := {
 	0: {"hour": 13.0, "wind": Vector2(25, 1.0)},
 	1: {"hour": 11.5, "wind": Vector2(-65, 0.75)},
@@ -124,12 +129,18 @@ func _ready() -> void:
 
 func _apply_graphics() -> void:
 	var environment: Environment = $WorldEnvironment.environment
-	if is_instance_valid(_breakwater):
+	var is_breakwater := is_instance_valid(_breakwater)
+	if is_breakwater:
 		environment = _breakwater.get_node("WorldEnvironment").environment
 	if environment:
 		environment.ssao_enabled = GameSettings.ambient_occlusion
 		_apply_indirect_lighting(environment)
-	if is_instance_valid(_breakwater):
+	# SDFGI replaces the ambient fill on nearby surfaces. Use a soft light from the sky side there.
+	$OutdoorFill.visible = environment != null and environment.sdfgi_enabled
+	if $OutdoorFill.visible:
+		var sun: DirectionalLight3D = $WorldEnvironment/SunLight
+		$OutdoorFill.rotation = Vector3(deg_to_rad(-48.0), sun.rotation.y + PI, 0.0)
+	if is_breakwater:
 		_breakwater.get_node("Sun").shadow_enabled = GameSettings.shadows
 		for light in get_tree().get_nodes_in_group(&"breakwater_shadow_lights"):
 			light.shadow_enabled = GameSettings.shadows
@@ -148,34 +159,17 @@ func _apply_graphics() -> void:
 func _apply_indirect_lighting(environment: Environment) -> void:
 	var enabled := GameSettings.indirect_lighting and GameSettings.supports_advanced_graphics() \
 		and DisplayServer.get_name() != "headless" and not Net.dedicated
+	# Closely spaced floors and roofs lose too much ambient fill with SDFGI.
+	environment.sdfgi_enabled = enabled and map_id not in [
+		MAP.OFFICE_ID, MAP.BREAKWATER_ID, MAP.VILLAGE_ID, MAP.WORKSHOP_ID]
 	var probe := $Map.get_node_or_null("OfficeBounce") as VoxelGI
-	environment.sdfgi_enabled = enabled and map_id != MAP.OFFICE_ID
-	if not enabled or map_id != MAP.OFFICE_ID:
-		if probe:
-			probe.hide()
-		return
+	if is_instance_valid(_breakwater):
+		probe = _breakwater.get_node("HallBounce") as VoxelGI
 	if probe:
-		probe.show()
-	elif $Map.has_node("VillageFixtures"):
-		_bake_office_bounce.call_deferred(_load_token)
-
-
-func _bake_office_bounce(token: int) -> void:
-	if token != _load_token or map_id != MAP.OFFICE_ID or not GameSettings.indirect_lighting \
-			or $Map.has_node("OfficeBounce"):
-		return
-	var probe := VoxelGI.new()
-	probe.name = "OfficeBounce"
-	probe.position.y = 1.45
-	probe.size = Vector3(21.0, 4.8, 17.0)
-	probe.subdiv = VoxelGI.SUBDIV_64
-	$Map.add_child(probe)
-	probe.bake($Map)
-	if probe.data:
-		probe.data.energy = 0.44
-		probe.data.interior = true
-	else:
-		probe.queue_free()
+		probe.visible = enabled
+	var baked_bounce := probe != null and probe.visible
+	environment.ssil_enabled = GameSettings.supports_advanced_graphics() \
+		and (enabled or GameSettings.ambient_occlusion) and not environment.sdfgi_enabled and not baked_bounce
 
 
 func prepare_startup_resources() -> void:
@@ -455,7 +449,9 @@ func _clear_match_map() -> void:
 	$Map.clear_map()
 	if is_instance_valid(_breakwater):
 		_breakwater = null
+	$OutdoorFill.hide()
 	$WorldEnvironment.environment = _base_environment
+	$WorldEnvironment.camera_attributes = DAYLIGHT_EXPOSURE
 	$WorldEnvironment/SunLight.show()
 	$WorldEnvironment/MoonLight.show()
 	if is_instance_valid(_navigation_region):
@@ -963,23 +959,39 @@ func _play_ambience() -> void:
 func _grade_arena(environment: Environment) -> void:
 	environment.tonemap_mode = Environment.TONE_MAPPER_AGX
 	environment.tonemap_exposure = 1.0
+	environment.glow_enabled = true
+	environment.glow_bloom = 0.075
+	environment.glow_intensity = 0.38
+	environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+	environment.ssil_intensity = 0.5
+	environment.adjustment_enabled = true
+	environment.adjustment_color_correction = SHADOW_GRADE
+	environment.adjustment_contrast = 1.0
+	environment.adjustment_saturation = 1.06
 	environment.ssao_radius = 1.25
-	environment.ssao_intensity = 1.2
-	environment.ambient_light_energy = 0.78
 	if map_id == MAP.OFFICE_ID:
-		environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-		environment.ambient_light_color = Color("#cbd6df")
-		environment.ambient_light_energy = 0.34
-	elif map_id == MAP.BREAKWATER_ID:
-		environment.ambient_light_energy = 0.58
+		environment.ssao_intensity = 0.85
+		return
+
+	environment.ssao_intensity = 0.78
+	environment.sdfgi_energy = 1.25
+	if map_id == MAP.BREAKWATER_ID:
+		environment.ambient_light_energy = 0.98
 	else:
 		environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-		environment.ambient_light_sky_contribution = 0.8
+		environment.ambient_light_energy = 0.85
+		environment.fog_enabled = true
+		environment.fog_density = 0.0009
+		environment.fog_aerial_perspective = 0.9
+		environment.fog_sky_affect = 0.0
+		# Set the dome's target as well so its day/night tween retains the fill.
+		$WorldEnvironment.sky_contribution = 0.55
 
 
 func _build_arena(layout_seed: int) -> void:
 	if map_id == MAP.BREAKWATER_ID:
 		$WorldEnvironment.environment = null
+		$WorldEnvironment.camera_attributes = null
 		$WorldEnvironment/SunLight.hide()
 		$WorldEnvironment/MoonLight.hide()
 		_breakwater = BREAKWATER_SCENE.instantiate()
@@ -993,11 +1005,22 @@ func _build_arena(layout_seed: int) -> void:
 		var wind: Vector2 = weather.wind
 		$WorldEnvironment.wind_direction = deg_to_rad(wind.x)
 		$WorldEnvironment.wind_speed = wind.y
-		_grade_arena($WorldEnvironment.environment)
 		if map_id == MAP.OFFICE_ID:
+			$WorldEnvironment.environment = OFFICE_ENVIRONMENT.duplicate()
+			$WorldEnvironment.camera_attributes = OFFICE_EXPOSURE
 			$WorldEnvironment/SunLight.hide()
 			$WorldEnvironment/MoonLight.hide()
+		_grade_arena($WorldEnvironment.environment)
 		var supplies: Array[Transform3D] = $Map.build(map_id, layout_seed, arena_width())
+		if map_id == MAP.OFFICE_ID and GameSettings.supports_advanced_graphics() and not Net.dedicated:
+			var probe := VoxelGI.new()
+			probe.name = "OfficeBounce"
+			probe.position.y = 1.45
+			probe.size = Vector3(21.0, 4.8, 17.0)
+			probe.subdiv = VoxelGI.SUBDIV_64
+			probe.camera_attributes = OFFICE_EXPOSURE
+			probe.data = load(OFFICE_BOUNCE) as VoxelGIData
+			$Map.add_child(probe)
 		$Loot.build_crates(supplies, $Map.market_supply_count)
 	_apply_graphics()
 	if not Net.dedicated:
@@ -1079,7 +1102,7 @@ func net_clock(seconds: int) -> void:
 	_display_seconds = seconds
 	var limit: int = TIME_LIMITS[time_option]
 	$HUD.show_round_status(seconds, limit > 0, KILL_LIMITS[kill_option])
-	if limit > 0 and map_id != MAP.BREAKWATER_ID:
+	if limit > 0 and map_id not in [MAP.BREAKWATER_ID, MAP.OFFICE_ID]:
 		var elapsed := clampi(limit - seconds, 0, limit)
 		var sky_hour := float(ARENA_WEATHER[map_id].hour) + float(elapsed - elapsed % 15) / 1500.0
 		if not is_equal_approx($WorldEnvironment.current_time, sky_hour):

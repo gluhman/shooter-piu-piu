@@ -58,6 +58,7 @@ func build(width: float, rng: RandomNumberGenerator) -> Array[Transform3D]:
 	_amber = _flat(Color(0.84, 0.45, 0.16), 0.58)
 	_amber.emission_enabled = true
 	_amber.emission = Color(0.66, 0.32, 0.085)
+	_amber.emission_intensity = 15000.0
 	_fixtures = Fixtures.new()
 	_fixtures.name = "VillageFixtures"
 	_map.add_child(_fixtures)
@@ -618,8 +619,8 @@ func _interior_light(frame: Transform3D, at: Vector3) -> void:
 	_lantern(frame, at)
 	var light := OmniLight3D.new()
 	light.position = frame * at
-	light.light_color = Color(1.0, 0.69, 0.39)
-	light.light_energy = 1.25
+	light.light_intensity_lumens = 16000.0
+	light.light_temperature = 3800.0
 	light.omni_range = 3.5
 	_map.add_child(light)
 

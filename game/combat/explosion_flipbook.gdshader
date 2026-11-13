@@ -53,6 +53,6 @@ void fragment() {
 	vec3 smoke_normal = texture(normal_positive, UV).rgb - texture(normal_negative, UV).rgb;
 	NORMAL = normalize(smoke_normal + vec3(0.0, 0.0, 0.001));
 	ALBEDO = smoke_tint * mix(0.35, 1.0, density);
-	EMISSION = flame * 5.0 * (1.0 - smoothstep(0.12, 0.26, age));
+	EMISSION = flame * 52000.0 * (1.0 - smoothstep(0.12, 0.26, age));
 	ALPHA = smoke.a * soft_edge * (1.0 - smoothstep(0.68, 1.0, age));
 }

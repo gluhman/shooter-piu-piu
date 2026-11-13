@@ -18,6 +18,6 @@ void fragment() {
 	color = mix(color, accent * 0.63, header * 0.72 + content * (1.0 - header) * 0.32);
 	color = mix(background * 0.34, color, inset);
 	ALBEDO = color;
-	EMISSION = color * 0.65;
+	EMISSION = color * 270.0;
 	ROUGHNESS = 0.22;
 }

@@ -82,7 +82,7 @@ func _ready() -> void:
 	var material := _sprite(_flare, Color.WHITE)
 	material.emission_enabled = true
 	material.emission = Color(1.0, 0.57, 0.19)
-	material.emission_energy_multiplier = 2.2
+	material.emission_intensity = 42000.0
 	material.emission_texture = _flare
 	_flash_mesh.material = material
 
@@ -198,7 +198,8 @@ func muzzle(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio
 	if distance_sq <= MUZZLE_LIGHT_DISTANCE * MUZZLE_LIGHT_DISTANCE:
 		var light := OmniLight3D.new()
 		light.light_color = Color(1.0, 0.71, 0.38)
-		light.light_energy = size * 16.0
+		light.light_intensity_lumens = size * 110000.0
+		light.light_bake_mode = Light3D.BAKE_DISABLED
 		light.omni_range = 3.0
 		flash.add_child(light)
 		fade.parallel().tween_property(light, "light_energy", 0.0, 0.045)
@@ -353,7 +354,8 @@ func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> v
 	var light := OmniLight3D.new()
 	light.position = center
 	light.light_color = Color(0.85, 0.91, 1.0) if flash else Color(1.0, 0.66, 0.30)
-	light.light_energy = 6.4 if flash else 10.0 * scale
+	light.light_intensity_lumens = 100000.0 if flash else 140000.0 * scale
+	light.light_bake_mode = Light3D.BAKE_DISABLED
 	light.omni_range = 12.0 if flash else radius * 2.4 * scale
 	add_child(light)
 	var light_fade := light.create_tween()
@@ -407,7 +409,7 @@ func tracer(ammo: Dictionary) -> Tracer:
 		material.albedo_color = color
 		material.emission_enabled = true
 		material.emission = color
-		material.emission_energy_multiplier = 1.8
+		material.emission_intensity = 34000.0
 		mesh.material = material
 		_trace_meshes[color] = mesh
 	streak.mesh = _trace_meshes[color]

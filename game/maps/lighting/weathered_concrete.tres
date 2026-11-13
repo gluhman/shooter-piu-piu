@@ -1,0 +1,16 @@
+[gd_resource type="ORMMaterial3D" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/map_textures/industrial/concrete_wall_007_diff_2k.jpg" id="albedo"]
+[ext_resource type="Texture2D" path="res://assets/map_textures/industrial/concrete_wall_007_nor_gl_2k.jpg" id="normal"]
+[ext_resource type="Texture2D" path="res://assets/map_textures/industrial/concrete_wall_007_arm_2k.jpg" id="orm"]
+
+[resource]
+albedo_texture = ExtResource("albedo")
+orm_texture = ExtResource("orm")
+normal_enabled = true
+normal_scale = 1.0
+normal_texture = ExtResource("normal")
+uv1_scale = Vector3(0.455, 0.455, 0.455)
+uv1_triplanar = true
+uv1_world_triplanar = true
+texture_filter = 5

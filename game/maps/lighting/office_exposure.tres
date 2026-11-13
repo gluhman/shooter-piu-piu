@@ -1,0 +1,6 @@
+[gd_resource type="CameraAttributesPhysical" format=3]
+
+[resource]
+exposure_sensitivity = 500.0
+exposure_aperture = 4.0
+exposure_shutter_speed = 60.0

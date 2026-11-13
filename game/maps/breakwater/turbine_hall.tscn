@@ -101,7 +101,7 @@ roughness = 0.44
 transparency = 1
 emission_enabled = true
 emission = Color(0.47, 0.62, 0.69, 1)
-emission_energy_multiplier = 0.4
+emission_intensity = 4200.0
 cull_mode = 2
 
 [sub_resource type="StandardMaterial3D" id="fixture_lens"]
@@ -110,7 +110,7 @@ metallic = 0
 roughness = 0.4
 emission_enabled = true
 emission = Color(1, 0.87, 0.69, 1)
-emission_energy_multiplier = 2.25
+emission_intensity = 42000.0
 
 [sub_resource type="StandardMaterial3D" id="dock_blue"]
 albedo_color = Color(0.26, 0.39, 0.49, 1)
@@ -1141,7 +1141,7 @@ rotation = Vector3(0, 1.5708, 0)
 [node name="WestPortalBounce-6.55" type="OmniLight3D" parent="Lighting"]
 position = Vector3(-15.77, 3.75, -6.55)
 light_color = Color(0.69, 0.82, 1, 1)
-light_energy = 0.62
+light_intensity_lumens = 12400.0
 omni_range = 5.3
 
 [node name="WestPortalFixture6.55" parent="Fixtures" instance=ExtResource("wall_lamp")]
@@ -1152,7 +1152,7 @@ rotation = Vector3(0, 1.5708, 0)
 [node name="WestPortalBounce6.55" type="OmniLight3D" parent="Lighting"]
 position = Vector3(-15.77, 3.75, 6.55)
 light_color = Color(0.69, 0.82, 1, 1)
-light_energy = 0.62
+light_intensity_lumens = 12400.0
 omni_range = 5.3
 
 [node name="EastSill" type="StaticBody3D" parent="Shell"]
@@ -1546,7 +1546,7 @@ rotation = Vector3(0, -1.5708, 0)
 [node name="EastPortalBounce-6.55" type="OmniLight3D" parent="Lighting"]
 position = Vector3(15.77, 3.75, -6.55)
 light_color = Color(1, 0.73, 0.43, 1)
-light_energy = 0.62
+light_intensity_lumens = 12400.0
 omni_range = 5.3
 
 [node name="EastPortalFixture6.55" parent="Fixtures" instance=ExtResource("wall_lamp")]
@@ -1557,7 +1557,7 @@ rotation = Vector3(0, -1.5708, 0)
 [node name="EastPortalBounce6.55" type="OmniLight3D" parent="Lighting"]
 position = Vector3(15.77, 3.75, 6.55)
 light_color = Color(1, 0.73, 0.43, 1)
-light_energy = 0.62
+light_intensity_lumens = 12400.0
 omni_range = 5.3
 
 [node name="NorthEndWallExtension0" type="StaticBody3D" parent="Shell"]
@@ -1863,13 +1863,13 @@ scale = Vector3(0.83, 0.83, 0.83)
 [node name="NorthPortalLight-8.05" type="OmniLight3D" parent="Lighting"]
 position = Vector3(-8.05, 3.1, -12.4)
 light_color = Color(0.7, 0.84, 1, 1)
-light_energy = 0.85
+light_intensity_lumens = 17000.0
 omni_range = 7.1
 
 [node name="NorthPortalLight8.05" type="OmniLight3D" parent="Lighting"]
 position = Vector3(8.05, 3.1, -12.4)
 light_color = Color(0.7, 0.84, 1, 1)
-light_energy = 0.85
+light_intensity_lumens = 17000.0
 omni_range = 7.1
 
 [node name="SouthEndWallExtension0" type="StaticBody3D" parent="Shell"]
@@ -2177,13 +2177,13 @@ rotation = Vector3(0, 3.14159, 0)
 [node name="SouthPortalLight-8.05" type="OmniLight3D" parent="Lighting"]
 position = Vector3(-8.05, 3.1, 12.4)
 light_color = Color(1, 0.81, 0.57, 1)
-light_energy = 0.85
+light_intensity_lumens = 17000.0
 omni_range = 7.1
 
 [node name="SouthPortalLight8.05" type="OmniLight3D" parent="Lighting"]
 position = Vector3(8.05, 3.1, 12.4)
 light_color = Color(1, 0.81, 0.57, 1)
-light_energy = 0.85
+light_intensity_lumens = 17000.0
 omni_range = 7.1
 
 [node name="GeneratorPipework" parent="Machinery" instance=ExtResource("pipework")]
@@ -2419,7 +2419,7 @@ cast_shadow = 0
 position = Vector3(-10.9, 7.23, -9.88)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.12
+light_intensity_lumens = 29680.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2438,7 +2438,7 @@ cast_shadow = 0
 position = Vector3(-10.9, 7.23, -0.3)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.65
+light_intensity_lumens = 37100.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2457,7 +2457,7 @@ cast_shadow = 0
 position = Vector3(-10.9, 7.23, 9.3)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.12
+light_intensity_lumens = 29680.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2476,7 +2476,7 @@ cast_shadow = 0
 position = Vector3(-4.5, 7.23, -9.88)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.12
+light_intensity_lumens = 29680.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2495,7 +2495,7 @@ cast_shadow = 0
 position = Vector3(-4.5, 7.23, -0.3)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.65
+light_intensity_lumens = 37100.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2515,7 +2515,7 @@ cast_shadow = 0
 position = Vector3(-4.5, 7.23, 9.3)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.12
+light_intensity_lumens = 29680.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2534,7 +2534,7 @@ cast_shadow = 0
 position = Vector3(4.5, 7.23, -9.88)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.12
+light_intensity_lumens = 29680.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2553,7 +2553,7 @@ cast_shadow = 0
 position = Vector3(4.5, 7.23, -0.3)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.65
+light_intensity_lumens = 37100.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2573,7 +2573,7 @@ cast_shadow = 0
 position = Vector3(4.5, 7.23, 9.3)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.12
+light_intensity_lumens = 29680.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2592,7 +2592,7 @@ cast_shadow = 0
 position = Vector3(10.9, 7.23, -9.88)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.12
+light_intensity_lumens = 29680.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2611,7 +2611,7 @@ cast_shadow = 0
 position = Vector3(10.9, 7.23, -0.3)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.65
+light_intensity_lumens = 37100.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2630,7 +2630,7 @@ cast_shadow = 0
 position = Vector3(10.9, 7.23, 9.3)
 rotation = Vector3(-1.5708, 0, 0)
 light_color = Color(1, 0.9, 0.74, 1)
-light_energy = 2.12
+light_intensity_lumens = 29680.0
 spot_range = 14
 spot_angle = 40
 spot_attenuation = 0.74
@@ -2639,27 +2639,27 @@ spot_angle_attenuation = 0.72
 [node name="HallBounce0" type="OmniLight3D" parent="Lighting"]
 position = Vector3(-6, 4.9, -5)
 light_color = Color(0.73, 0.84, 1, 1)
-light_energy = 0.42
+light_intensity_lumens = 8400.0
 omni_range = 11
 omni_attenuation = 1.12
 
 [node name="HallBounce1" type="OmniLight3D" parent="Lighting"]
 position = Vector3(6, 4.9, -5)
 light_color = Color(0.73, 0.84, 1, 1)
-light_energy = 0.42
+light_intensity_lumens = 8400.0
 omni_range = 11
 omni_attenuation = 1.12
 
 [node name="HallBounce2" type="OmniLight3D" parent="Lighting"]
 position = Vector3(-6, 4.9, 5)
 light_color = Color(0.73, 0.84, 1, 1)
-light_energy = 0.42
+light_intensity_lumens = 8400.0
 omni_range = 11
 omni_attenuation = 1.12
 
 [node name="HallBounce3" type="OmniLight3D" parent="Lighting"]
 position = Vector3(6, 4.9, 5)
 light_color = Color(0.73, 0.84, 1, 1)
-light_energy = 0.42
+light_intensity_lumens = 8400.0
 omni_range = 11
 omni_attenuation = 1.12

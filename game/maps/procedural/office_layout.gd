@@ -163,14 +163,14 @@ func _ceiling_light(at: Vector2) -> void:
 	var lamp := OmniLight3D.new()
 	lamp.position = Vector3(at.x, CEILING - 0.24, at.y)
 	if at.x < -4.0 or (absf(at.x) < 4.0 and at.y > 0.0):
-		lamp.light_color = Color("#fff0d2")
-		lamp.light_energy = 1.72
+		lamp.light_temperature = 3500.0
+		lamp.light_intensity_lumens = 4100.0
 	elif at.x > 4.0:
-		lamp.light_color = Color("#e1eeff")
-		lamp.light_energy = 1.92
+		lamp.light_temperature = 5600.0
+		lamp.light_intensity_lumens = 4700.0
 	else:
-		lamp.light_color = Color("#eff6f8")
-		lamp.light_energy = 1.82
+		lamp.light_temperature = 4600.0
+		lamp.light_intensity_lumens = 4500.0
 	lamp.omni_range = 5.4
 	lamp.omni_attenuation = 1.25
 	if at == Vector2(-2, -4) or at == Vector2(2, 3):
@@ -471,5 +471,5 @@ func _emissive(color: Color, power: float) -> StandardMaterial3D:
 	var material := _mat(color)
 	material.emission_enabled = true
 	material.emission = color
-	material.emission_energy_multiplier = power
+	material.emission_intensity = power * 900.0
 	return material
