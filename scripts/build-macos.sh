@@ -153,6 +153,11 @@ if ! "$godot" --headless --path "$snapshot" --export-release macOS "$built" >"$b
     fail 'Не удалось экспортировать Shooter.app.'
 fi
 
+if [[ -n "${SHOOTER_SPARKLE_DIST:-}" ]]; then
+    public_key="${SHOOTER_SPARKLE_PUBLIC_KEY:-K+4a3xaYamLb08VO9SnrIl4MrPEoFpgwBV0ACFOz+Kg=}"
+    feed_url="${SHOOTER_SPARKLE_FEED_URL:-https://github.com/gluhman/shooter-piu-piu/releases/download/shooter-appcast/appcast.xml}"
+    "$project_dir/scripts/embed-sparkle-macos.sh" "$built" "$SHOOTER_SPARKLE_DIST" "$public_key" "$feed_url"
+fi
 codesign --verify --deep --strict "$built"
 architectures=" $(lipo -archs "$built/Contents/MacOS/shoot-container") "
 [[ "$architectures" == *' arm64 '* && "$architectures" == *' x86_64 '* ]] ||

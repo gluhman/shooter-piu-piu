@@ -4,6 +4,7 @@ const UPDATE_SERVER := "http://51.250.79.77/shooter/"
 const UPDATE_MANIFEST := UPDATE_SERVER + "manifest.json"
 const GITHUB_RELEASE := "https://api.github.com/repos/gluhman/shooter-piu-piu/releases/latest"
 const GITHUB_RELEASES := "https://api.github.com/repos/gluhman/shooter-piu-piu/releases?per_page=20"
+const SPARKLE_HELPER := "../Helpers/Shooter Updater.app"
 const DIALOG_SIZE := Vector2i(680, 420)
 
 var _choose: Button
@@ -33,7 +34,7 @@ func _ready() -> void:
 	_check.pressed.connect(_find_update)
 	_download.pressed.connect(_download_update)
 	_download.hide()
-	_full = add_button("Скачать новую сборку", true)
+	_full = add_button("Обновить приложение" if _has_native_updater() else "Скачать новую сборку", true)
 	_full.pressed.connect(_download_full)
 	_full.hide()
 	get_label().hide()
@@ -104,7 +105,7 @@ func _find_update() -> void:
 		var releases: Variant = JSON.parse_string(full_response.body.get_string_from_utf8())
 		if releases is Array:
 			_full_candidate = _latest_full_build(releases)
-	_full.visible = not _full_candidate.is_empty()
+	_full.visible = _has_native_updater() or not _full_candidate.is_empty()
 	_download.visible = not _candidate.is_empty()
 	var message := "GitHub: доступен\nБаза: %s\n\nНовых патчей нет." % ShooterRelease.base_version
 	if not _candidate.is_empty():
@@ -113,7 +114,9 @@ func _find_update() -> void:
 			message += "\n\nЧто нового:\n" + _release_notes(_candidate.notes).left(700)
 		message += "\n\nПосле установки игра перезапустится."
 	if not _full_candidate.is_empty():
-		message += "\n\nДоступна полная сборка %s · %s. После загрузки откройте DMG и замените Shooter.app." % [_full_candidate.version, _format_bytes(_full_candidate.size)]
+		message += "\n\nДоступна полная сборка %s · %s." % [_full_candidate.version, _format_bytes(_full_candidate.size)]
+		if not _has_native_updater():
+			message += " После загрузки откройте DMG и замените Shooter.app."
 	_set_busy(false, message)
 
 
@@ -142,7 +145,20 @@ func _latest_full_build(releases: Array) -> Dictionary:
 	return candidate
 
 
+func _updater_path() -> String:
+	return OS.get_executable_path().get_base_dir().path_join(SPARKLE_HELPER).simplify_path()
+
+
+func _has_native_updater() -> bool:
+	return ShooterRelease.supports_patches() and int(OS.get_version().get_slice(".", 0)) >= 12 \
+		and DirAccess.dir_exists_absolute(_updater_path())
+
+
 func _download_full() -> void:
+	if _has_native_updater():
+		if OS.create_process("/usr/bin/open", [_updater_path()]) < 0:
+			_set_status("Не удалось открыть установщик обновлений.")
+		return
 	if OS.shell_open(_full_candidate.url) != OK:
 		_set_status("Не удалось открыть загрузку сборки.")
 		return
