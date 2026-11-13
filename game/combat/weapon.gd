@@ -388,7 +388,7 @@ func _physics_process(delta: float) -> void:
 		if _knife_probe_left <= 0.0:
 			_knife_probe_left = 0.08
 			var in_reach := false
-			if _can_fire() and _player.accepts_gameplay_input():
+			if _can_fire() and _player.accepts_gameplay_input() and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 				var origin := _camera.global_position
 				var hit: Dictionary = _ballistics.combat_ray(_player, origin, origin - _camera.global_basis.z * float(_stats.range))
 				in_reach = not hit.is_empty() and hit.collider.has_meta(&"hit_zone")

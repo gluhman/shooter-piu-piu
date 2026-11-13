@@ -2,7 +2,6 @@ extends AcceptDialog
 
 const UPDATE_SERVER := "http://51.250.79.77/shooter/"
 const UPDATE_MANIFEST := UPDATE_SERVER + "manifest.json"
-const GITHUB_RELEASE := "https://api.github.com/repos/gluhman/shooter-piu-piu/releases/latest"
 const GITHUB_RELEASES := "https://api.github.com/repos/gluhman/shooter-piu-piu/releases?per_page=20"
 const SPARKLE_HELPER := "../Helpers/Shooter Updater.app"
 const DIALOG_SIZE := Vector2i(680, 420)
@@ -88,23 +87,21 @@ func _find_update() -> void:
 	_full.hide()
 	_full_candidate.clear()
 	_set_busy(true, "Проверяем обновления…")
-	var response := await _request(UPDATE_MANIFEST, "", 64 * 1024, 20.0)
-	if response.code == 200:
-		var manifest: Variant = JSON.parse_string(response.body.get_string_from_utf8())
-		if manifest is Dictionary:
-			_candidate = _patch_from_manifest(manifest)
-	if _candidate.is_empty():
-		_set_busy(true, "GitHub: проверяем обновления…")
-		response = await _request(GITHUB_RELEASE, "", 128 * 1024, 20.0)
+	for url in [UPDATE_SERVER + ShooterRelease.base_version + "/manifest.json", UPDATE_MANIFEST]:
+		var response := await _request(url, "", 64 * 1024, 10.0)
 		if response.code == 200:
-			var release: Variant = JSON.parse_string(response.body.get_string_from_utf8())
-			if release is Dictionary:
-				_candidate = _patch_from_release(release)
+			var manifest: Variant = JSON.parse_string(response.body.get_string_from_utf8())
+			if manifest is Dictionary:
+				_candidate = _patch_from_manifest(manifest)
+				if not _candidate.is_empty():
+					break
 	var full_response := await _request(GITHUB_RELEASES, "", 2 * 1024 * 1024, 10.0)
 	if full_response.code == 200:
 		var releases: Variant = JSON.parse_string(full_response.body.get_string_from_utf8())
 		if releases is Array:
 			_full_candidate = _latest_full_build(releases)
+			if _candidate.is_empty():
+				_candidate = _latest_patch(releases)
 	_full.visible = _has_native_updater() or not _full_candidate.is_empty()
 	_download.visible = not _candidate.is_empty()
 	var message := "GitHub: доступен\nБаза: %s\n\nНовых патчей нет." % ShooterRelease.base_version
@@ -201,6 +198,18 @@ func _patch_from_release(release: Dictionary) -> Dictionary:
 		return {}
 	return {"version": version, "pck": pck, "cfg": cfg, "size": size,
 		"notes": str(release.get("body", "")).strip_edges()}
+
+
+func _latest_patch(releases: Array) -> Dictionary:
+	var best: Dictionary = {}
+	for release: Variant in releases:
+		if not release is Dictionary or release.get("draft", false) or release.get("prerelease", false):
+			continue
+		var candidate := _patch_from_release(release)
+		if not candidate.is_empty() and (best.is_empty()
+				or int(candidate.version.get_slice(".", 2)) > int(best.version.get_slice(".", 2))):
+			best = candidate
+	return best
 
 
 func _is_safe_release_path(path: String) -> bool:
