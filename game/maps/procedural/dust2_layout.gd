@@ -404,33 +404,31 @@ func _parked_car(point: Vector2, paint: Color) -> void:
 	wheel.bottom_radius = 0.37
 	wheel.height = 0.24
 	wheel.radial_segments = 12
-	wheel.material = rubber
+	var details := ArrayMesh.new()
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	surface.set_material(rubber)
+	var wheel_basis := Basis(Vector3.BACK, PI * 0.5)
 	for side in [-1.0, 1.0]:
 		for axle in [-1.24, 1.24]:
-			var visual := MeshInstance3D.new()
-			visual.mesh = wheel
-			visual.position = Vector3(1.07 * side, -0.25, axle)
-			visual.rotation.z = PI * 0.5
-			chassis.add_child(visual)
+			surface.append_from(wheel, 0, Transform3D(wheel_basis, Vector3(1.07 * side, -0.25, axle)))
 	var bumper := BoxMesh.new()
 	bumper.size = Vector3(2.23, 0.15, 0.14)
-	bumper.material = rubber
 	for end in [-1.0, 1.0]:
-		var visual := MeshInstance3D.new()
-		visual.mesh = bumper
-		visual.position = Vector3(0.0, -0.22, end * 2.09)
-		chassis.add_child(visual)
-	var headlamp := BoxMesh.new()
-	headlamp.size = Vector3(0.46, 0.19, 0.05)
-	headlamp.material = _flat_material(Color("#ded3a3"), 0.12)
-	var tail_lamp := headlamp.duplicate() as BoxMesh
-	tail_lamp.material = _flat_material(Color("#963e32"), 0.08)
-	for end in [-1.0, 1.0]:
+		surface.append_from(bumper, 0, Transform3D(Basis.IDENTITY, Vector3(0.0, -0.22, end * 2.09)))
+	surface.commit(details)
+	var lamp := BoxMesh.new()
+	lamp.size = Vector3(0.46, 0.19, 0.05)
+	for end: float in [-1.0, 1.0]:
+		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var color := Color("#ded3a3") if end < 0.0 else Color("#963e32")
+		surface.set_material(_flat_material(color, 0.12 if end < 0.0 else 0.08))
 		for side in [-1.0, 1.0]:
-			var light := MeshInstance3D.new()
-			light.mesh = headlamp if end < 0 else tail_lamp
-			light.position = Vector3(side * 0.74, 0.16, end * 2.11)
-			chassis.add_child(light)
+			surface.append_from(lamp, 0, Transform3D(Basis.IDENTITY, Vector3(side * 0.74, 0.16, end * 2.11)))
+		surface.commit(details)
+	var fittings := MeshInstance3D.new()
+	fittings.mesh = details
+	chassis.add_child(fittings)
 
 
 func _flat_material(color: Color, metallic: float) -> StandardMaterial3D:

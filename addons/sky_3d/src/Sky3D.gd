@@ -372,23 +372,23 @@ func _start_sky_contrib_tween(daytime: bool = is_day()) -> void:
 ## Alias for [member CameraAttributesPractical.auto_exposure_min_sensitivity].
 @export_range(0, 1600, 0.5) var auto_exposure_min: float = 0.0 :
 	set(value):
-		if camera_attributes:
+		if camera_attributes is CameraAttributesPractical:
 			camera_attributes.auto_exposure_min_sensitivity = value
 			if value > auto_exposure_max:
 				auto_exposure_max = value
 	get:
-		return camera_attributes.auto_exposure_min_sensitivity if camera_attributes else auto_exposure_min
+		return camera_attributes.auto_exposure_min_sensitivity if camera_attributes is CameraAttributesPractical else auto_exposure_min
 
 
 ## Alias for [member CameraAttributesPractical.auto_exposure_max_sensitivity].
 @export_range(30, 64000, 0.5) var auto_exposure_max: float = 800.0 :
 	set(value):
-		if camera_attributes:
+		if camera_attributes is CameraAttributesPractical:
 			camera_attributes.auto_exposure_max_sensitivity = value
 			if value < auto_exposure_min:
 				auto_exposure_min = value
 	get:
-		return camera_attributes.auto_exposure_max_sensitivity if camera_attributes else auto_exposure_max
+		return camera_attributes.auto_exposure_max_sensitivity if camera_attributes is CameraAttributesPractical else auto_exposure_max
 
 
 ## Alias for [member CameraAttributes.auto_exposure_speed].

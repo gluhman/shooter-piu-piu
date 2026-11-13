@@ -117,8 +117,7 @@ func _refresh() -> void:
 	for kind: String in ARSENAL.GRENADE_IDS:
 		var count: int = _player.grenade_stock(kind)
 		var slot: Label = _grenade_slots[kind]
-		var action: StringName = ARSENAL.GRENADE_ACTIONS[kind]
-		slot.text = "%s %s\n%d" % [GameSettings.binding_label(action), ARSENAL.GRENADE_LABELS[kind].left(3), count]
+		slot.text = "%s\n%d" % [ARSENAL.GRENADE_LABELS[kind].left(3), count]
 		slot.modulate = UI.ACCENT if kind == selected else (UI.INK if count > 0 else UI.MUTED)
 	if _wheel_panel.visible:
 		_update_wheel()

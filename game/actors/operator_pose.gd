@@ -56,6 +56,7 @@ var support_grip := 0.0
 var shovel_grip := false
 var shovel_lean := Vector2.ZERO
 var mounted_grip := false
+var shoulder_brace := 0.0
 var eye_in_head := Vector3.ZERO
 var stance_offset := Vector3.ZERO
 
@@ -214,6 +215,10 @@ func weapon_carry_anchor() -> Vector3:
 	return _animated_shoulder(_right_arm).lerp(_animated_shoulder(_left_arm), 0.5)
 
 
+func weapon_stock_anchor() -> Vector3:
+	return _animated_shoulder(_right_arm) + actor.global_basis * Vector3(-0.045, 0.06, -0.095)
+
+
 func weapon_reach_correction(two_handed: bool) -> Vector3:
 	var right_shoulder := _animated_shoulder(_right_arm)
 	if not two_handed:
@@ -256,7 +261,7 @@ func _torso_rotation(skeleton: Skeleton3D) -> Basis:
 	angles.x += aim_pitch * 0.25 - shovel_lean.x
 	if mounted_grip:
 		angles.x += 0.24 + maxf(0.0, aim_pitch) * 0.40
-	angles.y += shovel_lean.y
+	angles.y += shovel_lean.y - shoulder_brace * 0.55
 	angles.z -= lean * 0.45
 	return axes * Basis.from_euler(angles) * axes.transposed()
 

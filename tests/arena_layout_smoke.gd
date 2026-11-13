@@ -42,6 +42,15 @@ func _run() -> void:
 			_check(is_instance_valid(navigation) and navigation.navigation_mesh.get_polygon_count() > 0,
 				context + " has navigation")
 			_check(not map.minimap_outline(bounds).is_empty(), context + " has a minimap")
+			if id == MAP.OUTPOST_ID or id == MAP.STATION_ID:
+				var crates: Array = arena.get_node("Loot")._crates
+				var destinations := PackedVector3Array(map.respawn_points)
+				for crate: StaticBody3D in crates:
+					destinations.append(crate.position)
+				_check(crates.size() == 4 and _spawns_clear(map, map.respawn_points),
+					context + " has four crates and clear respawns")
+				_check(_connected(navigation.get_navigation_map(), spawns[0], destinations),
+					context + " connects all spawns and supply crates")
 			if id < MAP.VILLAGE_ID:
 				_check(get_nodes_in_group(&"arena_wayfinding").size() == 2, context + " has two marked cover positions")
 			arena._clear_match_map()
@@ -49,6 +58,15 @@ func _run() -> void:
 	arena.queue_free()
 	await create_timer(0.25).timeout
 	quit(int(_failed))
+
+
+func _connected(nav_map: RID, from: Vector3, destinations: PackedVector3Array) -> bool:
+	for point in destinations:
+		var path := NavigationServer3D.map_get_path(nav_map, from, point, true)
+		if path.is_empty() or path[-1].distance_to(point) > 1.5:
+			print("Unreachable destination ", point)
+			return false
+	return true
 
 
 func _spawns_clear(map: Node3D, spawns: PackedVector3Array) -> bool:

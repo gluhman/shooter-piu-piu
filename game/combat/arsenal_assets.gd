@@ -2,7 +2,6 @@ extends RefCounted
 
 const Balance := preload("res://game/combat/combat_balance.gd")
 const GRENADE_IDS := ["frag", "flash", "concussion", "smoke"]
-const GRENADE_ACTIONS := {"frag": &"throw_frag", "flash": &"throw_flash", "smoke": &"throw_smoke", "concussion": &"throw_grenade"}
 const GRENADE_LABELS := {"frag": "Осколочная", "flash": "Светошумовая", "smoke": "Дымовая", "concussion": "Оглушающая"}
 const MAX_GRENADES: int = Balance.GRENADES.shared.count_per_spawn
 const MODELS := {

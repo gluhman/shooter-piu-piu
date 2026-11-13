@@ -6,6 +6,22 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	var settings := root.get_node("GameSettings")
+	var legacy := ConfigFile.new()
+	legacy.set_value("controls", "bindings_version", 1)
+	legacy.set_value("bindings", "throw_grenade", KEY_C)
+	legacy.set_value("bindings", "throw_frag", KEY_G)
+	legacy.set_value("bindings", "select_grenade", KEY_3)
+	settings._migrate_bindings(legacy)
+	if not _check(not legacy.has_section_key("bindings", "throw_grenade")
+			and not legacy.has_section_key("bindings", "throw_frag")
+			and legacy.get_value("bindings", "select_grenade") == KEY_3,
+			"legacy default throw moves to G and selection stays unchanged"):
+		return
+	legacy.set_value("bindings", "throw_grenade", KEY_P)
+	settings._migrate_bindings(legacy)
+	if not _check(legacy.get_value("bindings", "throw_grenade") == KEY_P, "custom shared binding is preserved"):
+		return
 	var arena := (load("res://game/match/arena.tscn") as PackedScene).instantiate()
 	root.add_child(arena)
 	await arena.start_solo(0, 1, 0, 4, Vector2i(1, 1), 0)
@@ -26,9 +42,40 @@ func _run() -> void:
 		return
 	if not _check(not player.select_grenade("frag"), "unavailable grenade cannot be selected"):
 		return
+	for action in [&"throw_frag", &"throw_flash", &"throw_smoke"]:
+		if not _check(not InputMap.has_action(action), "direct throw action removed"):
+			return
+	if not _check(settings.ACTIONS[&"throw_grenade"][1] == KEY_G, "G is the default shared throw"):
+		return
+	if DisplayServer.get_name() != "headless":
+		player.control_enabled = true
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		var grenades := arena.get_node("Grenades")
+		for kind in ["flash", "smoke", "concussion", "frag"]:
+			player._throw_wait = 0.0
+			player._grenades[kind] = 1
+			player.select_grenade(kind)
+			_throw_event(player, true)
+			if kind == "frag":
+				await physics_frame
+				await physics_frame
+				if not _check(grenades._cooking.has(player.score_id()), "holding G keeps the frag in hand"):
+					return
+			_throw_event(player, false)
+			await physics_frame
+			await physics_frame
+			var launched: bool = grenades._flights.values().any(func(flight) -> bool: return flight.kind == kind)
+			if not _check(launched and player.grenade_stock(kind) == 0, "shared throw launches " + kind):
+				return
 	print("GRENADE_SELECTOR_OK")
 	arena.queue_free()
 	quit()
+
+
+func _throw_event(player: Node, pressed: bool) -> void:
+	var event: InputEvent = InputMap.action_get_events(&"throw_grenade")[0].duplicate()
+	event.pressed = pressed
+	player._unhandled_input(event)
 
 
 func _check(passed: bool, message: String) -> bool:
