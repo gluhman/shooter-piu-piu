@@ -9,11 +9,14 @@ class PerforatedCover:
 	var points := PackedVector4Array()
 	var axes := PackedVector3Array()
 	var materials: Array[ShaderMaterial] = []
+	var moving_surface: MeshInstance3D
+	var original_material: Material
 
 const GRASS := preload("res://assets/arena_props/grass.glb")
 const SHRUBS := preload("res://assets/arena_props/shrubs.glb")
 const VILLAGE := preload("res://game/maps/procedural/village_layout.gd")
 const DUST2 := preload("res://game/maps/procedural/dust2_layout.gd")
+const OFFICE := preload("res://game/maps/procedural/office_layout.gd")
 const WORKSHOP := preload("res://game/maps/procedural/workshop_layout.gd")
 
 const CONTAINER_HEIGHT := 2.59
@@ -34,6 +37,8 @@ const DUST2_ID := 4
 const WORKSHOP_ID := 5
 const BREAKWATER_ID := 6
 const TEST_RANGE_ID := 7
+const OFFICE_ID := 8
+const OFFICE_BOUNDS := Rect2(-OFFICE.HALF_X, -OFFICE.HALF_Z, OFFICE.HALF_X * 2.0, OFFICE.HALF_Z * 2.0)
 
 class Cover:
 	var center: Vector2
@@ -46,7 +51,7 @@ const COLOR_GREEN := Color(0.28, 0.52, 0.34)
 const COLOR_ORANGE := Color(0.95, 0.48, 0.14)
 const COLOR_GREY := Color(0.72, 0.74, 0.72)
 
-const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон"]
+const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон", "Малый офис"]
 
 const PATROL_ROUTES := [
 	[
@@ -114,6 +119,9 @@ func preload_textures(map_id: int) -> void:
 		for material in DUST2_TEXTURES:
 			for kind in DUST2_TEXTURES[material]:
 				_textures.erase(_texture_path(material, kind))
+	if map_id == OFFICE_ID:
+		for texture in ["office/carpet", "brushed", "rubber"]:
+			materials[texture] = ["color", "normal", "roughness"]
 	if map_id == VILLAGE_ID:
 		materials.merge(VILLAGE_TEXTURES)
 	else:
@@ -149,6 +157,8 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = layout_seed
 	_half_extent = width * 0.5
+	if map_id == OFFICE_ID:
+		return OFFICE.new(self).build()
 	if map_id == WORKSHOP_ID:
 		return WORKSHOP.new(self).build(width)
 	if map_id == DUST2_ID:
@@ -712,21 +722,26 @@ func _add_steel_panel(center: Vector3, size: Vector3, material: Material, yaw: f
 	return panel
 
 
-func _register_perforated_cover(body: StaticBody3D) -> void:
+func _register_perforated_cover(body: StaticBody3D, moving_surface: MeshInstance3D = null) -> void:
 	var cover := PerforatedCover.new()
 	cover.body = body
+	cover.moving_surface = moving_surface
+	if moving_surface:
+		cover.original_material = moving_surface.material_override
 	body.set_meta(&"bullet_cover_id", _perforated.size())
 	_perforated.append(cover)
 
 
-func add_bullet_hole(id: int, entry: Vector3, axis: Vector3, profile: String, force: float = 1.0) -> void:
+func add_bullet_hole(id: int, entry: Vector3, axis: Vector3, profile: String, force: float = 1.0, perforated := true) -> void:
 	if id < 0 or id >= _perforated.size():
 		return
 	var cover := _perforated[id]
-	var wood: bool = cover.body.get_meta(&"impact_surface") == "wood"
+	var wood: bool = cover.moving_surface != null or cover.body.get_meta(&"impact_surface") == "wood"
 	var radius := (0.049 if wood else 0.035) * sqrt(clampf(force, 0.32, 1.45))
 	if profile == "deagle":
 		radius *= 0.85
+	if not perforated:
+		radius *= -0.68
 	if cover.points.size() == HOLES_PER_PANEL:
 		cover.points.remove_at(0)
 		cover.axes.remove_at(0)
@@ -739,8 +754,11 @@ func clear_bullet_holes() -> void:
 	for cover in _perforated:
 		if cover.points.is_empty():
 			continue
-		for mesh: MeshInstance3D in cover.body.find_children("*", "MeshInstance3D", false, false):
-			mesh.material_override = null
+		if cover.moving_surface:
+			cover.moving_surface.material_override = cover.original_material
+		else:
+			for mesh: MeshInstance3D in cover.body.find_children("*", "MeshInstance3D", false, false):
+				mesh.material_override = null
 		cover.points.clear()
 		cover.axes.clear()
 		cover.materials.clear()
@@ -765,10 +783,18 @@ func net_bullet_holes(id: int, points: PackedVector4Array, axes: PackedVector3Ar
 
 func _apply_bullet_holes(cover: PerforatedCover) -> void:
 	if cover.materials.is_empty():
-		for mesh: MeshInstance3D in cover.body.find_children("*", "MeshInstance3D", false, false):
-			var source := mesh.mesh.surface_get_material(0) as StandardMaterial3D
+		var meshes := cover.body.find_children("*", "MeshInstance3D", false, false)
+		if cover.moving_surface:
+			meshes.assign([cover.moving_surface])
+		for mesh: MeshInstance3D in meshes:
+			var source := mesh.get_active_material(0) as StandardMaterial3D
+			if not source:
+				continue
 			var material := ShaderMaterial.new()
 			material.shader = BULLET_HOLE_SHADER
+			if cover.moving_surface:
+				material.set_shader_parameter("moving_cover", true)
+				material.set_shader_parameter("mesh_to_cover", cover.body.global_transform.affine_inverse() * mesh.global_transform)
 			material.set_shader_parameter("color_texture", source.albedo_texture)
 			material.set_shader_parameter("normal_texture", source.normal_texture)
 			material.set_shader_parameter("roughness_texture", source.roughness_texture)

@@ -1,0 +1,5 @@
+- [Metal Office Desk](https://polyhaven.com/a/metal_office_desk), Ulan Cabanilla, Poly Haven, CC0. 2K PBR maps.
+- [Classic Laptop](https://polyhaven.com/a/classic_laptop), Arrangemonk, Poly Haven, CC0. 1K PBR maps.
+- [Carpet 001](https://ambientcg.com/view?id=Carpet001), ambientCG, CC0. 2K color, OpenGL normal and roughness maps in the office map textures.
+- [Glass Office Door](https://www.innerscene.com/tools/library/3d-parts/office-glass-office-door-1323965f), Innerscene, CC0. The moving pane and fittings are reused with a frosted finish and a fitted frame.
+- [Binder Notebook](https://polyhaven.com/a/binder_notebook), [Stationery Supplies](https://polyhaven.com/a/stationery_supplies), [Desk Lamp Arm 01](https://polyhaven.com/a/desk_lamp_arm_01), [Wall Clock](https://polyhaven.com/a/wall_clock), [Potted Plant 04](https://polyhaven.com/a/potted_plant_04), and [Television 02](https://polyhaven.com/a/television_02), Poly Haven, CC0. Imported with their 1K or 2K color, normal, and packed material maps.

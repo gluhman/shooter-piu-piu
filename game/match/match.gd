@@ -26,6 +26,7 @@ const ARENA_WEATHER := {
 	MAP.DUST2_ID: {"hour": 14.0, "wind": Vector2(-105, 2.0)},
 	MAP.WORKSHOP_ID: {"hour": 13.5, "wind": Vector2(60, 0.8)},
 	MAP.TEST_RANGE_ID: {"hour": 13.0, "wind": Vector2(0, 0.2)},
+	MAP.OFFICE_ID: {"hour": 12.0, "wind": Vector2.ZERO},
 }
 const MIN_RESPAWN_DISTANCE := 12.0
 const TRAINING_RESPAWN_DELAY := 0.75
@@ -238,6 +239,8 @@ func arena_width() -> float:
 
 
 func _selected_map_size(arena: int, size: int) -> int:
+	if arena == MAP.OFFICE_ID:
+		return 0
 	if arena == MAP.TEST_RANGE_ID:
 		return MAP.DEFAULT_SIZE
 	var minimum := MAP.VILLAGE_MIN_SIZE if arena == MAP.VILLAGE_ID else 0
@@ -296,7 +299,7 @@ func _choose_safe_spawn(actor: Node3D, slot: int, previous: Vector3,
 	var visibility_radius := maxf(64.0, arena_width() * 0.65)
 	var distance_limit := visibility_radius + 8.0
 	var village := map_id == MAP.VILLAGE_ID
-	var prefer_cover := village or map_id == MAP.WORKSHOP_ID
+	var prefer_cover := village or map_id in [MAP.WORKSHOP_ID, MAP.OFFICE_ID]
 	for point: Vector3 in candidates:
 		var nearest_occupied := INF
 		for fighter in occupied:
@@ -411,9 +414,9 @@ func _clear_match_map() -> void:
 	$Map.clear_map()
 	if is_instance_valid(_breakwater):
 		_breakwater = null
-		$WorldEnvironment.environment = _base_environment
-		$WorldEnvironment/SunLight.show()
-		$WorldEnvironment/MoonLight.show()
+	$WorldEnvironment.environment = _base_environment
+	$WorldEnvironment/SunLight.show()
+	$WorldEnvironment/MoonLight.show()
 	if is_instance_valid(_navigation_region):
 		remove_child(_navigation_region)
 		_navigation_region.queue_free()
@@ -931,6 +934,9 @@ func _build_arena(layout_seed: int) -> void:
 		var wind: Vector2 = weather.wind
 		$WorldEnvironment.wind_direction = deg_to_rad(wind.x)
 		$WorldEnvironment.wind_speed = wind.y
+		if map_id == MAP.OFFICE_ID:
+			$WorldEnvironment/SunLight.hide()
+			$WorldEnvironment/MoonLight.hide()
 		var supplies: Array[Transform3D] = $Map.build(map_id, layout_seed, arena_width())
 		$Loot.build_crates(supplies, $Map.market_supply_count)
 	_apply_graphics()
@@ -1109,7 +1115,7 @@ func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
 		if team_deathmatch and player_slots[_bot_slots[index]] != 0:
 			continue
 		var slot := _bot_slots[index] if team_deathmatch else 0
-		var team_start := team_deathmatch and map_id in [MAP.VILLAGE_ID, MAP.WORKSHOP_ID]
+		var team_start := team_deathmatch and map_id in [MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.OFFICE_ID]
 		var spawn_index := slot if team_start else Net.MAX_PLAYERS + index
 		var bot := _add_bot(index, slot, difficulty, $Map.initial_spawn(spawn_index))
 		if not Net.active or multiplayer.is_server():

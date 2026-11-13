@@ -167,13 +167,16 @@ func _launch(shot: Dictionary, space: PhysicsDirectSpaceState3D) -> void:
 	var muzzle := barrel.origin
 	var breech := muzzle + barrel.basis.z * float(shot.barrel_length)
 	var solid_query := world_query()
-	# Keep the obstruction check before spawning any projectile, even penetrators.
+	# Start against thin laminated cover when the muzzle clips through it.
+	# The normal flight step still resolves the impact and the energy loss.
 	var obstruction := _ray(space, solid_query, breech, muzzle)
 	if obstruction.is_empty():
 		obstruction = _ray(space, solid_query, shot.eye, breech)
 	if not obstruction.is_empty():
-		_impact(obstruction, -barrel.basis.z, shot, 0.0, 1.0, 1.0)
-		return
+		if obstruction.collider.get_meta(&"ballistic_material", "") != "laminate":
+			_impact(obstruction, -barrel.basis.z, shot, 0.0, 1.0, 1.0)
+			return
+		muzzle = obstruction.position + obstruction.normal * COVER_CLEARANCE
 
 	var velocities := PackedVector3Array()
 	var ammo: Dictionary = AMMO[shot.profile]
@@ -266,7 +269,9 @@ func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3, ener
 	if not collider.has_meta(&"ballistic_size"):
 		return {}
 	var steel := surface == "metal" and energy >= STEEL_MIN_ENERGY and not projectile.penetrated_metal
-	var wood := surface == "wood" and projectile.profile != "shotgun" and not projectile.penetrated_wood
+	var material: String = collider.get_meta(&"ballistic_material", surface)
+	var laminate := material == "laminate" and energy >= STEEL_MIN_ENERGY
+	var wood := (material == "wood" and projectile.profile != "shotgun" or laminate) and not projectile.penetrated_wood
 	if not steel and not wood:
 		return {}
 	var exit := _cover_exit(collider, hit.position, direction)
@@ -316,9 +321,7 @@ func _continue_flight(id: int, projectile: Projectile, hit: Dictionary, directio
 	if path.has("exit"):
 		cover_id = int(hit.collider.get_meta(&"bullet_cover_id", -1))
 		if cover_id >= 0:
-			net_perforation(cover_id, entry, direction, projectile.profile, force)
-			for peer in get_parent().match_peers():
-				net_perforation.rpc_id(peer, cover_id, entry, direction, projectile.profile, force)
+			_record_cover_hit(hit.collider, entry, direction, projectile.profile, force, true)
 		_report_impact(path.exit, path.exit_normal, path.surface, projectile.profile, projectile.shot.shooter,
 			false, force * float(path.loss), false, cover_id < 0)
 	_report_impact(entry, hit.normal, path.surface, projectile.profile, projectile.shot.shooter,
@@ -391,11 +394,23 @@ func net_end_flight(id: int, at: Vector3) -> void:
 		_end_flight(id, projectile, false)
 
 
+func _record_cover_hit(body: Node3D, entry: Vector3, direction: Vector3, profile: String,
+		force: float, perforated: bool) -> void:
+	var cover_id: int = body.get_meta(&"bullet_cover_id", -1)
+	if body.get_meta(&"ballistic_material", "") == "laminate":
+		entry = body.to_local(entry)
+		direction = (body.global_basis.inverse() * direction).normalized()
+	net_perforation(cover_id, entry, direction, profile, force, perforated)
+	for peer in get_parent().match_peers():
+		net_perforation.rpc_id(peer, cover_id, entry, direction, profile, force, perforated)
+
+
 @rpc("authority", "call_remote", "reliable", 3)
-func net_perforation(cover_id: int, entry: Vector3, direction: Vector3, profile: String, force: float) -> void:
+func net_perforation(cover_id: int, entry: Vector3, direction: Vector3, profile: String, force: float,
+		perforated: bool) -> void:
 	if not get_parent().round_finished():
 		var strength := force * sqrt(float(AMMO[profile].power))
-		get_parent().get_node("Map").add_bullet_hole(cover_id, entry, direction, profile, strength)
+		get_parent().get_node("Map").add_bullet_hole(cover_id, entry, direction, profile, strength, perforated)
 
 
 func combat_ray(source: CharacterBody3D, from: Vector3, to: Vector3, rewind: float = -1.0) -> Dictionary:
@@ -486,7 +501,11 @@ func _impact(hit: Dictionary, direction: Vector3, shot: Dictionary, distance: fl
 		damaged = victim.health < before
 		headshot = damaged and zone == "head"
 	var normal: Vector3 = hit.normal if not hit.normal.is_zero_approx() else -direction
-	_report_impact(at, normal, surface, shot.profile, shot.shooter, damaged, force, headshot)
+	var attached_mark: bool = collider is Node3D and collider.has_meta(&"bullet_cover_id") \
+		and collider.get_meta(&"ballistic_material", "") == "laminate"
+	if attached_mark:
+		_record_cover_hit(collider, at, normal, shot.profile, force, false)
+	_report_impact(at, normal, surface, shot.profile, shot.shooter, damaged, force, headshot, not attached_mark)
 
 
 func _report_impact(at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int,

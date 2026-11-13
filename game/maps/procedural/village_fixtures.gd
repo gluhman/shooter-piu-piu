@@ -28,7 +28,7 @@ var _glass: StandardMaterial3D
 @onready var _match := get_parent().get_parent()
 
 
-func add_door(portal: Transform3D, width: float, height: float, wood: Material, iron: Material) -> void:
+func add_door(portal: Transform3D, width: float, height: float, wood: Material, iron: Material, model: Node3D = null) -> StaticBody3D:
 	var door := Door.new()
 	door.portal = portal
 	door.hinge = Node3D.new()
@@ -49,14 +49,19 @@ func add_door(portal: Transform3D, width: float, height: float, wood: Material, 
 	collision.shape = door.shape
 	collision.position = door.center
 	door.leaf.add_child(collision)
-	_box(door.leaf, door.center, door.shape.size, wood)
-	for side in [-1.0, 1.0]:
-		for y in [0.29, 1.76]:
-			_box(door.leaf, Vector3(leaf_width * 0.5, y, side * 0.052), Vector3(leaf_width - 0.13, 0.10, 0.045), wood)
-		_box(door.leaf, Vector3(leaf_width - 0.13, 1.04, side * 0.068), Vector3(0.12, 0.17, 0.045), iron)
-		_box(door.leaf, Vector3(leaf_width - 0.16, 1.04, side * 0.104), Vector3(0.15, 0.043, 0.043), iron)
+	if model:
+		door.leaf.add_child(model)
+		model.position = Vector3(door.center.x, 0.0, 0.0)
+	else:
+		_box(door.leaf, door.center, door.shape.size, wood)
+		for side in [-1.0, 1.0]:
+			for y in [0.29, 1.76]:
+				_box(door.leaf, Vector3(leaf_width * 0.5, y, side * 0.052), Vector3(leaf_width - 0.13, 0.10, 0.045), wood)
+			_box(door.leaf, Vector3(leaf_width - 0.13, 1.04, side * 0.068), Vector3(0.12, 0.17, 0.045), iron)
+			_box(door.leaf, Vector3(leaf_width - 0.16, 1.04, side * 0.104), Vector3(0.15, 0.043, 0.043), iron)
 	_doors.append(door)
 	_apply_door(door, false)
+	return door.leaf
 
 
 func add_window(sill: Transform3D, width: float, height: float) -> void:
