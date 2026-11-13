@@ -10,6 +10,27 @@ VERSION_SETTING = re.compile(r"^config/version\s*=.*$", re.MULTILINE)
 RELEASE_HEADING = re.compile(r"##\s+(.+)")
 CHANGE_ITEM = re.compile(r"\s*[-*]\s+.*\w")
 DOC_PATH = ":(glob)docs/**/*.md"
+NON_RELEASE_PREFIXES = (
+    "docs/",
+    "tests/",
+    "scripts/",
+    ".github/",
+    ".idea/",
+    ".vscode/",
+    ".codex/",
+)
+NON_RELEASE_FILES = {
+    ".editorconfig",
+    ".gitattributes",
+    ".gitignore",
+    ".mcp.json",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "README.md",
+}
+LEGAL_FILENAMES = {"credits.md", "license", "license.md", "license.txt"}
 
 
 def git(*args):
@@ -46,7 +67,26 @@ def check_docs(base, head):
     raise ValueError("Добавь или обнови Markdown-документ в docs/ и включи его в отправляемые коммиты.")
 
 
+def is_non_release_path(path):
+    filename = path.rsplit("/", 1)[-1].lower()
+    return (
+        path.startswith(NON_RELEASE_PREFIXES)
+        or path in NON_RELEASE_FILES
+        or filename in LEGAL_FILENAMES
+    )
+
+
+def needs_release(base, head):
+    if not base:
+        return True
+    paths = git("diff", "--name-only", "-z", base, head).rstrip("\0").split("\0")
+    return any(path and not is_non_release_path(path) for path in paths)
+
+
 def check_release(base, head):
+    if not needs_release(base, head):
+        print("Изменение не влияет на содержимое приложения; новая версия не требуется.")
+        return
     version = project_version(head)
     base_has_changelog = False
     if base:
