@@ -53,6 +53,10 @@ var planar_velocity := Vector3.ZERO
 var grounded := true
 var lean := 0.0
 var support_grip := 0.0
+var shovel_grip := false
+var shovel_lean := Vector2.ZERO
+var mounted_grip := false
+var eye_in_head := Vector3.ZERO
 var stance_offset := Vector3.ZERO
 
 var _right_arm: PackedInt32Array
@@ -249,7 +253,10 @@ func _animated_shoulder(chain: PackedInt32Array) -> Vector3:
 func _torso_rotation(skeleton: Skeleton3D) -> Basis:
 	var axes := (skeleton.global_basis.inverse() * actor.global_basis).orthonormalized()
 	var angles := _torso_angles
-	angles.x += aim_pitch * 0.25
+	angles.x += aim_pitch * 0.25 - shovel_lean.x
+	if mounted_grip:
+		angles.x += 0.24 + maxf(0.0, aim_pitch) * 0.40
+	angles.y += shovel_lean.y
 	angles.z -= lean * 0.45
 	return axes * Basis.from_euler(angles) * axes.transposed()
 
@@ -278,8 +285,9 @@ func _process_modification_with_delta(delta: float) -> void:
 	var world_to_rig := rig_transform.affine_inverse()
 	var rig_to_actor := actor_transform.affine_inverse() * rig_transform
 	var actor_to_rig := world_to_rig * actor_transform
-	for index in _legs.size():
-		_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig)
+	if not mounted_grip:
+		for index in _legs.size():
+			_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig)
 
 	var head_basis := skeleton.get_bone_global_pose(_head).basis
 	var spine := skeleton.get_bone_global_pose(_spine)
@@ -292,11 +300,21 @@ func _process_modification_with_delta(delta: float) -> void:
 		head.basis = Basis(roll_axis, -lean * 0.16) * Basis(head_axis.normalized(), aim_pitch) * head_basis
 		skeleton.set_bone_global_pose(_head, head)
 
+	if mounted_grip and _head >= 0:
+		# Swing the entire operator around the tripod with the eye at the sight.
+		var eye := skeleton.to_global(skeleton.get_bone_global_pose(_head) * eye_in_head)
+		actor.align_mounted_operator(eye)
+		world_to_rig = skeleton.global_transform.affine_inverse()
+		rig_to_actor = actor_transform.affine_inverse() * skeleton.global_transform
+		actor_to_rig = world_to_rig * actor_transform
+		for index in _legs.size():
+			_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig)
+
 	if is_instance_valid(right_wrist) and is_instance_valid(left_wrist):
 		_pose_arm(skeleton, _right_arm, right_wrist, 1.0, actor_to_rig.basis, world_to_rig)
 		_pose_arm(skeleton, _left_arm, left_wrist, -1.0, actor_to_rig.basis, world_to_rig)
-		_pose_fingers(skeleton, _right_fingers, KNIFE_FINGER_CURL if knife_grip else FIREARM_FINGER_CURL)
-		_pose_fingers(skeleton, _left_fingers, [
+		_pose_fingers(skeleton, _right_fingers, KNIFE_FINGER_CURL if knife_grip or shovel_grip else FIREARM_FINGER_CURL)
+		_pose_fingers(skeleton, _left_fingers, KNIFE_FINGER_CURL if shovel_grip else [
 			lerpf(0.18, 0.08, support_grip),
 			lerpf(0.27, 0.02, support_grip),
 			lerpf(0.31, 0.10, support_grip),
@@ -345,7 +363,11 @@ func _pose_leg(skeleton: Skeleton3D, index: int, delta: float, rig_to_actor: Tra
 			var correction := TOE_CLEARANCE - sole_height
 			var crouch_idle := _crouch_weight * (1.0 - _stride_weight)
 			correction = lerpf(maxf(0.0, correction), correction, crouch_idle)
-			floor_offset = clampf(hit.position.y - probe.y + correction, -0.17, 0.20)
+			if mounted_grip:
+				correction = TOE_CLEARANCE - sole_height
+				floor_offset = clampf(hit.position.y - probe.y + correction, -0.32, 0.45)
+			else:
+				floor_offset = clampf(hit.position.y - probe.y + correction, -0.17, 0.20)
 			contacting = _stride_weight > 0.75 and animated_sole < 0.095
 	if contacting and not _foot_contact[index]:
 		_foot_anchor[index] = target

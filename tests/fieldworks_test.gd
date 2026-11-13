@@ -51,19 +51,33 @@ func _run() -> void:
 	_check("Support aims at the intended dirt tile", works._build_site(actor).get("tile") == tile)
 	_press_f()
 	_check("F starts shovel work", works.is_building(actor))
-	await create_timer(4.0, false, true).timeout
-	_check("The ground stays solid until ten seconds have passed", earth.cuts.is_empty())
-	await create_timer(6.12, false, true).timeout
+	await create_timer(2.0, false, true).timeout
+	var shovel: Node3D = works._shovels.get(actor.score_id())
+	_check("The operator holds the shovel with both hands during work", is_instance_valid(shovel)
+		and actor._pose.right_wrist.get_parent() == shovel and actor._pose.left_wrist.get_parent() == shovel
+		and not actor.gun._view.visible)
+	_check("The ground stays solid until five seconds have passed", earth.cuts.is_empty())
+	await create_timer(3.12, false, true).timeout
 	_check("A completed job cuts dirt to three quarters of standing height",
 		earth.cuts.has(tile) and absf(_ground_y(map, center) + Earth.DEPTH) < 0.04)
+	_check("The firearm grips return when digging ends", actor._pose.right_wrist == actor.gun._right_wrist
+		and actor.gun._view.visible)
 	if not earth.cuts.has(tile):
 		quit(1)
 		return
+	var lip := _ground_y(map, center + Vector2(0.0, 0.67))
+	var upper_wall := _ground_y(map, center + Vector2(0.0, 0.60))
+	var lower_wall := _ground_y(map, center + Vector2(0.0, 0.45))
+	_check("The lip rolls into a sloped wall before reaching the floor",
+		lip < 0.0 and lip > upper_wall and upper_wall > lower_wall and lower_wall > -Earth.DEPTH)
+	var corner := _ground_y(map, center + Vector2(0.62, 0.62))
+	_check("The trench opening rounds inward at the tile corner",
+		absf(corner) < 0.02 and _ground_y(map, center + Vector2(0.0, 0.62)) < corner - 0.04)
 
 	await _place(actor, Vector3(center.x, -Earth.DEPTH + 0.04, center.y), Vector3.RIGHT, -0.66)
 	_check("Digging from inside targets an adjacent tile", works._build_site(actor).get("tile") == tile + side)
 	_press_f()
-	await create_timer(10.15, false, true).timeout
+	await create_timer(5.15, false, true).timeout
 	var seam := center + Vector2(side) * Earth.TILE * 0.5
 	_check("The extension joins flush with the existing trench", earth.cuts.has(tile + side)
 		and absf(_ground_y(map, seam) + Earth.DEPTH) < 0.04)
@@ -72,9 +86,7 @@ func _run() -> void:
 	actor.aiming = false
 	var spread: float = actor.gun._current_spread()
 	_press_f()
-	_check("First F installs a stand", works._stands.size() == 1 and not works.is_mounted(actor))
-	_press_f()
-	_check("Second F engages and halves spread", works.is_mounted(actor)
+	_check("One F installs, engages and halves spread", works._stands.size() == 1 and works.is_mounted(actor)
 		and is_equal_approx(actor.gun._current_spread(), spread * 0.5))
 	var ballistics := arena.get_node("Ballistics")
 	var shot_id: int = ballistics._next_id
@@ -82,14 +94,60 @@ func _run() -> void:
 	await physics_frame
 	await physics_frame
 	_check("A mounted shot clears the trench lip", ballistics._next_id > shot_id)
+	var tripod: Node3D = actor.gun._model.get_node("Tripod")
+	_check("Tripod stays attached to the M249 when deployed",
+		tripod.global_position.distance_to(works.weapon_rest(actor)) < 0.02)
+	var camera := actor.get_node("Camera3D") as Camera3D
+	var grip_errors: Array[float] = []
+	var eye_errors: Array[float] = []
+	var hips_positions: Array[Vector3] = []
+	var hips_bone: int = actor._skeleton.find_bone(&"mixamorig_Hips_01")
+	var check_grips := func() -> void:
+		var pose: Node = actor._pose
+		var skeleton: Skeleton3D = actor._skeleton
+		var right := skeleton.to_global(skeleton.get_bone_global_pose(pose._right_arm[2]).origin)
+		var left := skeleton.to_global(skeleton.get_bone_global_pose(pose._left_arm[2]).origin)
+		grip_errors.append(maxf(right.distance_to(pose.right_wrist.global_position),
+			left.distance_to(pose.left_wrist.global_position)))
+		var eye := skeleton.to_global(skeleton.get_bone_global_pose(pose._head) * (pose.eye_in_head as Vector3))
+		eye_errors.append(eye.distance_to(camera.global_position))
+		hips_positions.append(skeleton.to_global(skeleton.get_bone_global_pose(hips_bone).origin))
+	actor._pose.modification_processed.connect(check_grips)
+	actor._look(PI, -PI)
+	await process_frame
+	await process_frame
+	var gun_eye: Vector3 = actor.gun._view.to_local(camera.global_position)
+	var sight: Vector3 = actor.gun._rear_sight.position
+	_check("Mounted camera stops at +70 degrees and stays above and behind the sight",
+		is_equal_approx(actor.rotation.y, deg_to_rad(70.0)) and camera.rotation.x >= deg_to_rad(-12.01)
+		and gun_eye.y > sight.y and gun_eye.z > sight.z
+		and camera.global_basis.z.is_equal_approx(actor.gun._view.global_basis.z))
+	for step in 7:
+		actor._look(deg_to_rad(-20.0), deg_to_rad(6.0))
+		await process_frame
+		await process_frame
+	actor._look(-TAU, PI)
+	_check("Mounted yaw stops at -70 degrees", is_equal_approx(actor.rotation.y, deg_to_rad(-70.0)))
+	await process_frame
+	await process_frame
+	actor._pose.modification_processed.disconnect(check_grips)
+	_check("Both rigged wrists follow their grips across the mounted sweep",
+		grip_errors.size() >= 8 and grip_errors.max() < 0.025)
+	_check("The camera stays at the rigged eye as the operator's hips move around the tripod",
+		eye_errors.size() >= 8 and eye_errors.max() < 0.01
+		and hips_positions.front().distance_to(hips_positions.back()) > 0.6)
 	_press_f()
-	_check("Third F disengages", not works.is_mounted(actor))
+	_check("Second F disengages", not works.is_mounted(actor))
+	var first_site: String = works._stands.keys()[0]
+	_face(actor, Vector3.BACK, 0)
+	_press_f()
+	_check("Redeploying moves the same tripod", works._stands.size() == 1 and not works._stands.has(first_site)
+		and actor.gun._model.get_node("Tripod") == tripod)
 	actor._spawn_loadout = "ak47"
 	actor._apply_equip("ak47")
+	_face(actor, Vector3.FORWARD, 0)
 	_press_f()
-	_check("F gives any class a way out", actor.is_climbing_ladder())
-	await create_timer(1.7, false, true).timeout
-	_check("The climb reaches the surface", absf(actor.global_position.y) < 0.08)
+	_check("F no longer climbs out of the trench", not actor.is_climbing_ladder() and works.prompt(actor).is_empty())
 
 	await _place(actor, Vector3(center.x, -Earth.DEPTH + 0.04, center.y), Vector3.FORWARD, 0)
 	Input.action_press("move_forward")
@@ -121,13 +179,12 @@ func _run() -> void:
 		quit(1)
 		return
 	_press_f()
-	await create_timer(10.15, false, true).timeout
+	await create_timer(5.15, false, true).timeout
 	_check("Sandbags have full-height collision and reject overlaps", works._nodes.size() == 1
 		and absf(_ground_y(map, Vector2(site.at.x, site.at.z)) - Earth.DEPTH) < 0.05
 		and not works._clear_site(site))
 	var anchor: Vector3 = site.at - site.face * 0.76
 	await _place(actor, anchor + Vector3.UP * 0.04, site.face, 0)
-	_press_f()
 	_press_f()
 	_check("The same stand interaction works behind sandbags", works.is_mounted(actor))
 	await _check_village_digging(arena, map, works)
@@ -162,7 +219,7 @@ func _check_village_digging(arena: Node3D, map: Node3D, works: Node3D) -> void:
 				continue
 			_check("Village offers a digging prompt after loading", works.prompt(actor).begins_with("выкопать"))
 			_press_f()
-			await create_timer(10.15, false, true).timeout
+			await create_timer(5.15, false, true).timeout
 			_check("Village excavation preserves the sampled terrain height",
 				earth.cuts.has(tile) and absf(_ground_y(map, center) - (height - Earth.DEPTH)) < 0.04)
 			return

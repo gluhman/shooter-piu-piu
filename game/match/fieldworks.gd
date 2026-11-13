@@ -2,7 +2,10 @@ extends Node3D
 
 const Balance := preload("res://game/combat/combat_balance.gd")
 const Earth := preload("res://game/maps/procedural/earth_surface.gd")
-const BUILD_TIME := 10.0
+const MOUNT_YAW := deg_to_rad(70.0)
+const MOUNT_PITCH_MIN := deg_to_rad(-12.0)
+const MOUNT_PITCH_MAX := deg_to_rad(32.0)
+const BUILD_TIME := 5.0
 const COVER_HEIGHT := Earth.DEPTH
 const MAX_WORKS := 64
 const COVER_SIZE := Vector3(1.0, COVER_HEIGHT, 0.43)
@@ -30,14 +33,13 @@ func prompt(actor: Node3D) -> String:
 	var candidate := _mount_site(actor)
 	if not candidate.is_empty():
 		var key: String = candidate.key
-		if not _stands.has(key):
-			return "установить станок для пулемёта"
-		if _can_engage(actor, key):
-			return "встать за пулемёт"
+		if not _stands.has(key) or _stands[key].operator == id:
+			return "установить пулемёт"
 	var site := _build_site(actor)
 	if not site.is_empty():
-		return "выкопать траншею (10 с)" if site.kind == "earth" else "сложить мешки (10 с)"
-	return "вылезти из траншеи" if not exit_route(actor).is_empty() else ""
+		var label := "выкопать траншею" if site.kind == "earth" else "сложить мешки"
+		return "%s (%d с)" % [label, int(BUILD_TIME)]
+	return ""
 
 
 func interact(actor: Node3D) -> bool:
@@ -46,8 +48,6 @@ func interact(actor: Node3D) -> bool:
 		return false
 	if is_building(actor):
 		return true
-	if action == "вылезти из траншеи":
-		return actor.start_ladder_climb(exit_route(actor))
 	if Net.active and not multiplayer.is_server():
 		request_action.rpc_id(1, actor.network_pose())
 	else:
@@ -78,11 +78,11 @@ func _act(actor: Node3D) -> void:
 	if not stand.is_empty():
 		var key: String = stand.key
 		if not _stands.has(key):
+			stand.operator = id
 			_add_stand(key, stand)
 			for peer in _arena.match_peers():
 				net_stand.rpc_id(peer, key, stand)
-			return
-		if _can_engage(actor, key):
+		if _stands[key].operator == id:
 			_publish_mount(id, key)
 			return
 	var site := _build_site(actor)
@@ -102,18 +102,20 @@ func is_mounted(actor: Node3D) -> bool:
 	return _stands.has(key) and _mount_valid(actor, _stands[key])
 
 
-func steadies_weapon(actor: Node3D) -> bool:
-	if not is_mounted(actor):
-		return false
-	var stand: Dictionary = _stands[_mounts[actor.score_id()]]
-	return _forward(actor).dot(stand.face) >= 0.72 and absf(_view(actor).basis.z.y) < 0.45
-
-
 func weapon_rest(actor: Node3D) -> Vector3:
-	if not steadies_weapon(actor):
-		return Vector3.INF
 	var stand: Dictionary = _stands[_mounts[actor.score_id()]]
-	return stand.base + Vector3.UP * 0.20 - stand.face * 0.09
+	return stand.base + Vector3.UP * 0.19 - stand.face * 0.09
+
+
+func mount_center_yaw(actor: Node3D) -> float:
+	var face: Vector3 = _stands[_mounts[actor.score_id()]].face
+	return atan2(-face.x, -face.z)
+
+
+func clamp_mount_aim(actor: Node3D, yaw: float, pitch: float) -> Vector2:
+	var center := mount_center_yaw(actor)
+	return Vector2(center + clampf(angle_difference(center, yaw), -MOUNT_YAW, MOUNT_YAW),
+		clampf(pitch, MOUNT_PITCH_MIN, MOUNT_PITCH_MAX))
 
 
 func jump_speed(at: Vector3) -> float:
@@ -147,18 +149,23 @@ func _physics_process(delta: float) -> void:
 				_publish_mount(id, "")
 
 
-func _process(_delta: float) -> void:
-	for id: int in _jobs:
-		var actor: Node3D = _arena.combatant(id)
-		if not is_instance_valid(actor):
-			continue
-		var shovel: Node3D = _shovels.get(id)
-		if not is_instance_valid(shovel):
-			shovel = _make_shovel(actor.get_node("Camera3D"))
-			_shovels[id] = shovel
-		var cycle := (BUILD_TIME - float(_jobs[id].left)) * TAU * 1.45
-		shovel.position = Vector3(0.33, -0.47 + cos(cycle) * 0.13, -0.66 + sin(cycle) * 0.13)
-		shovel.rotation = Vector3(-0.6 + sin(cycle) * 0.57, 0.15, -0.42 + cos(cycle) * 0.18)
+func pose_shovel(actor: Node3D) -> void:
+	var id: int = actor.score_id()
+	var shovel: Node3D = _shovels.get(id)
+	if not is_instance_valid(shovel):
+		shovel = _make_shovel(actor)
+		_shovels[id] = shovel
+	var elapsed := BUILD_TIME - float(_jobs[id].left)
+	var phase := fposmod(elapsed, 1.25) / 1.25
+	var stroke := smoothstep(0.02, 0.25, phase) * (1.0 - smoothstep(0.32, 0.60, phase))
+	var lift := smoothstep(0.32, 0.64, phase) * (1.0 - smoothstep(0.74, 0.99, phase))
+	var toss := smoothstep(0.55, 0.73, phase) * (1.0 - smoothstep(0.76, 0.99, phase))
+	shovel.position = Vector3(0.12 + toss * 0.22, 1.20 - stroke * 0.36 + lift * 0.09,
+		-0.32 - stroke * 0.15 + lift * 0.07)
+	if actor.crouched:
+		shovel.position.y -= 0.30
+	shovel.rotation = Vector3(-0.77 + stroke * 0.64 - lift * 0.30, -0.10 + toss * 0.38, -0.28 + toss * 0.40)
+	actor.set_shovel_grips(shovel.get_node("UpperGrip"), shovel.get_node("ShaftGrip"), stroke, toss)
 
 
 func _usable(actor: Node3D) -> bool:
@@ -170,7 +177,7 @@ func _view(actor: Node3D) -> Transform3D:
 
 
 func _feet(actor: Node3D) -> Vector3:
-	return actor.current_shot_transform(actor.global_transform).origin
+	return actor.gameplay_feet_position()
 
 
 func _forward(actor: Node3D) -> Vector3:
@@ -360,11 +367,6 @@ func _mount_site(actor: Node3D) -> Dictionary:
 	return {}
 
 
-func _can_engage(actor: Node3D, key: String) -> bool:
-	var stand: Dictionary = _stands[key]
-	return not _mounts.values().has(key) and _mount_valid(actor, stand) and _forward(actor).dot(stand.face) >= 0.76
-
-
 func _mount_valid(actor: Node3D, stand: Dictionary) -> bool:
 	return _usable(actor) and actor.weapon_id == "m249" and not actor.crouched 		and _feet(actor).distance_to(stand.anchor) < 0.68
 
@@ -441,13 +443,7 @@ func _rebuild_earth(surface: StringName) -> void:
 
 
 func send_state(peer: int) -> void:
-	var stands := {}
-	for key in _stands:
-		var entry: Dictionary = _stands[key].duplicate()
-		entry.erase("visual")
-		stands[key] = entry
-	net_snapshot.rpc_id(peer, _works, stands, _mounts, _jobs)
-
+	net_snapshot.rpc_id(peer, _works, _stands, _mounts, _jobs)
 
 @rpc("authority", "reliable")
 func net_snapshot(works: Array[Dictionary], stands: Dictionary, mounts: Dictionary, jobs: Dictionary) -> void:
@@ -482,32 +478,23 @@ func reset_round() -> void:
 	_trenches.clear()
 
 
+func _deployed_site(id: int) -> String:
+	for key in _stands:
+		if _stands[key].operator == id:
+			return key
+	return ""
+
+
 func _remove_stand(key: String) -> void:
-	var visual: Node3D = _stands[key].visual
-	visual.hide()
-	visual.queue_free()
+	_mounts.erase(_stands[key].operator)
 	_stands.erase(key)
-	for id: int in _mounts.keys():
-		if _mounts[id] == key:
-			_mounts.erase(id)
 
 
 func _add_stand(key: String, data: Dictionary) -> void:
-	if _stands.has(key):
-		return
-	var stand := Node3D.new()
-	add_child(stand)
-	stand.position = data.base
-	var forward: Vector3 = data.face
-	var right := forward.cross(Vector3.UP)
-	var hinge := Vector3.UP * 0.20 - forward * 0.09
-	_rod(stand, right * 0.22 + forward * 0.10, hinge, 0.025, _metal())
-	_rod(stand, -right * 0.22 + forward * 0.10, hinge, 0.025, _metal())
-	_rod(stand, -forward * 0.26, hinge, 0.025, _metal())
-	_rod(stand, hinge - forward * 0.12, hinge + forward * 0.13, 0.055, _metal())
-	var entry := data.duplicate()
-	entry.visual = stand
-	_stands[key] = entry
+	var previous := _deployed_site(data.operator)
+	if not previous.is_empty():
+		_remove_stand(previous)
+	_stands[key] = data
 
 
 func _make_bags(site: Dictionary) -> StaticBody3D:
@@ -538,9 +525,9 @@ func _make_bags(site: Dictionary) -> StaticBody3D:
 	return body
 
 
-func _make_shovel(camera: Node3D) -> Node3D:
+func _make_shovel(actor: Node3D) -> Node3D:
 	var shovel := Node3D.new()
-	camera.add_child(shovel)
+	actor.add_child(shovel)
 	if not _wood:
 		_wood = _map._world_mat("planks", Color(0.63, 0.44, 0.29), 0.0, 1.0, 0.7, false)
 	_rod(shovel, Vector3(0, -0.30, 0), Vector3(0, 0.33, 0), 0.022, _wood)
@@ -549,7 +536,17 @@ func _make_shovel(camera: Node3D) -> Node3D:
 	blade.size = Vector3(0.22, 0.24, 0.035)
 	var piece := _piece(shovel, blade, Vector3(0, -0.36, 0), _metal())
 	piece.rotation.z = PI
+	_shovel_grip(shovel, "UpperGrip", Vector3(0.04, 0.32, 0.035), Vector3.LEFT, Vector3.FORWARD)
+	_shovel_grip(shovel, "ShaftGrip", Vector3(-0.028, -0.08, 0.033), Vector3.DOWN, Vector3.RIGHT)
 	return shovel
+
+
+func _shovel_grip(shovel: Node3D, grip_name: String, at: Vector3, fingers: Vector3, palm: Vector3) -> void:
+	var marker := Marker3D.new()
+	marker.name = grip_name
+	var across := fingers.cross(palm)
+	marker.transform = Transform3D(Basis(across, fingers, palm), at)
+	shovel.add_child(marker)
 
 
 func _metal() -> StandardMaterial3D:

@@ -25,6 +25,7 @@ const LEAN_CLEARANCE := 0.07
 const FIRST_PERSON_BODY_LAYER := 3
 const Hurtboxes := preload("res://game/actors/operator_hurtboxes.gd")
 const OperatorPose := preload("res://game/actors/operator_pose.gd")
+const OPERATOR_OFFSET := Vector3(0.169, 0.0, -0.041)
 const OPERATOR_MODEL_PATH := "res://assets/operator/operator.glb"
 const HitReaction := preload("res://addons/hit_reactions_lite/hit_flinch_lite.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
@@ -698,6 +699,22 @@ func _interpolate_network_pose(delta: float) -> void:
 	_camera.rotation.x = lerpf(_pose_pitch, _latest_pose[4], blend)
 
 
+func gameplay_feet_position() -> Vector3:
+	if not _latest_pose.is_empty() and not _is_local() and not is_in_group("bot"):
+		return Vector3(_latest_pose[0], _latest_pose[1], _latest_pose[2])
+	return global_position
+
+
+func shot_camera_transform() -> Transform3D:
+	var works := fieldworks()
+	if works and works.is_mounted(self):
+		var angles := Vector2(rotation.y, _camera.rotation.x)
+		if not _latest_pose.is_empty() and not _is_local():
+			angles = Vector2(_latest_pose[3], _latest_pose[4])
+		return gun.mounted_camera(works.clamp_mount_aim(self, angles.x, angles.y))
+	return current_shot_transform(_camera.global_transform)
+
+
 func current_shot_transform(rendered: Transform3D) -> Transform3D:
 	if _latest_pose.is_empty() or _is_local() or is_in_group("bot"):
 		return rendered
@@ -724,10 +741,19 @@ func rewound_hit(from: Vector3, to: Vector3, time: float) -> Dictionary:
 	return _hurtboxes.rewound_ray(from, to, time)
 
 
-func set_weapon_grips(right: Marker3D, left: Marker3D, knife: bool) -> void:
+func set_weapon_grips(right: Marker3D, left: Marker3D, knife: bool, mounted := false) -> void:
 	_pose.right_wrist = right
 	_pose.left_wrist = left
 	_pose.knife_grip = knife
+	_pose.mounted_grip = mounted
+	_pose.shovel_grip = false
+	_pose.shovel_lean = Vector2.ZERO
+
+
+func set_shovel_grips(right: Marker3D, left: Marker3D, stroke: float, toss: float) -> void:
+	set_weapon_grips(right, left, false)
+	_pose.shovel_grip = true
+	_pose.shovel_lean = Vector2(0.10 + stroke * 0.36, -toss * 0.24)
 
 
 func set_support_grip(reload_blend: float) -> void:
@@ -1045,10 +1071,10 @@ func add_recoil(pitch_deg: float, yaw_deg: float) -> void:
 		return
 	var pitch := deg_to_rad(pitch_deg)
 	var yaw := deg_to_rad(yaw_deg)
-	rotate_y(yaw)
-	_recoil_yaw += yaw
-	_camera.rotation.x = clampf(_camera.rotation.x + pitch, deg_to_rad(-80.0), deg_to_rad(80.0))
-	_recoil_pitch += pitch
+	var previous := Vector2(rotation.y, _camera.rotation.x)
+	_look(yaw, pitch)
+	_recoil_yaw += angle_difference(previous.x, rotation.y)
+	_recoil_pitch += _camera.rotation.x - previous.y
 
 
 func _process(delta: float) -> void:
@@ -1082,9 +1108,24 @@ func _recover_recoil(delta: float) -> void:
 	var yaw_step := clampf(_recoil_yaw, -recovery, recovery)
 	_recoil_pitch -= pitch_step
 	_recoil_yaw -= yaw_step
-	if not is_zero_approx(yaw_step):
-		rotate_y(-yaw_step)
-	_camera.rotation.x = clampf(_camera.rotation.x - pitch_step, deg_to_rad(-80.0), deg_to_rad(80.0))
+	_look(-yaw_step, -pitch_step)
+
+
+func _look(yaw_delta: float, pitch_delta: float) -> void:
+	var yaw := rotation.y + yaw_delta
+	var pitch := _camera.rotation.x + pitch_delta
+	var works := fieldworks()
+	if works and works.is_mounted(self):
+		var limited: Vector2 = works.clamp_mount_aim(self, rotation.y, _camera.rotation.x)
+		var center: float = works.mount_center_yaw(self)
+		var offset := clampf(limited.x - center + yaw_delta, -works.MOUNT_YAW, works.MOUNT_YAW)
+		var aim: Vector2 = works.clamp_mount_aim(self, center + offset, limited.y + pitch_delta)
+		rotation.y = aim.x
+		_camera.rotation.x = aim.y
+	else:
+		rotation.y = yaw
+		_camera.rotation.x = clampf(pitch, deg_to_rad(-80.0), deg_to_rad(80.0))
+
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1138,9 +1179,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if concussion_left > 0.0:
 			sensitivity *= float(Balance.GRENADES.concussion.mouse_look_sensitivity_multiplier_during_effect)
 		var pitch_sign := 1.0 if GameSettings.invert_y else -1.0
-		rotate_y(-event.relative.x * sensitivity)
-		var pitch: float = _camera.rotation.x + event.relative.y * sensitivity * pitch_sign
-		_camera.rotation.x = clampf(pitch, deg_to_rad(-80.0), deg_to_rad(80.0))
+		_look(-event.relative.x * sensitivity, event.relative.y * sensitivity * pitch_sign)
 
 
 func _throw_grenade(kind: String, action: StringName) -> void:
@@ -1186,9 +1225,8 @@ func _physics_process(delta: float) -> void:
 		var look := Vector2(Input.get_joy_axis(0, JOY_AXIS_RIGHT_X), Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y))
 		if look.length() > 0.18:
 			var stick_sensitivity := MOUSE_SENS * GameSettings.sensitivity * 95.0 * delta
-			rotate_y(-look.x * stick_sensitivity)
 			var stick_pitch_sign := 1.0 if GameSettings.invert_y else -1.0
-			_camera.rotation.x = clampf(_camera.rotation.x + look.y * stick_sensitivity * stick_pitch_sign, deg_to_rad(-80.0), deg_to_rad(80.0))
+			_look(-look.x * stick_sensitivity, look.y * stick_sensitivity * stick_pitch_sign)
 	var works := fieldworks()
 	if works and works.is_mounted(self):
 		velocity = Vector3.ZERO
@@ -1354,7 +1392,7 @@ func _build_operator() -> void:
 	_avatar.name = "Operator"
 	_avatar.rotation.y = PI
 	_avatar.scale = Vector3.ONE * 0.96
-	_avatar.position = Vector3(0.169, 0.0, -0.041)
+	_avatar.position = OPERATOR_OFFSET
 	add_child(_avatar)
 	OperatorPose.apply_textures(_avatar, team_id() if get_parent().team_deathmatch else -1)
 	_skeleton = _avatar.find_child("Skeleton3D", true, false) as Skeleton3D
@@ -1385,7 +1423,9 @@ func _build_operator() -> void:
 	var eye_center := eyes.global_transform * eyes.get_aabb().get_center()
 	_eye_rest = to_local(eye_center) + Vector3(0.0, 0.0, -0.015)
 	var head := _skeleton.find_bone(&"mixamorig_Head_06")
-	_head_pivot = to_local(_skeleton.to_global(_skeleton.get_bone_global_rest(head).origin))
+	var head_rest := _skeleton.global_transform * _skeleton.get_bone_global_rest(head)
+	_head_pivot = to_local(head_rest.origin)
+	_pose.eye_in_head = head_rest.affine_inverse() * to_global(_eye_rest)
 	_camera.position = _eye_rest
 	_pouch = Marker3D.new()
 	_pouch_rest = Vector3(-0.115, 1.31, -0.19)
@@ -1446,9 +1486,25 @@ func _update_view_pose() -> void:
 	_pose.stance_offset = stance + lean_offset * 0.65
 	_camera.position = eye + lean_offset
 	_camera.rotation.z = -_view_lean * 0.16
+	var works := fieldworks()
+	var mounted: bool = works and works.is_mounted(self)
+	if mounted:
+		var aim: Vector2 = works.clamp_mount_aim(self, rotation.y, _camera.rotation.x)
+		rotation.y = aim.x
+		_camera.rotation.x = aim.y
+		_camera.rotation.z = 0.0
+		var camera_pose: Transform3D = gun.mounted_camera(aim)
+		_camera.global_position = camera_pose.origin
+	else:
+		_avatar.position = OPERATOR_OFFSET
 	_pouch.position = _pouch_rest + _pose.stance_offset
 	if _overhead:
 		_overhead.position.y = 1.98 + stance.y
+
+
+func align_mounted_operator(eye: Vector3) -> void:
+	_avatar.global_position += _camera.global_position - eye
+	_pouch.position = _pouch_rest + _avatar.position - OPERATOR_OFFSET
 
 
 func _neutral_eye(pitch: float, crouch_weight: float) -> Vector3:

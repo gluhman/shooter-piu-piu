@@ -4,7 +4,7 @@ extends StaticBody3D
 const CELL := 0.5
 const TILE := 1.5
 const DEPTH := 1.7 * 0.75
-const SUBDIVISIONS := 5
+const SUBDIVISIONS := 8
 const SIDES := [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
 
 var bounds: Rect2
@@ -17,6 +17,7 @@ var _base: ArrayMesh
 var _base_shape: Shape3D
 var _visual := MeshInstance3D.new()
 var _shape := CollisionShape3D.new()
+var _soil_material: Material
 var _dirt := MeshInstance3D.new()
 var _dirt_shape := CollisionShape3D.new()
 
@@ -31,7 +32,9 @@ func configure(area: Rect2, sampler: Callable, material: Material, exposed_dirt:
 	_visual.mesh = _base
 	_visual.material_override = material
 	_shape.shape = _base_shape
-	_dirt.material_override = exposed_dirt
+	_soil_material = exposed_dirt
+	if exposed_dirt is StandardMaterial3D:
+		exposed_dirt.vertex_color_use_as_albedo = true
 	set_meta(&"impact_surface", "concrete")
 	add_child(_visual)
 	add_child(_shape)
@@ -98,12 +101,18 @@ func set_cuts(tiles: Array[Vector2i]) -> void:
 	_shape.shape = remaining.create_trimesh_shape()
 	var patch := SurfaceTool.new()
 	patch.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var collar := SurfaceTool.new()
+	collar.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for tile in cuts:
-		_add_patch(patch, tile)
-	patch.index()
-	patch.generate_normals()
-	patch.generate_tangents()
+		_add_patch(patch, collar, tile)
+	for surface in [patch, collar]:
+		surface.index()
+		surface.generate_normals()
+		surface.generate_tangents()
 	var excavation := patch.commit()
+	collar.commit(excavation)
+	excavation.surface_set_material(0, _soil_material)
+	excavation.surface_set_material(1, _visual.material_override)
 	_dirt.mesh = excavation
 	_dirt_shape.shape = excavation.create_trimesh_shape()
 
@@ -130,36 +139,79 @@ func _grid_mesh() -> ArrayMesh:
 	return mesh
 
 
-func _add_patch(mesh: SurfaceTool, tile: Vector2i) -> void:
+func _exposed_edges(tile: Vector2i) -> Array[Rect2]:
+	var edges: Array[Rect2] = []
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var neighbor := tile + Vector2i(dx, dz)
+			if not cuts.has(neighbor):
+				continue
+			var center := area_of(neighbor).get_center()
+			for side: Vector2i in SIDES:
+				if cuts.has(neighbor + side):
+					continue
+				var normal := Vector2(side)
+				var along := Vector2(absf(normal.y), absf(normal.x))
+				var corner := center + (normal - along) * TILE * 0.5
+				edges.append(Rect2(corner, along * TILE))
+	return edges
+
+
+func _excavation_depth(at: Vector2, edges: Array[Rect2]) -> float:
+	var nearest := TILE
+	var second := TILE
+	for edge in edges:
+		var distance := at.distance_to(at.clamp(edge.position, edge.end))
+		if distance < nearest:
+			second = nearest
+			nearest = distance
+		else:
+			second = minf(second, distance)
+	# Keep a collar of original ground at the tile boundary. The collar widens
+	# around corners, so the visible opening curves inward before it drops.
+	var corner := 1.0 - smoothstep(0.0, 0.25, second - nearest)
+	var wobble := sin(at.x * 6.9 + at.y * 5.1) * cos(at.y * 6.2 - at.x * 3.4)
+	var collar := 0.045 + 0.17 * corner + 0.038 * wobble
+	nearest = maxf(0.0, nearest - collar)
+	var strata := sin(at.x * 12.7 + at.y * 6.3) * cos(at.y * 9.3 - at.x * 4.6)
+	var contour := sin(at.x * 4.1 + at.y * 5.2) + 0.42 * sin(at.x * 15.1 - at.y * 11.7)
+	var bevel := 0.23 + contour * 0.041
+	var lip := 0.095 * smoothstep(0.0, 0.11 + contour * 0.022, nearest)
+	var wall := (DEPTH - 0.095) * smoothstep(0.055 + contour * 0.016, bevel, nearest)
+	var depth := lip + wall
+	depth += 0.060 * strata * sin(PI * clampf(depth / DEPTH, 0.0, 1.0))
+	var lumps := pow(0.5 + 0.5 * sin(at.x * 8.3 + at.y * 4.9) * cos(at.y * 7.7), 4.0)
+	return clampf(depth - 0.055 * lumps * smoothstep(0.72, DEPTH, depth), 0.0, DEPTH)
+
+
+func _add_patch(mesh: SurfaceTool, collar: SurfaceTool, tile: Vector2i) -> void:
 	var start := area_of(tile).position
 	var count := 3 * SUBDIVISIONS
 	var step := CELL / SUBDIVISIONS
+	var edges := _exposed_edges(tile)
 	var points := PackedVector3Array()
 	var distances := PackedFloat32Array()
 	for row in count + 1:
 		for col in count + 1:
-			var p := Vector2(col, row) * step
-			var at := start + p
-			var distance := TILE
-			for side: Vector2i in SIDES:
-				if cuts.has(tile + side):
-					# Round the inside corner where an adjacent row stops.
-					for across in [-1, 1]:
-						var other: Vector2i = Vector2i(side.y, side.x) * across
-						if not cuts.has(tile + other) and not cuts.has(tile + side + other):
-							var corner := (Vector2.ONE + Vector2(side + other)) * TILE * 0.5
-							distance = minf(distance, p.distance_to(corner))
-				else:
-					var edge := (Vector2.ONE + Vector2(side)) * TILE * 0.5
-					distance = minf(distance, (edge - p).dot(Vector2(side)))
-			var edge_width := 0.22 + 0.03 * sin(at.x * 10.0 + at.y * 5.0) * cos(at.y * 8.0 - at.x * 4.0)
-			var depth := DEPTH * smoothstep(0.0, edge_width, distance)
+			var at := start + Vector2(col, row) * step
+			var depth := _excavation_depth(at, edges)
 			points.append(Vector3(at.x, height_at(at) - depth, at.y))
 			distances.append(depth)
 	for row in count:
 		for col in count:
 			var i := row * (count + 1) + col
-			for index in [i, i + 1, i + count + 2, i, i + count + 2, i + count + 1]:
-				var at := points[index]
-				mesh.set_uv(Vector2(at.x + distances[index] * 0.68, at.z - distances[index] * 0.42) * 0.9)
-				mesh.add_vertex(at)
+			_add_triangle(mesh, collar, points, distances, i, i + 1, i + count + 2)
+			_add_triangle(mesh, collar, points, distances, i, i + count + 2, i + count + 1)
+
+
+func _add_triangle(soil: SurfaceTool, collar: SurfaceTool, points: PackedVector3Array,
+		depths: PackedFloat32Array, a: int, b: int, c: int) -> void:
+	var mesh := soil if maxf(depths[a], maxf(depths[b], depths[c])) > 0.005 else collar
+	for index in [a, b, c]:
+		var at := points[index]
+		var depth := depths[index]
+		var tint := lerpf(1.0, 0.70, smoothstep(0.05, DEPTH, depth))
+		tint += 0.04 * sin(at.y * 27.0 + at.x * 4.0 + at.z * 2.0)
+		mesh.set_color(Color(tint, tint, tint))
+		mesh.set_uv(Vector2(at.x + depth * 0.68, at.z - depth * 0.42) * 0.9)
+		mesh.add_vertex(at)

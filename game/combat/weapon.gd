@@ -22,6 +22,7 @@ const KNIFE_SWING_TIME := 0.42
 const KNIFE_GRIP_IN_WRIST := Vector3(-0.012, 0.101, 0.021)
 const KNIFE_IN_WRIST := Basis(Vector3.UP, -PI * 0.5)
 const M249_RELOAD_ACTION_START := 0.34
+const M249_TRIPOD_FROM_MUZZLE := Vector3(0.0, -0.105, 0.19)
 const SIDEARMS := ["deagle", "m1911", "tec9"]
 const SPECIALIZATIONS := {
 	"assault": {
@@ -150,6 +151,7 @@ var _shell: Node3D
 var _loading_port: Vector3
 
 var _view: Node3D
+var _tripod_legs: Array[MeshInstance3D] = []
 var _model: Node3D
 var _muzzle: Marker3D
 var _rear_sight: Marker3D
@@ -335,7 +337,7 @@ func _update_sprint_recovery(delta: float) -> void:
 
 func _can_fire() -> bool:
 	var works: Node = _player.fieldworks()
-	if works and (works.is_building(_player) or (works.is_mounted(_player) and not works.steadies_weapon(_player))):
+	if works and works.is_building(_player):
 		return false
 	if not _active or not _player.control_enabled or _player.sprinting or _sprint_recovery > 0.0:
 		return false
@@ -414,12 +416,12 @@ func net_knife_hit() -> void:
 
 func _shoot() -> void:
 	_apply_view(0.0, false)
-	var camera := _camera.global_transform
+	var camera: Transform3D = _player.shot_camera_transform()
 	var target := _sight_target(camera)
 	var aligned := _converge_view(_view.global_transform, camera, target)
 	var barrel := aligned * _muzzle.transform
 	var works: Node = _player.fieldworks()
-	_view.global_transform = aligned if works and works.steadies_weapon(_player) else aligned.interpolate_with(_view.global_transform, aim_blend())
+	_view.global_transform = aligned if works and works.is_mounted(_player) else aligned.interpolate_with(_view.global_transform, aim_blend())
 	if _player._server_rules():
 		_player.cancel_spawn_protection()
 		_launch_sighted(barrel, camera, target)
@@ -455,16 +457,24 @@ func _sight_target(camera: Transform3D, rewind: float = -1.0) -> Vector3:
 	return target
 
 
+func mounted_camera(angles: Vector2) -> Transform3D:
+	var basis := Basis.from_euler(Vector3(angles.y, angles.x, 0.0))
+	var pose := _mounted_view(basis)
+	return Transform3D(basis, pose * (_rear_sight.position + Vector3(0.0, 0.075, 0.055)))
+
+
+func _mounted_view(basis: Basis) -> Transform3D:
+	var rest: Vector3 = _player.fieldworks().weapon_rest(_player)
+	var hinge := _muzzle.position + M249_TRIPOD_FROM_MUZZLE
+	return Transform3D(basis, rest - basis * hinge)
+
+
 func _converge_view(view: Transform3D, camera: Transform3D, target: Vector3) -> Transform3D:
-	var forward := -camera.basis.z.normalized()
 	if _weapon_id == "m249":
 		var works: Node = _player.fieldworks()
-		var rest: Vector3 = works.weapon_rest(_player) if works else Vector3.INF
-		if rest.is_finite():
-			var direction := (target - rest).normalized()
-			if direction.dot(forward) > 0.85:
-				var basis := Basis.looking_at(direction, Vector3.UP)
-				return Transform3D(basis, rest + direction * 0.19 - basis * _muzzle.position)
+		if works and works.is_mounted(_player):
+			return _mounted_view(camera.basis)
+	var forward := -camera.basis.z.normalized()
 	# Turn around the grip at hip fire and around the rear sight in ADS.
 	var pivot := view * (Vector3.ZERO.lerp(_rear_sight.position, aim_blend()))
 	var barrel := view * _muzzle.transform
@@ -504,7 +514,7 @@ func _current_spread() -> float:
 	if not _player.combat_grounded():
 		spread += float(Balance.MOVEMENT.airborne_spread_bonus_deg)
 	var works: Node = _player.fieldworks()
-	var steady: bool = _weapon_id == "m249" and works != null and works.steadies_weapon(_player)
+	var steady: bool = _weapon_id == "m249" and works != null and works.is_mounted(_player)
 	return (spread + _burst_heat) * (0.5 if steady else 1.0)
 
 
@@ -560,7 +570,8 @@ func fire_bot(target: Vector3, aim_error: float) -> bool:
 
 func _launch_sighted(barrel: Transform3D, camera: Transform3D, target: Vector3, rewind: float = -1.0) -> void:
 	var aim := barrel.basis
-	if _weapon_id != "launcher":
+	var works: Node = _player.fieldworks()
+	if _weapon_id != "launcher" and not (works and works.is_mounted(_player)):
 		var direction: Vector3 = _ballistics.aim_direction(_weapon_id, barrel.origin, target, _player.shot_motion())
 		if not direction.is_zero_approx():
 			aim = Basis.looking_at(direction, camera.basis.y)
@@ -600,7 +611,7 @@ func net_fire(weapon_name: String, pose: PackedFloat32Array, shot_time: float) -
 		return
 	_cooldown = float(_stats.cooldown)
 	_player.cancel_spawn_protection()
-	var shot_camera: Transform3D = _player.current_shot_transform(_camera.global_transform)
+	var shot_camera: Transform3D = _player.shot_camera_transform()
 	var shot_barrel := Transform3D.IDENTITY
 	if weapon_name == "knife":
 		_pending_knife = -shot_camera.basis.z
@@ -845,7 +856,20 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	if _view == null:
 		return
 	var works: Node = _player.fieldworks()
-	_view.visible = not (works and works.is_building(_player))
+	var digging: bool = works and works.is_building(_player)
+	_view.visible = not digging
+	if digging:
+		works.pose_shovel(_player)
+		return
+	var mounted: bool = works and works.is_mounted(_player)
+	_player.set_weapon_grips(_right_wrist, _left_wrist, _weapon_id == "knife", mounted)
+	if not _tripod_legs.is_empty():
+		_pose_tripod(mounted)
+	if mounted:
+		_view.global_transform = _mounted_view(_camera.global_basis)
+		if _reloading:
+			_pose_reload(1.0 - _reload_left / _reload_time)
+		return
 	var speed: float = _player.visual_speed()
 	var firing := _trigger_held or not _kick_pos.is_zero_approx() or not is_zero_approx(_kick_rot)
 	var carry_target := smoothstep(2.65, 3.9, speed) if not _player.crouched and not firing else 0.0
@@ -909,9 +933,6 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	elif converge and not bot and not _player.sprinting:
 		var camera := _camera.global_transform
 		var target := _sight_target(camera)
-		if works and works.steadies_weapon(_player):
-			_view.global_transform = _converge_view(_view.global_transform, camera, target)
-			return
 		# Near targets require a steeper bore angle than the visible sights.
 		if blend < 1.0:
 			var aligned := _converge_view(_view.global_transform, camera, target)
@@ -1030,6 +1051,9 @@ func _build_viewmodel(weapon_id: String) -> void:
 	elif weapon_id == "shotgun":
 		bore = Vector3.LEFT
 	_muzzle.basis = Basis.looking_at((model.basis * bore).normalized())
+	_tripod_legs.clear()
+	if weapon_id == "m249":
+		_add_tripod(model)
 	_prepare_reload(model)
 	_reset_reload_pose()
 	_apply_view(0.0)
@@ -1091,6 +1115,48 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 			_aim_depth_limit = 0.11
 		"mp5":
 			_aim_depth_limit = 0.06
+
+
+func _add_tripod(model: Node3D) -> void:
+	var tripod := Node3D.new()
+	tripod.name = "Tripod"
+	model.add_child(tripod)
+	tripod.position = _model_marker(model, "Muzzle") + M249_TRIPOD_FROM_MUZZLE
+	var finish := StandardMaterial3D.new()
+	finish.albedo_color = Color(0.22, 0.24, 0.22)
+	finish.metallic = 0.73
+	finish.roughness = 0.52
+	var hinge := MeshInstance3D.new()
+	var collar := BoxMesh.new()
+	collar.size = Vector3(0.080, 0.061, 0.093)
+	hinge.mesh = collar
+	hinge.material_override = finish
+	tripod.add_child(hinge)
+	for index in 3:
+		var leg := MeshInstance3D.new()
+		var strut := CylinderMesh.new()
+		strut.radial_segments = 8
+		strut.top_radius = 0.014
+		strut.bottom_radius = 0.009
+		leg.mesh = strut
+		leg.material_override = finish
+		tripod.add_child(leg)
+		_tripod_legs.append(leg)
+	_pose_tripod(false)
+
+
+func _pose_tripod(deployed: bool) -> void:
+	var folded := [Vector3(-0.033, -0.030, 0.21), Vector3(0.033, -0.030, 0.21), Vector3(0.0, -0.051, 0.20)]
+	var open := [Vector3(-0.17, -0.19, -0.11), Vector3(0.17, -0.19, -0.11), Vector3(0.0, -0.19, 0.12)]
+	for index in _tripod_legs.size():
+		var foot: Vector3 = open[index] if deployed else folded[index]
+		var leg := _tripod_legs[index]
+		var strut := leg.mesh as CylinderMesh
+		var length := foot.length()
+		if not is_equal_approx(strut.height, length):
+			strut.height = length
+		leg.position = foot * 0.5
+		leg.quaternion = Quaternion(Vector3.UP, -foot.normalized())
 
 
 func _hand_basis(fingers: Vector3, palm: Vector3) -> Basis:
