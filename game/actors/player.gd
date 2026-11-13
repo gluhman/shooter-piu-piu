@@ -170,6 +170,7 @@ func take_damage(amount: float, killer_id: int = 0, zone: String = "chest", head
 	var absorbed := 0.0
 	if head_multiplier > 0.0:
 		amount = Balance.zone_damage(amount, zone, head_multiplier)
+	if head_multiplier > 0.0 or impact.get("source") == "knife":
 		absorbed = Balance.vest_absorption(amount, zone, vest_tier, armor)
 		armor -= absorbed
 		amount -= absorbed

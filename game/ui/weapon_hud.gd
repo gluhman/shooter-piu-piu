@@ -82,7 +82,7 @@ func _add_counter(caption: String, size: int, with_capacity := false) -> Label:
 
 
 func show_weapon(title: String, mode: String, loaded: int, reserve: int, capacity: int,
-		reload_progress: float, melee_range: float) -> void:
+		reload_progress: float, melee_range: float, melee_chest_damage: int = 0) -> void:
 	if _title.text != title or capacity == 0:
 		_accuracy.hide()
 	_title.text = title
@@ -91,7 +91,8 @@ func show_weapon(title: String, mode: String, loaded: int, reserve: int, capacit
 	_meter.visible = capacity > 0
 	_reload_prompt = false
 	if capacity == 0:
-		_status.text = "До %s м" % ("%.1f" % melee_range).replace(".", ",")
+		_status.text = "До %s м · %d HP в грудь без брони" % [
+			("%.2f" % melee_range).replace(".", ","), melee_chest_damage]
 		_status.add_theme_color_override(&"font_color", UI.MUTED)
 		_status.show()
 		return

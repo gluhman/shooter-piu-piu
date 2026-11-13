@@ -63,7 +63,26 @@ func _run() -> void:
 	_check("A12", _near(target.health, 73.0) and _near(target.armor, 0.0))
 	_reset_target("heavy")
 	_hit("ak47", 10, "head")
-	_check("A13", _near(target.health, 53.5) and _near(target.armor, 75.0))
+	_check("A13", target._dead and _near(target.armor, 75.0))
+	for id: String in ["deagle", "m249", "m1", "m700"]:
+		_reset_target("none")
+		_hit(id, 10, "head")
+		_check("Close unarmored headshot kills with " + id, target._dead)
+	for id: String in ["m1911", "mac10", "mp5", "tec9"]:
+		_reset_target("none")
+		_hit(id, 5, "head")
+		_check("Close unarmored headshot survives with " + id, not target._dead and target.health < 35.0)
+	_reset_target("none")
+	_hit("ak47", 75, "head")
+	_check("AK-47 headshot loses one-hit lethality with distance", not target._dead)
+	for zone: String in ["head", "neck", "chest", "abdomen", "thigh"]:
+		_reset_target("none")
+		target.take_damage(Balance.melee_damage(zone, false), shooter.score_id(), zone, 0.0, {"source": "knife"})
+		_check("Unarmored knife damage to " + zone, target._dead == (zone in ["head", "neck", "chest"]))
+	_reset_target("standard")
+	target.take_damage(Balance.melee_damage("chest", false), shooter.score_id(), "chest", 0.0, {"source": "knife"})
+	_check("Vest absorbs a frontal knife strike", not target._dead and target.armor < 50.0)
+	await _check_knife_reach()
 
 	_reset_target()
 	await _flush_physics()
@@ -458,6 +477,23 @@ func _check_projectile_flight() -> void:
 			and absf(projectile.velocity.z) < float(ballistics.AMMO.ak47.speed) and projectile.remaining > 0.0)
 	_check("Flight inherits movement and integrates gravity and drag", flew)
 	ballistics.reset_round()
+
+
+func _check_knife_reach() -> void:
+	shooter._apply_equip("knife")
+	var camera := shooter.get_node("Camera3D") as Camera3D
+	for distance: float in [1.2, 2.0]:
+		_reset_target("none")
+		target.position.z = -distance
+		target.rotation.y = PI
+		await _flush_physics()
+		var direction := camera.global_position.direction_to(target.hurtbox_center("neck"))
+		shooter.gun._pending_knife = direction
+		shooter.gun._knife_windup = 0.0
+		shooter.gun._physics_process(1.0 / 60.0)
+		_check("Knife reach against neck at %.1f m" % distance,
+			target._dead if distance < float(Balance.MELEE.range_m) else _near(target.health, 100.0))
+	shooter._apply_equip("ak47")
 
 
 func _spawn(at: Vector3, peer: int) -> CharacterBody3D:

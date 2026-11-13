@@ -19,9 +19,8 @@ const SHELL_INTERVAL: float = Balance.DATA.weapons.shotgun.reload_shell_s
 const SHELL_FINISH: float = Balance.DATA.weapons.shotgun.reload_end_s
 const SHELL_IN_HAND := Vector3(-0.024, 0.126, 0.052)
 const HIP_FOV := 110.0
-const KNIFE_SWING_TIME := 0.42
-const KNIFE_GRIP_IN_WRIST := Vector3(-0.012, 0.101, 0.021)
-const KNIFE_IN_WRIST := Basis(Vector3.UP, -PI * 0.5)
+const KNIFE_SWING_TIME := 0.48
+const KNIFE_GRIP_IN_WRIST := Vector3(-0.010, 0.094, 0.020)
 const M249_RELOAD_ACTION_START := 0.34
 const M249_TRIPOD_FROM_MUZZLE := Vector3(0.0, -0.105, 0.19)
 const STOCKED_WEAPONS := ["ak47", "shotgun", "mp5", "m700", "lever", "m14", "launcher", "m249", "m1"]
@@ -121,6 +120,7 @@ var _last_fire_sequence := 0
 var _shot_index := 0
 var _recoil_index := 0
 var _knife_windup := 0.0
+var _knife_probe_left := 0.0
 var _sprint_recovery := 0.0
 var _sprint_fire_queued := false
 var _sprint_last_frame := false
@@ -383,6 +383,16 @@ func _try_fire() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _weapon_id == "knife" and _player._is_local():
+		_knife_probe_left -= delta
+		if _knife_probe_left <= 0.0:
+			_knife_probe_left = 0.08
+			var in_reach := false
+			if _can_fire() and _player.accepts_gameplay_input():
+				var origin := _camera.global_position
+				var hit: Dictionary = _ballistics.combat_ray(_player, origin, origin - _camera.global_basis.z * float(_stats.range))
+				in_reach = not hit.is_empty() and hit.collider.has_meta(&"hit_zone")
+			_cross.set_knife_reach(in_reach)
 	if _pending_knife.is_zero_approx():
 		return
 	_knife_windup -= delta
@@ -401,7 +411,7 @@ func _physics_process(delta: float) -> void:
 	var zone: String = hit.collider.get_meta(&"hit_zone")
 	var to_attacker: Vector3 = (_player.global_position - victim.global_position).normalized()
 	var backstab := (-victim.global_basis.z).dot(to_attacker) <= float(Balance.MELEE.backstab_if_defender_forward_dot_direction_to_attacker_lte)
-	var damage := float(Balance.MELEE.back_damage if backstab else Balance.MELEE.front_damage)
+	var damage := Balance.melee_damage(zone, backstab)
 	victim.take_damage(damage, _player.score_id(), zone, 0.0,
 		{"velocity": bore * 0.8, "point": hit.position, "zone": zone, "source": "knife"})
 	if victim.health < previous_health:
@@ -969,14 +979,15 @@ func _apply_knife_view() -> void:
 	if _player._is_local():
 		_camera.fov = HIP_FOV
 	var progress := 1.0 - _knife_swing_left / KNIFE_SWING_TIME
-	var swing := sin(PI * progress)
-	var sweep := swing * lerpf(0.9, -1.1, smoothstep(0.05, 0.65, progress))
-	_view.position = _rest_pos + Vector3(sweep * 0.16, swing * 0.07, -swing * 0.14)
-	_view.rotation = Vector3(-swing * 0.14, sweep * 0.78, -swing * 0.43)
+	var contact := float(Balance.MELEE.windup_s) / KNIFE_SWING_TIME
+	var draw := smoothstep(0.0, contact * 0.5, progress) * (1.0 - smoothstep(contact * 0.5, contact, progress))
+	var thrust := smoothstep(contact * 0.5, contact, progress) * (1.0 - smoothstep(contact, 1.0, progress))
+	_view.position = _rest_pos + Vector3(0.035, -0.025, 0.10) * draw + Vector3(-0.15, 0.09, -0.26) * thrust
+	_view.rotation = Vector3(0.25, -0.58, -0.37) + Vector3(-0.22, -0.24, 0.15) * draw + Vector3(-0.20, 0.56, 0.25) * thrust
 	_view.global_position += _player.weapon_reach_correction(false)
-	var left_rest := _camera.to_global(Vector3(-0.19, -0.30 - swing * 0.035, -0.32))
+	var left_rest := _camera.to_global(Vector3(-0.22 - thrust * 0.05, -0.30 - thrust * 0.05, -0.31 + draw * 0.04))
 	_left_wrist.position = _view.to_local(_player.clamp_support_hand(left_rest))
-	_left_wrist.basis = _view.basis.inverse() * _support_basis
+	_left_wrist.basis = _view.global_basis.inverse() * _camera.global_basis * _support_basis
 
 
 func _build_viewmodel(weapon_id: String) -> void:
@@ -1000,8 +1011,8 @@ func _build_viewmodel(weapon_id: String) -> void:
 	var left_palm := Vector3(0.33, 0.94, 0.0)
 	match weapon_id:
 		"knife":
-			_rest_pos = Vector3(0.22, -0.15, -0.38)
-			right_fingers = Vector3(-0.12, 0.22, -1.0)
+			_rest_pos = Vector3(0.23, -0.24, -0.34)
+			right_fingers = Vector3(-0.14, 0.23, -1.0)
 			right_palm = Vector3(-0.70, -0.65, -0.10)
 			left_fingers = Vector3(0.06, 0.16, -1.0)
 			left_palm = Vector3(0.55, -0.70, 0.0)
@@ -1057,7 +1068,7 @@ func _build_viewmodel(weapon_id: String) -> void:
 	_right_wrist.name = "RightGrip"
 	_right_wrist.basis = _hand_basis(right_fingers, right_palm)
 	if weapon_id == "knife":
-		model.transform = _right_wrist.transform * Transform3D(KNIFE_IN_WRIST, KNIFE_GRIP_IN_WRIST)
+		model.position = _right_wrist.transform * KNIFE_GRIP_IN_WRIST
 	_left_wrist = _marker(_support_rest)
 	_left_wrist.name = "LeftGrip"
 	_left_wrist.basis = _support_basis
@@ -1487,7 +1498,8 @@ func _update_hud() -> void:
 	if _ammo == null:
 		return
 	var progress := 1.0 - _reload_left / _reload_time if _reloading else -1.0
-	_ammo.show_weapon(_stats.name, _stats.mode, _mag, _reserve, _stats.mag, progress, _stats.range)
+	_ammo.show_weapon(_stats.name, _stats.mode, _mag, _reserve, _stats.mag, progress, _stats.range,
+		int(_stats.damage) if _weapon_id == "knife" else 0)
 	_player.inventory_changed.emit()
 
 

@@ -7,6 +7,7 @@ const OUTLINE := Color(0.02, 0.03, 0.025, 0.82)
 var _alpha := 1.0
 var _gap := 5.0
 var _knife := false
+var _knife_in_reach := false
 var _scope := 0.0
 var _hit_until := 0
 var _hit_color := HIT
@@ -38,6 +39,12 @@ func show_hit(headshot: bool = false) -> void:
 	queue_redraw()
 
 
+func set_knife_reach(in_reach: bool) -> void:
+	if _knife_in_reach != in_reach:
+		_knife_in_reach = in_reach
+		queue_redraw()
+
+
 func _process(_delta: float) -> void:
 	if Time.get_ticks_msec() >= _hit_until:
 		set_process(false)
@@ -60,7 +67,8 @@ func _draw() -> void:
 
 func _draw_aim(center: Vector2) -> void:
 	draw_circle(center, 2.25, Color(OUTLINE, OUTLINE.a * _alpha), true, -1.0, true)
-	draw_circle(center, 1.25, Color(INK, INK.a * _alpha), true, -1.0, true)
+	var dot := HIT if _knife and _knife_in_reach else INK
+	draw_circle(center, 1.25, Color(dot, dot.a * _alpha), true, -1.0, true)
 	if _knife:
 		return
 	for direction in [Vector2.UP, Vector2.RIGHT, Vector2.DOWN, Vector2.LEFT]:

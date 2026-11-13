@@ -166,9 +166,10 @@ const DATA := {
 		"wall_penetration_enabled": true,
 		"headshots_ignore_vests": true,
 		"melee": {
-			"range_m": 2.0,
-			"front_damage": 75,
-			"back_damage": 125,
+			"range_m": 1.65,
+			"zone_damage": {"head": 100, "neck": 120, "chest": 105, "abdomen": 70,
+				"pelvis": 55, "upper_arm": 40, "forearm_hand": 35, "thigh": 45, "calf_foot": 35},
+			"back_multiplier": 1.45,
 			"swing_interval_s": 0.65,
 			"windup_s": 0.15,
 			"backstab_if_defender_forward_dot_direction_to_attacker_lte": -0.65,
@@ -638,6 +639,10 @@ const WEAPON_CLASSES := {
 	"m14": "dmr", "m1": "dmr", "shotgun": "shotgun", "lever": "dmr",
 	"m700": "sniper", "deagle": "pistol", "m1911": "pistol", "tec9": "pistol",
 }
+const HEAD_MULTIPLIERS := {
+	"ak47": 3.5, "m249": 3.2, "deagle": 3.3, "m1911": 2.7,
+	"mac10": 2.6, "mp5": 2.8, "tec9": 2.5, "shotgun": 1.45,
+}
 const MOVEMENT: Dictionary = DATA.movement
 const MATCH: Dictionary = DATA.match
 const PLAYER: Dictionary = DATA.player
@@ -661,7 +666,7 @@ static func weapon_stats(base: Dictionary) -> Dictionary:
 			"mag": profile.magazine, "reserve": profile.reserve_ammo,
 			"range": profile.max_range_m, "damage": profile.damage_max,
 			"damage_min": profile.damage_min, "falloff_start": profile.falloff_start_m,
-			"falloff_end": profile.falloff_end_m, "head_multiplier": profile.head_multiplier,
+			"falloff_end": profile.falloff_end_m, "head_multiplier": HEAD_MULTIPLIERS.get(id, profile.head_multiplier),
 			"automatic": profile.fire_mode == "auto", "cooldown": 60.0 / float(profile.rpm),
 			"reload": profile.get("reload_tactical_s", 0.0),
 			"reload_empty": profile.get("reload_empty_s", 0.0),
@@ -670,7 +675,7 @@ static func weapon_stats(base: Dictionary) -> Dictionary:
 			"pellets": profile.get("pellets", 1),
 		}, true)
 		stats["balance"] = profile
-	result.knife.merge({"range": MELEE.range_m, "damage": MELEE.front_damage,
+	result.knife.merge({"range": MELEE.range_m, "damage": MELEE.zone_damage.chest,
 		"cooldown": MELEE.swing_interval_s}, true)
 	return result
 
@@ -697,6 +702,11 @@ static func ranged_damage(stats: Dictionary, distance: float) -> float:
 static func zone_damage(raw: float, zone: String, head_multiplier: float) -> float:
 	var multiplier := head_multiplier if zone == "head" else float(DATA.hitboxes[zone].damage_multiplier)
 	return raw * multiplier
+
+
+static func melee_damage(zone: String, backstab: bool) -> float:
+	var damage := float(MELEE.zone_damage[zone])
+	return damage * float(MELEE.back_multiplier) if backstab else damage
 
 
 static func vest_absorption(damage: float, zone: String, tier: String, durability: float) -> float:
