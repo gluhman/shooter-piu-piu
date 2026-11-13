@@ -6,11 +6,13 @@
 
 | Ресурс | Использование | Источник и условия |
 | --- | --- | --- |
-| Tactical Operator | Модель игрока и ботов, ткани формы и снаряжения | [DanlyVostok и ambientCG](../assets/operator/CREDITS.md). Модель CC BY 4.0, дополнительная ткань CC0 |
+| Tactical Operator | Модель игрока и ботов, форма, защитные накладки и часы на левом рукаве | [DanlyVostok, ambientCG и Poly Haven](../assets/operator/CREDITS.md). Модель CC BY 4.0, дополнительные материалы и часы CC0 |
 | Universal Animation Library | Стойка, движение, присед и прыжок бойцов | [Quaternius, CC0](../assets/animations/CREDITS.md) |
 | Human Character Dummy и Human Basic Motions FREE | Исходная поза и восемь направлений ходьбы и бега в локальной сборке | [Кевин Иглесиас и условия использования](../assets/animations/CREDITS.md). Подготовленная библиотека лежит в `assets/animations/local/` |
 | Classic Weapons Pack | Модели огнестрельного оружия, выстрелы и перезарядка | [Stein Games, CC0](../assets/classic_weapons/CREDITS.md). [Отдельные материалы AK-47](../assets/ak47/CREDITS.md) |
 | Арсенал | Модели оружия, гранат и бронежилета, материалы металла и дерева | [Модели проекта, материалы Poly Haven и звук BigSoundBank](../assets/arsenal/CREDITS.md) |
+| Desert Eagle и нож | Модели от первого лица и предметы подбора с PBR-материалами | [SirDraco65 и Poly Haven, CC0](../assets/weapon_models/CREDITS.md) |
+| HDR-панорама двора | Рассеянный свет и отражения на открытых картах Sky3D | [Poly Haven, CC0](../game/maps/lighting/CREDITS.md) |
 | Материалы Dust II | Песчаник стен и арок, гравий для грунта и пандусов | [Poly Haven, CC0](../assets/map_textures/dust2/CREDITS.md). Карты цвета 4K, нормали и шероховатость 2K |
 | Предметы окружения | Военный ящик, кусты, трава и кузов для металлолома | [Poly Haven и PtDesigns, CC0](../assets/arena_props/CREDITS.md) |
 | Containers Asset Pack | Верхние контейнеры и панели со следами попаданий | [Oxygen и схема подключения](../assets/arena_props/CREDITS.md). Подготовленный GLB лежит в `assets/arena_props/oxygen/` |
