@@ -5,7 +5,8 @@ const Classic := preload("res://game/combat/classic_weapons.gd")
 const WeaponHud := preload("res://game/ui/weapon_hud.gd")
 const Balance := preload("res://game/combat/combat_balance.gd")
 const MAP := preload("res://game/maps/map_builder.gd")
-const DEAGLE_MODEL := preload("res://assets/weapon_models/pistol.glb")
+const DEAGLE_MODEL := preload("res://assets/weapon_models/desert_eagle.glb")
+const KNIFE_MODEL := preload("res://assets/weapon_models/fish_knife/fish_knife_2k.gltf")
 const SHOTGUN_MESH := preload("res://assets/shotgun/Shotgun.obj")
 const SHOTGUN_DIFFUSE := preload("res://assets/shotgun/Sg_Diffuse.png")
 const SHOTGUN_NORMAL := preload("res://assets/shotgun/Sg_normals.png")
@@ -1006,8 +1007,8 @@ func _build_viewmodel(weapon_id: String) -> void:
 			left_palm = Vector3(0.55, -0.70, 0.0)
 		"deagle":
 			model.rotation.y = PI
-			grip = Vector3(0.025, 0.067, 0.139)
-			support = Vector3(-0.058, 0.052, 0.123)
+			grip = Vector3(0.024, 0.125, 0.093)
+			support = Vector3(-0.041, 0.115, 0.076)
 			_rest_pos = Vector3(0.104, -0.237, -0.285)
 			left_fingers = Vector3(0.23, 0.19, -1.0)
 			left_palm = Vector3(0.94, 0.33, 0.0)
@@ -1100,8 +1101,8 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 			front = Vector3(-8.725, 3.389, -0.005)
 			eye_relief = 0.23
 		"deagle":
-			rear = Vector3(0.0, 0.2205, -0.066)
-			front = Vector3(0.0, 0.2185, 0.076)
+			rear = Vector3(0.0, 0.235, -0.080)
+			front = Vector3(0.0, 0.234, 0.100)
 			eye_relief = 0.31
 		"launcher", "m249", "m1":
 			rear = _model_marker(model, "RearSight")
@@ -1393,43 +1394,11 @@ static func _make_model(weapon_id: String) -> Node3D:
 
 static func _make_knife_model() -> Node3D:
 	var holder := Node3D.new()
-	var steel := StandardMaterial3D.new()
-	steel.albedo_color = Color("#a8b3b9")
-	steel.metallic = 0.75
-	steel.roughness = 0.35
-	steel.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var grip := StandardMaterial3D.new()
-	grip.albedo_color = Color("#252b24")
-	grip.roughness = 0.88
-
-	var blade := SurfaceTool.new()
-	blade.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var profile := [Vector3(-0.025, 0, -0.065), Vector3(0.024, 0, -0.065),
-		Vector3(0.021, 0, -0.168), Vector3(-0.006, 0, -0.252), Vector3(-0.024, 0, -0.192)]
-	for side in [-1.0, 1.0]:
-		var ridge := Vector3(0, float(side) * 0.007, -0.105)
-		for index in profile.size():
-			var next := (index + 1) % profile.size()
-			blade.add_vertex(ridge)
-			blade.add_vertex(profile[index if side > 0.0 else next])
-			blade.add_vertex(profile[next if side > 0.0 else index])
-	blade.generate_normals()
-	blade.set_material(steel)
-	var blade_instance := MeshInstance3D.new()
-	blade_instance.mesh = blade.commit()
-	holder.add_child(blade_instance)
-
-	for part in [
-		[Vector3(0.031, 0.027, 0.116), Vector3(0, 0, 0.0), grip],
-		[Vector3(0.060, 0.020, 0.012), Vector3(0, 0, -0.060), steel],
-	]:
-		var mesh := BoxMesh.new()
-		mesh.size = part[0]
-		mesh.material = part[2]
-		var instance := MeshInstance3D.new()
-		instance.mesh = mesh
-		instance.position = part[1]
-		holder.add_child(instance)
+	var knife := KNIFE_MODEL.instantiate() as Node3D
+	knife.rotation.x = -PI * 0.5
+	knife.scale = Vector3.ONE * 1.42
+	knife.position.z = -0.071
+	holder.add_child(knife)
 	return holder
 
 
@@ -1443,7 +1412,7 @@ static func _apply_shotgun_material(model: Node3D) -> void:
 		_shotgun_material.metallic = 1.0
 		_shotgun_material.metallic_texture = SHOTGUN_SPEC
 		_shotgun_material.metallic_texture_channel = StandardMaterial3D.TEXTURE_CHANNEL_GRAYSCALE
-		_shotgun_material.roughness = 0.5
+		_shotgun_material.roughness = 0.62
 		_shotgun_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	for mesh_instance in model.find_children("*", "MeshInstance3D", true, false):
 		mesh_instance.material_override = _shotgun_material
@@ -1482,7 +1451,7 @@ static func _muzzle_point(model: Node3D, weapon_id: String) -> Vector3:
 			# Center of the ring at the front of the OBJ barrel.
 			return model.transform * Vector3(-8.94, 3.048, -0.001)
 		"deagle":
-			return model.transform * Vector3(0.0, 0.1575, 0.112)
+			return model.transform * Vector3(0.0, 0.188, 0.110)
 		_:
 			return model.transform * Vector3(0.0, 0.0, -0.252)
 

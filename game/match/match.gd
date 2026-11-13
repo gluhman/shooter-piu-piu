@@ -970,7 +970,14 @@ func _play_ambience() -> void:
 	$Ambience.play()
 
 
-func _grade_arena(environment: Environment) -> void:
+func _grade_arena(world_environment: WorldEnvironment) -> void:
+	var environment := world_environment.environment
+	# Physical exposure enables depth of field. Disable the blur pass for gameplay
+	# so the first-person hands and weapon stay sharp at any focus distance.
+	var camera_attributes := world_environment.camera_attributes
+	if camera_attributes:
+		RenderingServer.camera_attributes_set_dof_blur(camera_attributes.get_rid(),
+			false, 0.0, 0.0, false, 0.0, 0.0, 0.0)
 	environment.tonemap_mode = Environment.TONE_MAPPER_AGX
 	environment.tonemap_exposure = 1.0
 	environment.glow_enabled = true
@@ -1011,7 +1018,7 @@ func _build_arena(layout_seed: int) -> void:
 		_breakwater = BREAKWATER_SCENE.instantiate()
 		$Map.add_child(_breakwater)
 		_breakwater.apply_layout(map_size)
-		_grade_arena(_breakwater.get_node("WorldEnvironment").environment)
+		_grade_arena(_breakwater.get_node("WorldEnvironment"))
 		$Loot.build_crates(_breakwater.get_supply_placements())
 	else:
 		var weather: Dictionary = ARENA_WEATHER[map_id]
@@ -1024,7 +1031,7 @@ func _build_arena(layout_seed: int) -> void:
 			$WorldEnvironment.camera_attributes = OFFICE_EXPOSURE
 			$WorldEnvironment/SunLight.hide()
 			$WorldEnvironment/MoonLight.hide()
-		_grade_arena($WorldEnvironment.environment)
+		_grade_arena($WorldEnvironment)
 		var supplies: Array[Transform3D] = $Map.build(map_id, layout_seed, arena_width())
 		if map_id == MAP.OFFICE_ID and GameSettings.supports_advanced_graphics() and not Net.dedicated:
 			var probe := VoxelGI.new()

@@ -39,13 +39,14 @@ static func make_model(id: String) -> Node3D:
 		for surface in mesh.mesh.get_surface_count():
 			var name := mesh.mesh.surface_get_material(surface).resource_name
 			if SURFACES.has(name):
-				mesh.set_surface_override_material(surface, _material(name))
+				mesh.set_surface_override_material(surface, _material(name, id != "m249"))
 	return model
 
 
-static func _material(name: String) -> StandardMaterial3D:
-	if _materials.has(name):
-		return _materials[name]
+static func _material(name: String, detailed: bool) -> StandardMaterial3D:
+	var key := name if detailed else name + "/original"
+	if _materials.has(key):
+		return _materials[key]
 	var surface: Array = SURFACES[name]
 	var material := StandardMaterial3D.new()
 	material.albedo_color = surface[0]
@@ -74,5 +75,13 @@ static func _material(name: String) -> StandardMaterial3D:
 		material.normal_scale = 0.55
 		material.uv1_triplanar = true
 		material.uv1_scale = texture_scale
-	_materials[name] = material
+	if detailed and name in ["Steel", "Dark", "Olive", "Brass", "Blue"]:
+		var packed := preload("res://assets/arsenal/metal_plate_02_arm.jpg")
+		material.roughness_texture = packed
+		material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
+		material.roughness = minf(1.0, material.roughness + 0.22)
+		material.ao_enabled = true
+		material.ao_texture = packed
+		material.ao_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
+	_materials[key] = material
 	return material

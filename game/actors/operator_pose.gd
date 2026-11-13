@@ -1,6 +1,7 @@
 extends SkeletonModifier3D
 
 const Balance := preload("res://game/combat/combat_balance.gd")
+const WRISTWATCH := preload("res://assets/operator/watch/digital_wrist_watch_1k.gltf")
 const VEST_MESH := "Object_105"
 const MODEL := preload("res://assets/operator/operator.glb")
 const LOCOMOTION := preload("res://assets/animations/operator_locomotion.res")
@@ -9,14 +10,17 @@ const FABRIC_TEXTURES := {
 	"Mil_Suit_R5": [
 		preload("res://assets/operator/textures/uniform_albedo.jpg"),
 		preload("res://assets/operator/textures/uniform_normal.webp"),
+		preload("res://assets/operator/textures/uniform_roughness.jpg"),
 	],
 	"Mil_Suit_R5__Plate": [
 		preload("res://assets/operator/textures/vest_albedo.jpg"),
 		preload("res://assets/operator/textures/vest_normal.webp"),
+		preload("res://assets/operator/textures/vest_roughness.jpg"),
 	],
 	"Mil_Suit_R5_Puches": [
 		preload("res://assets/operator/textures/pouches_albedo.jpg"),
 		preload("res://assets/operator/textures/pouches_normal.webp"),
+		preload("res://assets/operator/textures/pouches_roughness.jpg"),
 	],
 }
 
@@ -502,15 +506,47 @@ static func apply_textures(avatar: Node3D, team := -1) -> void:
 	for mesh: MeshInstance3D in avatar.find_children("*", "MeshInstance3D", true, false):
 		for surface in mesh.mesh.get_surface_count():
 			var original := mesh.mesh.surface_get_material(surface) as BaseMaterial3D
-			if original == null or not FABRIC_TEXTURES.has(original.resource_name):
+			if original == null:
 				continue
 			var name := original.resource_name
+			var pads := name == "Mil_Suit_Pads__R5"
+			if not pads and not FABRIC_TEXTURES.has(name):
+				continue
 			var key := "%d/%s" % [team, name]
 			if not _fabric_materials.has(key):
 				var material := original.duplicate() as BaseMaterial3D
-				material.albedo_texture = TEAM_ALBEDO[team][name] if team in [0, 1] else FABRIC_TEXTURES[name][0]
-				material.normal_texture = FABRIC_TEXTURES[name][1]
-				material.normal_enabled = true
+				if pads:
+					var packed := preload("res://assets/operator/textures/leather_detail_arm.jpg")
+					material.roughness_texture = packed
+					material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
+					material.roughness = 0.96
+					material.detail_enabled = true
+					material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+					material.detail_normal = preload("res://assets/operator/textures/leather_detail_normal.jpg")
+					material.detail_mask = packed
+				else:
+					material.albedo_texture = TEAM_ALBEDO[team][name] if team in [0, 1] else FABRIC_TEXTURES[name][0]
+					material.normal_texture = FABRIC_TEXTURES[name][1]
+					material.normal_enabled = true
+					material.roughness_texture = FABRIC_TEXTURES[name][2]
+					material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
+					material.roughness = 1.0
 				material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 				_fabric_materials[key] = material
 			mesh.set_surface_override_material(surface, _fabric_materials[key])
+
+
+static func attach_wristwatch(skeleton: Skeleton3D) -> void:
+	var cuff := BoneAttachment3D.new()
+	cuff.name = "WatchCuff"
+	cuff.bone_name = &"mixamorig_LeftHand_035"
+	skeleton.add_child(cuff)
+	var watch := WRISTWATCH.instantiate() as Node3D
+	watch.name = "Wristwatch"
+	# The scan's bracelet is laid flat. Fit the case over the operator's sleeve.
+	for part: Node3D in watch.get_children():
+		if part.name != &"digital_wrist_watch":
+			part.hide()
+	watch.rotation.x = PI * 0.5
+	watch.position = Vector3(0.0, -0.038, 0.029)
+	cuff.add_child(watch)

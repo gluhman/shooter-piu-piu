@@ -1,0 +1,1 @@
+- [Overcast Industrial Courtyard](https://polyhaven.com/a/overcast_industrial_courtyard) by Grzegorz Wronkowski, CC0. The HDR panorama is blended into the shared outdoor sky's radiance pass for ambient light and reflections.

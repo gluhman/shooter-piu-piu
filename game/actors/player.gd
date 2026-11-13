@@ -1402,6 +1402,7 @@ func _build_operator() -> void:
 	OperatorPose.apply_textures(_avatar, team_id() if get_parent().team_deathmatch else -1)
 	_skeleton = _avatar.find_child("Skeleton3D", true, false) as Skeleton3D
 	_skeleton.reset_bone_poses()
+	OperatorPose.attach_wristwatch(_skeleton)
 	_pose = OperatorPose.new()
 	_pose.actor = self
 	_skeleton.add_child(_pose)

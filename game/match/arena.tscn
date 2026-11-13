@@ -22,9 +22,13 @@
 
 [ext_resource type="Script" path="res://game/match/fieldworks.gd" id="17_fieldworks"]
 
+[ext_resource type="Texture2D" path="res://game/maps/lighting/overcast_industrial_courtyard.hdr" id="courtyard_hdr"]
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
 resource_local_to_scene = true
 shader = ExtResource("14_sky_shader")
+shader_parameter/reflection_panorama = ExtResource("courtyard_hdr")
+shader_parameter/reflection_panorama_mix = 0.22
 
 [sub_resource type="Sky" id="Sky_main"]
 resource_local_to_scene = true

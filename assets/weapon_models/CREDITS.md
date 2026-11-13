@@ -1,0 +1,2 @@
+- [Desert Eagle](https://opengameart.org/content/desert-eagle-0) by SirDraco65, CC0. Converted from the source Blender scene to GLB with its original base-color, bevel-normal, roughness, and metallic maps. Exterior meshes and a separate magazine are fitted to the game's existing animation scale.
+- [Fish Knife](https://polyhaven.com/a/fish_knife) by Mateusz Sadek, CC0. The steel blade and carved handle use the original 2K PBR maps.

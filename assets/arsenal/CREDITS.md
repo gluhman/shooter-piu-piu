@@ -9,3 +9,5 @@ The 48 kHz mono footsteps and blast effects use Joseph Sardin's CC0 recordings. 
 
 - [Footsteps, Shoe on Concrete](https://bigsoundbank.com/footsteps-shoe-on-concrete-s0514.html)
 - [Explosion #2](https://bigsoundbank.com/explosion-2-s1808.html)
+
+Metal Plate 02's packed ambient-occlusion and roughness channels also supply surface detail on the M1, launcher, and TEC-9.

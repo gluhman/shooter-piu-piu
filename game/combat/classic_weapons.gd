@@ -131,7 +131,14 @@ static func _material(id: String) -> StandardMaterial3D:
 		material.albedo_texture = _asset(id, "albedo.png") as Texture2D
 		material.roughness = 0.65
 		material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-		if id != "tec9":
+		if id == "tec9":
+			material.normal_enabled = true
+			material.normal_texture = preload("res://assets/arsenal/metal_plate_02_nor_gl.jpg")
+			material.normal_scale = 0.2
+			var packed := preload("res://assets/arsenal/metal_plate_02_arm.jpg")
+			material.roughness_texture = packed
+			material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
+		else:
 			var packed := _asset(id, "rmao.png") as Texture2D
 			material.normal_enabled = true
 			material.normal_texture = _asset(id, "normal.png") as Texture2D

@@ -9,6 +9,8 @@ uniform bool sky_visible = true;
 uniform vec2 color_correction = vec2(0.0, 1.0);
 uniform vec4 ground_color: source_color = vec4(0.3, 0.3, 0.3, 1.0);
 uniform float horizon_offset = 0.0;
+uniform sampler2D reflection_panorama : source_color, filter_linear_mipmap, repeat_enable;
+uniform float reflection_panorama_mix : hint_range(0.0, 1.0) = 0.0;
 
 group_uniforms atmosphere;
 uniform float atm_darkness = 0.5;
@@ -513,5 +515,11 @@ void sky() {
 		}
 	}
 
+	// Keep the authored sky visible and use the HDR panorama for image-based lighting.
+	if (AT_CUBEMAP_PASS && reflection_panorama_mix > 0.0) {
+		vec2 panorama_uv = vec2(atan(world_pos.x, -world_pos.z) / TAU + 0.5,
+			acos(clamp(world_pos.y, -1.0, 1.0)) / PI);
+		col = mix(col, texture(reflection_panorama, panorama_uv).rgb, reflection_panorama_mix);
+	}
 	COLOR = col.rgb;
 }

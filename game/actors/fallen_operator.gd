@@ -43,6 +43,7 @@ func build(has_armor: bool, state: Dictionary, animate: bool) -> void:
 	avatar.find_child("Object_111", true, false).hide()
 	_skeleton = avatar.find_child("Skeleton3D", true, false) as Skeleton3D
 	_skeleton.reset_bone_poses()
+	OperatorPose.attach_wristwatch(_skeleton)
 	for segment in SEGMENTS:
 		_indices.append(_skeleton.find_bone(BONE_PREFIX + segment[0]))
 	var pose: Array = state.get("pose", [])
