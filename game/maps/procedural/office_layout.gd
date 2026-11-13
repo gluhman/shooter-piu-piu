@@ -1,5 +1,7 @@
 extends RefCounted
 
+const ROUTE_MARKING := preload("res://game/maps/procedural/route_marking.gd")
+
 const SURFACE := preload("res://game/maps/procedural/office_surface.gdshader")
 const DISPLAY := preload("res://game/maps/procedural/office_display.gdshader")
 const Fixtures := preload("res://game/maps/procedural/village_fixtures.gd")
@@ -102,6 +104,8 @@ func _shell() -> void:
 			Vector2(7,-5), Vector2(7,-2), Vector2(7,2), Vector2(7,5),
 			Vector2(-2,-4), Vector2(2,-4), Vector2(0,-1), Vector2(-2,3), Vector2(2,3), Vector2(0,6)]:
 		_ceiling_light(at)
+	ROUTE_MARKING.paint(_map, "RECEPTION", Vector3(0, 0.008, -5.5), Color("#bcd0db"))
+	ROUTE_MARKING.paint(_map, "BREAK ROOM", Vector3(0, 0.018, 2.1), Color("#515e51"))
 
 
 func _wall(from: Vector2, to: Vector2, doors: Array = []) -> void:
@@ -137,6 +141,7 @@ func _door(portal: Transform3D) -> void:
 	# The frame stays in the wall. Only the pane and its fittings follow the hinge.
 	var pane: MeshInstance3D
 	for part: MeshInstance3D in leaf.find_children("*", "MeshInstance3D", true, false):
+		part.gi_mode = GeometryInstance3D.GI_MODE_DYNAMIC
 		if part.name.begins_with("Frame"):
 			part.hide()
 		elif "tempered glass leaf" in part.name:
@@ -157,10 +162,19 @@ func _ceiling_light(at: Vector2) -> void:
 	_paint(Vector3(at.x, CEILING - 0.126, at.y), Vector3(1.03, 0.026, 0.46), _light)
 	var lamp := OmniLight3D.new()
 	lamp.position = Vector3(at.x, CEILING - 0.24, at.y)
-	lamp.light_color = Color(1.0, 0.95, 0.86)
-	lamp.light_energy = 1.75
+	if at.x < -4.0 or (absf(at.x) < 4.0 and at.y > 0.0):
+		lamp.light_color = Color("#fff0d2")
+		lamp.light_energy = 1.72
+	elif at.x > 4.0:
+		lamp.light_color = Color("#e1eeff")
+		lamp.light_energy = 1.92
+	else:
+		lamp.light_color = Color("#eff6f8")
+		lamp.light_energy = 1.82
 	lamp.omni_range = 5.4
 	lamp.omni_attenuation = 1.25
+	if at == Vector2(-2, -4) or at == Vector2(2, 3):
+		lamp.add_to_group(&"office_shadow_lights")
 	_map.add_child(lamp)
 
 
@@ -206,8 +220,8 @@ func _furnish() -> void:
 	# Reception and the break room use different clutter and wall details.
 	_workstation(Vector3(-1.2, 0, -4.4), 0.0, true)
 	_sofa(Vector3(1.75, 0, -6.96), 180.0)
-	_cabinet(Vector3(1.2, 0, -4.5), 90.0)
-	_prop("potted_plant_04", Vector3(1.2, 1.58, -4.73), 30, 1.45)
+	_cabinet(Vector3(1.65, 0, -4.9), 72.0)
+	_prop("potted_plant_04", Vector3(1.58, 1.58, -5.09), 30, 1.45)
 	_sign("RECEPTION", Vector3(0.0, 2.02, -7.46), 0.0)
 	_notice(Vector3(3.85, 1.52, -3.25), -90.0)
 	_break_counter()

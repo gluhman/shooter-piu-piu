@@ -510,6 +510,9 @@ func _build_graphics(column: VBoxContainer) -> void:
 		ao.disabled = not enabled
 	)
 
+	var indirect := _graphics_toggle(lighting, "Глобальное освещение (Forward+)", &"indirect_lighting")
+	indirect.disabled = not advanced
+
 	var effects := UI.card(column, "Эффекты")
 	_graphics_choice(effects, "Частицы и взрывы", &"effects_detail",
 		["Меньше частиц", "Полная детализация"], [0, 1])

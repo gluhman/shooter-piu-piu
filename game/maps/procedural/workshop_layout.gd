@@ -1,5 +1,7 @@
 extends RefCounted
 
+const ROUTE_MARKING := preload("res://game/maps/procedural/route_marking.gd")
+
 const Ladders := preload("res://game/maps/procedural/workshop_ladders.gd")
 const FLOOR := preload("res://game/maps/procedural/workshop_floor.gdshader")
 const ART := "res://game/maps/breakwater/art/"
@@ -331,7 +333,11 @@ func _yard(side: float) -> void:
 	_block(shelter + Vector3(-side * 2.48, 1.13, side * 1.8), Vector3(0.27, 2.26, 0.31), _steel, "metal")
 	# Offset cover in the central lane so both hall crossings remain open.
 	_model("equipment_oxide" if side > 0.0 else "equipment_blue",
-		Vector3(side * 2.5, 0, side * 5.35), Vector3(3.1, 1.36, 3.1), 0, "metal")
+		Vector3(side * 2.9, 0, side * 5.1), Vector3(3.1, 1.36, 3.1), 12.0, "metal")
+	ROUTE_MARKING.paint(_map, "FABRICATION" if side > 0.0 else "DISPATCH",
+		_point(Vector3(side * 5.55, 0.008, side * 3.8)),
+		Color("#e5b978") if side > 0.0 else Color("#a6cfdd"), PI if side > 0.0 else 0.0,
+		2.5 * maxf(0.64, _scale))
 	if not _compact:
 		var freight := Vector3(side * 8.75, 0, side * 17.6)
 		_model("wooden_crate_01", freight, Vector3(1.85, 0.98, 1.62), 0, "wood")
@@ -391,10 +397,10 @@ func _model(name: String, at: Vector3, size: Vector3, yaw: float, surface: Strin
 	if surface == "wood":
 		body.set_meta(&"ballistic_size", world_size)
 		body.set_meta(&"ballistic_resistance", 0.30)
-	var footprint := Vector2(world_size.x, world_size.z)
-	if absf(yaw) == 90.0:
-		footprint = Vector2(footprint.y, footprint.x)
 	if at.y < 0.72:
+		var angle := deg_to_rad(yaw)
+		var footprint := Vector2(world_size.x * absf(cos(angle)) + world_size.z * absf(sin(angle)),
+			world_size.x * absf(sin(angle)) + world_size.z * absf(cos(angle)))
 		_map._occupied.append(_map._footprint(Vector2(center.x, center.z), footprint))
 
 

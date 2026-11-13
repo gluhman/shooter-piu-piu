@@ -16,6 +16,9 @@ const GRASS := preload("res://assets/arena_props/grass.glb")
 const SHRUBS := preload("res://assets/arena_props/shrubs.glb")
 const VILLAGE := preload("res://game/maps/procedural/village_layout.gd")
 const DUST2 := preload("res://game/maps/procedural/dust2_layout.gd")
+const ROUTE_MARKING := preload("res://game/maps/procedural/route_marking.gd")
+const YARD_GROUND := preload("res://game/maps/procedural/yard_ground.gdshader")
+const ROAD_BARRIER := "res://game/maps/breakwater/art/models/concrete_road_barrier.glb"
 const OFFICE := preload("res://game/maps/procedural/office_layout.gd")
 const WORKSHOP := preload("res://game/maps/procedural/workshop_layout.gd")
 
@@ -72,6 +75,7 @@ const PATROL_ROUTES := [
 
 var _perforated: Array[PerforatedCover] = []
 var _stack_meshes: Dictionary[String, Mesh] = {}
+var _container_fittings: SurfaceTool
 var _occupied: Array[Rect2] = []
 var _cover: Array[Cover] = []
 var _passages: Array[Transform3D] = []
@@ -83,7 +87,6 @@ var _patrol: Array[Vector3] = []
 var _half_extent := 35.0
 var _district_origin := Vector3.ZERO
 var _district_yaw := 0.0
-var _floor_mat: StandardMaterial3D
 var _wall_mat: StandardMaterial3D
 var _wood_mat: StandardMaterial3D
 const ARENA_TEXTURES := {
@@ -148,7 +151,6 @@ func preload_textures(map_id: int) -> void:
 
 
 func _load_textures() -> void:
-	_floor_mat = _world_mat("concrete", Color(0.58, 0.56, 0.53), 0.0, 0.85, 1.15, false)
 	_wall_mat = _world_mat("bricks", Color(0.92, 0.9, 0.88), 0.0, 0.42, 1.0, true)
 	_wood_mat = _world_mat("planks", Color(0.9, 0.84, 0.74), 0.0, 0.7, 1.0, true)
 
@@ -189,12 +191,16 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	var steps := floori((_half_extent - 1.0) / spacing)
 
 	_load_textures()
-	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(width + 2.0, 0.5, width + 2.0), _floor_mat)
+	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(width + 2.0, 0.5, width + 2.0), _yard_ground(map_id))
 	for side in [-1.0, 1.0]:
 		var edge: float = side * (_half_extent + 0.25)
 		_add_box(Vector3(0.0, 2.75, edge), Vector3(width + 1.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
 		_add_box(Vector3(edge, 2.75, 0.0), Vector3(0.5, 5.5, width), _wall_mat, 0.0, "brick")
 
+	_container_fittings = SurfaceTool.new()
+	_container_fittings.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var fittings := _world_mat("corrugated", Color("#5f6059"), 0.52, 1.0, 0.55, true)
+	_container_fittings.set_material(fittings)
 	if width == 20.0:
 		_build_small_yard(map_id)
 	else:
@@ -205,7 +211,14 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 				1: _build_storage()
 				2: _build_crossroads()
 				_: _build_container_yard()
+	_build_yard_routes(map_id, width)
+	if width > 20.0:
 		_scatter_passages(rng)
+	var details := MeshInstance3D.new()
+	details.name = "ContainerHardware"
+	details.mesh = _container_fittings.commit()
+	add_child(details)
+	_container_fittings = null
 	var crates := _scatter_crates(rng)
 	_build_respawn_grid(steps, spacing, _half_extent)
 	_scatter_foliage(rng)
@@ -216,9 +229,79 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	return crates
 
 
+func _yard_ground(map_id: int) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = YARD_GROUND
+	var asphalt := map_id == 2 or map_id == TEST_RANGE_ID
+	var asset := "asphalt_01" if asphalt else "concrete_floor_worn_001"
+	for kind in ["color", "normal", "orm"]:
+		var path := "res://game/maps/breakwater/art/materials/%s_%s.jpg" % [asset, kind]
+		material.set_shader_parameter("surface_" + kind, load(path))
+	material.set_shader_parameter("joint_strength", 0.0 if asphalt else 0.85)
+	material.set_shader_parameter("tint", Color("#dce6eb") if map_id == 1 else Color("#e3d9cc"))
+	return material
+
+
+func _build_yard_routes(map_id: int, width: float) -> void:
+	var candidates: Array
+	var title: String
+	var color: Color
+	var yaw: float
+	match map_id:
+		1:
+			# Offset barriers give the long aisles a midpoint crossover.
+			candidates = [Vector2(-2.25, -4.7), Vector2(2.25, 3.65)] if width == 20.0 else [
+				Vector2(-4.35, -1.3), Vector2(4.35, 1.3), Vector2(-5.1, 1.0), Vector2(5.1, -1.0)]
+			title = "AISLE TRANSFER"
+			color = Color("#9ac8db")
+			yaw = 75.0
+		2:
+			# Keep the center of the junction open and screen its diagonal approaches.
+			candidates = [Vector2(-3.4, 1.55), Vector2(3.4, -1.55)] if width == 20.0 else [
+				Vector2(-3.1, 3.0), Vector2(3.1, -3.0), Vector2(-3.5, -2.0), Vector2(3.5, 2.0)]
+			title = "CROSSING"
+			color = Color("#d8c789")
+			yaw = 45.0
+		_:
+			candidates = [Vector2(0.0, -1.9), Vector2(3.05, 6.0)] if width == 20.0 else [
+				Vector2(4.4, 1.6), Vector2(-4.25, -5.2), Vector2(8.0, -6.2), Vector2(-9.0, 1.6)]
+			title = "RECEIVING"
+			color = Color("#e4a970")
+			yaw = 0.0
+	var placed := 0
+	var length := 1.65 if width == 20.0 else 2.3
+	var angle := deg_to_rad(yaw)
+	var footprint := Vector2(length * absf(cos(angle)) + 0.78 * absf(sin(angle)),
+		length * absf(sin(angle)) + 0.78 * absf(cos(angle)))
+	for candidate: Vector2 in candidates:
+		var point := candidate * (1.9 if width == 70.0 else 1.0)
+		var area := _footprint(point, footprint)
+		if not _is_clear(area.grow(0.30), _half_extent, 1.20):
+			continue
+		_road_barrier(Vector3(point.x, 0, point.y), yaw, length)
+		_occupied.append(area.grow(0.20))
+		var direction := -1.0 if point.y < 0.0 else 1.0
+		var route := Vector3(point.x, 0.008, point.y + direction * (footprint.y * 0.5 + 0.5))
+		ROUTE_MARKING.paint(self, title, route, color, PI if direction < 0.0 else 0.0, length + 0.1)
+		placed += 1
+		if placed == 2:
+			break
+
+
+func _road_barrier(at: Vector3, yaw: float, width: float) -> void:
+	var scene := load(ROAD_BARRIER) as PackedScene
+	var model := scene.instantiate() as Node3D
+	# The imported barrier is centered at the origin, including its root translation.
+	var size := Vector3(width, 0.96, 0.78)
+	var bounds := AABB(Vector3(-0.7722, -0.4168, -0.3179), Vector3(1.5445, 0.8336, 0.6358))
+	model.scale = size / bounds.size
+	model.position = -bounds.get_center() * model.scale
+	_add_box(at + Vector3.UP * size.y * 0.5, size, null, yaw, "concrete", null, model)
+
+
 func _build_test_range(width: float) -> Array[Transform3D]:
 	_load_textures()
-	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(width + 2.0, 0.5, width + 2.0), _floor_mat)
+	_add_box(Vector3(0.0, -0.25, 0.0), Vector3(width + 2.0, 0.5, width + 2.0), _yard_ground(TEST_RANGE_ID))
 	for side in [-1.0, 1.0]:
 		_add_box(Vector3(side * (_half_extent + 0.25), 2.75, 0.0), Vector3(0.5, 5.5, width), _wall_mat, 0.0, "brick")
 	_add_box(Vector3(0.0, 2.75, -_half_extent - 0.25), Vector3(width + 1.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
@@ -241,6 +324,13 @@ func _build_test_range(width: float) -> Array[Transform3D]:
 			var target := Vector3(lane_x, 1.35, target_z)
 			_add_wood_cover(target, Vector3(1.5, 2.4, 0.14), target_mat, 0.32)
 			_add_box(Vector3(lane_x, 1.35, target_z - 1.1), Vector3(2.4, 2.8, 0.32), steel_mat, 0.0, "metal")
+
+	# Dividers mark the firing bays and stop before the shared entry apron.
+	for x in [-18.0, 18.0]:
+		_road_barrier(Vector3(x, 0, 22.5), 90.0, 3.2)
+	ROUTE_MARKING.paint(self, "WOOD / STEEL", Vector3(-25, 0.008, 21.5), Color("#e0b073"))
+	ROUTE_MARKING.paint(self, "ACCURACY", Vector3(0, 0.008, 24), Color("#e6dabb"))
+	ROUTE_MARKING.paint(self, "MOVEMENT", Vector3(25, 0.008, 21.5), Color("#a0c6d8"))
 
 	# Left side: wood and steel panels for projectile penetration and ricochet checks.
 	for target_z: float in [12.0, 2.0, -8.0]:
@@ -451,6 +541,22 @@ func _add_container(center: Vector3, size_x: float, size_z: float, color: Color,
 	door.mesh = door_mesh
 	door.position = door_panel.to_local(center + door.position.rotated(Vector3.UP, yaw))
 	door_panel.add_child(door)
+	if _container_fittings:
+		var end_width := size.z if along_x else size.x
+		var facing := yaw + PI * 0.5 if along_x else yaw
+		var face := Transform3D(Basis(Vector3.UP, facing),
+			center + Vector3(0, 0, (size.x if along_x else size.z) * 0.5).rotated(Vector3.UP, facing))
+		_add_container_fittings(face, end_width, size.y)
+
+
+func _add_container_fittings(face: Transform3D, width: float, height: float) -> void:
+	var stile := BoxMesh.new()
+	stile.size = Vector3(0.065, height * 0.87, 0.05)
+	var latch := BoxMesh.new()
+	latch.size = Vector3(0.18, 0.048, 0.055)
+	for side in [-1.0, 1.0]:
+		_container_fittings.append_from(stile, 0, face.translated_local(Vector3(side * width * 0.22, 0, 0.070)))
+		_container_fittings.append_from(latch, 0, face.translated_local(Vector3(side * width * 0.18, -0.30, 0.105)))
 
 
 func _replace_stack_visuals(panels: Array[StaticBody3D], center: Vector3, size: Vector3,

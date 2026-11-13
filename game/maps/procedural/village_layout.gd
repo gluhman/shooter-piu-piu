@@ -179,6 +179,10 @@ func _market() -> void:
 	_fence_panel(Vector2(5.42, 0.29), 8.6, true, 2.3)
 	_barrel(Vector3(-4.6, 0, -2.8), 0.4)
 	_barrel(Vector3(4.1, 0, 3.5), 1.2)
+	# Low cover on the north approach leaves space on both sides to reach the well.
+	_crate(Vector3(-1.9, 0.024, -3.3), 0.22)
+	_bench(_frame(Vector2(2.0, 3.9), -0.25), Vector3.UP * 0.024)
+	_sign(_frame(Vector2(0.15, 0.15), 0.0), Vector3(0, 2.62, 0.24), "MARKET")
 	for point in [Vector2(-4.0, -1.45), Vector2(4.2, 1.4), Vector2(4.2, -0.85), Vector2(-4.0, 0.85)]:
 		_add_supply(point)
 	market_supply_count = _supplies.size()

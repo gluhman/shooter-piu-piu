@@ -649,7 +649,8 @@ collision_layer = 1
 collision_mask = 1
 
 [node name="TurbineBracket_-2_8_-1_9" type="StaticBody3D" parent="Cover"]
-position = Vector3(-2.8, 0.98, -1.9)
+position = Vector3(-3.3, 0.98, -1.9)
+rotation = Vector3(0, 0.22, 0)
 collision_layer = 1
 collision_mask = 1
 
@@ -661,7 +662,8 @@ material_override = SubResource("mat_metal")
 shape = SubResource("s9")
 
 [node name="TurbineBracket_2_8_1_9" type="StaticBody3D" parent="Cover"]
-position = Vector3(2.8, 0.98, 1.9)
+position = Vector3(3.3, 0.98, 1.9)
+rotation = Vector3(0, 0.22, 0)
 collision_layer = 1
 collision_mask = 1
 

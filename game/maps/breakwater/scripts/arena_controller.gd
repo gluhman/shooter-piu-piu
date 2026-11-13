@@ -3,6 +3,7 @@ extends Node3D
 
 enum Size { MICRO, STANDARD, FULL }
 
+const ROUTE_MARKING := preload("res://game/maps/procedural/route_marking.gd")
 const SIZE_MODES := ["micro", "standard", "full"]
 const SIZE_BOUNDS := [
 	Rect2(-16.8, -16.4, 33.6, 32.8),
@@ -20,6 +21,10 @@ var _size: int = Size.STANDARD
 
 func _ready() -> void:
 	apply_layout(Size.STANDARD)
+	for side in [-1.0, 1.0]:
+		var yaw := PI if side < 0.0 else 0.0
+		ROUTE_MARKING.paint(self, "TURBINE 09", Vector3(0, 0.012, side * 6.0), Color("#e1b779"), yaw)
+		ROUTE_MARKING.paint(self, "SERVICE LANE", Vector3(side * 11.0, 0.012, 0), Color("#91c2d2"), yaw + PI * 0.5)
 
 func apply_layout(size: int) -> void:
 	_size = clampi(size, Size.MICRO, Size.FULL)

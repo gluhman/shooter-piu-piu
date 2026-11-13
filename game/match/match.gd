@@ -123,9 +123,14 @@ func _ready() -> void:
 
 
 func _apply_graphics() -> void:
+	var environment: Environment = $WorldEnvironment.environment
+	if is_instance_valid(_breakwater):
+		environment = _breakwater.get_node("WorldEnvironment").environment
+	if environment:
+		environment.ssao_enabled = GameSettings.ambient_occlusion
+		_apply_indirect_lighting(environment)
 	if is_instance_valid(_breakwater):
 		_breakwater.get_node("Sun").shadow_enabled = GameSettings.shadows
-		_breakwater.get_node("WorldEnvironment").environment.ssao_enabled = GameSettings.ambient_occlusion
 		for light in get_tree().get_nodes_in_group(&"breakwater_shadow_lights"):
 			light.shadow_enabled = GameSettings.shadows
 		return
@@ -134,7 +139,43 @@ func _apply_graphics() -> void:
 	$WorldEnvironment/SunLight.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS \
 		if GameSettings.shadow_cascades == 1 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	$WorldEnvironment/MoonLight.shadow_enabled = false
-	$WorldEnvironment.environment.ssao_enabled = GameSettings.ambient_occlusion
+	if map_id == MAP.OFFICE_ID:
+		for light in get_tree().get_nodes_in_group(&"office_shadow_lights"):
+			if $Map.is_ancestor_of(light):
+				light.shadow_enabled = GameSettings.shadows
+
+
+func _apply_indirect_lighting(environment: Environment) -> void:
+	var enabled := GameSettings.indirect_lighting and GameSettings.supports_advanced_graphics() \
+		and DisplayServer.get_name() != "headless" and not Net.dedicated
+	var probe := $Map.get_node_or_null("OfficeBounce") as VoxelGI
+	environment.sdfgi_enabled = enabled and map_id != MAP.OFFICE_ID
+	if not enabled or map_id != MAP.OFFICE_ID:
+		if probe:
+			probe.hide()
+		return
+	if probe:
+		probe.show()
+	elif $Map.has_node("VillageFixtures"):
+		_bake_office_bounce.call_deferred(_load_token)
+
+
+func _bake_office_bounce(token: int) -> void:
+	if token != _load_token or map_id != MAP.OFFICE_ID or not GameSettings.indirect_lighting \
+			or $Map.has_node("OfficeBounce"):
+		return
+	var probe := VoxelGI.new()
+	probe.name = "OfficeBounce"
+	probe.position.y = 1.45
+	probe.size = Vector3(21.0, 4.8, 17.0)
+	probe.subdiv = VoxelGI.SUBDIV_64
+	$Map.add_child(probe)
+	probe.bake($Map)
+	if probe.data:
+		probe.data.energy = 0.44
+		probe.data.interior = true
+	else:
+		probe.queue_free()
 
 
 func prepare_startup_resources() -> void:
@@ -919,6 +960,23 @@ func _play_ambience() -> void:
 	$Ambience.play()
 
 
+func _grade_arena(environment: Environment) -> void:
+	environment.tonemap_mode = Environment.TONE_MAPPER_AGX
+	environment.tonemap_exposure = 1.0
+	environment.ssao_radius = 1.25
+	environment.ssao_intensity = 1.2
+	environment.ambient_light_energy = 0.78
+	if map_id == MAP.OFFICE_ID:
+		environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		environment.ambient_light_color = Color("#cbd6df")
+		environment.ambient_light_energy = 0.34
+	elif map_id == MAP.BREAKWATER_ID:
+		environment.ambient_light_energy = 0.58
+	else:
+		environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+		environment.ambient_light_sky_contribution = 0.8
+
+
 func _build_arena(layout_seed: int) -> void:
 	if map_id == MAP.BREAKWATER_ID:
 		$WorldEnvironment.environment = null
@@ -927,6 +985,7 @@ func _build_arena(layout_seed: int) -> void:
 		_breakwater = BREAKWATER_SCENE.instantiate()
 		$Map.add_child(_breakwater)
 		_breakwater.apply_layout(map_size)
+		_grade_arena(_breakwater.get_node("WorldEnvironment").environment)
 		$Loot.build_crates(_breakwater.get_supply_placements())
 	else:
 		var weather: Dictionary = ARENA_WEATHER[map_id]
@@ -934,6 +993,7 @@ func _build_arena(layout_seed: int) -> void:
 		var wind: Vector2 = weather.wind
 		$WorldEnvironment.wind_direction = deg_to_rad(wind.x)
 		$WorldEnvironment.wind_speed = wind.y
+		_grade_arena($WorldEnvironment.environment)
 		if map_id == MAP.OFFICE_ID:
 			$WorldEnvironment/SunLight.hide()
 			$WorldEnvironment/MoonLight.hide()

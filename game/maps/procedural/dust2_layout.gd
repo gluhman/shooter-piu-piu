@@ -35,7 +35,7 @@ const SPAWNS := [
 	Vector2(-28, 51), Vector2(34, -48), Vector2(-46, -48), Vector2(50, 2),
 	Vector2(-4, -39), Vector2(-43, 35), Vector2(14, 27), Vector2(-44, -15),
 	Vector2(44, -45), Vector2(-17, 51), Vector2(-46, 47), Vector2(49, -11),
-	Vector2(-6, 38), Vector2(-17, -35), Vector2(-39, -40), Vector2(-23, 6),
+	Vector2(-6, 38), Vector2(-17, -35), Vector2(-39, -40), Vector2(-18.9, 8.7),
 	Vector2(15, -29), Vector2(36, 13.7), Vector2(4, -41), Vector2(-40, 22),
 	Vector2(-34, 47), Vector2(49, 10), Vector2(50, -48), Vector2(-2, 14),
 ]
@@ -121,6 +121,12 @@ func _build_compact(width: float) -> Array[Transform3D]:
 		for point in [site + Vector2(-side * 1.8, 0), Vector2(x, width * 0.32)]:
 			supplies.append(Transform3D(Basis.IDENTITY, _position(point)))
 			_map._occupied.append(Rect2(point - Vector2.ONE * 0.8, Vector2.ONE * 1.6))
+	# The offsets leave a continuous middle route with a place to break sightlines.
+	for side in [-1.0, 1.0]:
+		var point := Vector2(side * width * 0.085, side * width * 0.14)
+		_crate(point, Vector3(1.35, 1.23, 0.95))
+		_map._occupied.append(Rect2(point - Vector2(0.675, 0.475), Vector2(1.35, 0.95)))
+	_sign(Vector2(0, width * 0.29), "MID")
 	var spacing := width * 0.14
 	_map._build_respawn_grid(3, spacing, half)
 	_patrol.assign(_map.respawn_points)
@@ -372,12 +378,15 @@ func _long_approach() -> void:
 	var center := _position(Vector2(37.9, 7.8), dumpster_size.y * 0.5)
 	_map._add_box(center, dumpster_size, null, 0.0, "metal", null, dumpster)
 	_crate(Vector2(62.5, 4.2), Vector3(2.2, 1.47, 1.6))
+	_crate(Vector2(52.9, -7.1), Vector3(2.65, 1.32, 1.15))
+	_sign(Vector2(47.5, 1.9), "LONG A")
 	_wall_sign(Vector2(42, 6.035), 3.0, "A →")
 
 
 func _middle() -> void:
 	_crate(Vector2(-6.35, -9.4), Vector3(2.25, 1.6, 2.2))
-	_crate(Vector2(-22.0, 5.3), Vector3(2.4, 1.28, 1.6))
+	_crate(Vector2(-21.25, 6.15), Vector3(2.4, 1.28, 1.6))
+	_sign(Vector2(-3.5, 19.0), "MID")
 	_crate(Vector2(8.3, -33.5), Vector3(2.4, 1.8, 1.65))
 	_wall_sign(Vector2(-3.5, -46.965), 0.3, "← B")
 	_wall_sign(Vector2(6, -46.965), 0.3, "A →")

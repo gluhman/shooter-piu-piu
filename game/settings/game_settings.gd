@@ -20,7 +20,7 @@ const FPS_LIMITS := [0, 30, 60, 120, 144]
 const SHADOW_DISTANCES := [24, 36, 52, 75]
 const GRAPHICS_OPTIONS := [&"fullscreen", &"window_size", &"fps_limit", &"vsync",
 	&"render_scale", &"upscaling", &"shadows", &"shadow_distance", &"shadow_cascades",
-	&"ambient_occlusion", &"ssao_quality", &"antialiasing", &"anisotropy", &"effects_detail"]
+	&"ambient_occlusion", &"indirect_lighting", &"ssao_quality", &"antialiasing", &"anisotropy", &"effects_detail"]
 const WEAPON_SLOTS := {
 	"primary": &"select_primary", "secondary": &"select_secondary", "knife": &"select_knife",
 }
@@ -80,8 +80,9 @@ var shadows := true
 var shadow_distance := 36
 var shadow_cascades := 0
 var ambient_occlusion := true
+var indirect_lighting := false
 var ssao_quality := 1
-var antialiasing := 0
+var antialiasing := 3
 var anisotropy := 2
 var effects_detail := 1
 var menu_music_volume := DEFAULT_MENU_MUSIC_VOLUME
@@ -122,8 +123,9 @@ func _ready() -> void:
 		shadow_distance = saved_distance
 	shadow_cascades = clampi(int(config.get_value("graphics", "shadow_cascades", shadow_cascades)), 0, 1)
 	ambient_occlusion = bool(config.get_value("graphics", "ambient_occlusion", true))
+	indirect_lighting = bool(config.get_value("graphics", "indirect_lighting", false))
 	ssao_quality = clampi(int(config.get_value("graphics", "ssao_quality", ssao_quality)), 0, 2)
-	antialiasing = clampi(int(config.get_value("graphics", "antialiasing", 0)), 0, 4)
+	antialiasing = clampi(int(config.get_value("graphics", "antialiasing", antialiasing)), 0, 4)
 	anisotropy = clampi(int(config.get_value("graphics", "anisotropy", anisotropy)), 0, 4)
 	effects_detail = clampi(int(config.get_value("graphics", "effects_detail", effects_detail)), 0, 1)
 	var reserved_keys: Array[int] = []
