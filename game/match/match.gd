@@ -35,6 +35,7 @@ const ARENA_WEATHER := {
 	MAP.OFFICE_ID: {"hour": 12.0, "wind": Vector2.ZERO},
 	MAP.OUTPOST_ID: {"hour": 11.0, "wind": Vector2(35, 1.0)},
 	MAP.STATION_ID: {"hour": 16.0, "wind": Vector2(-45, 0.6)},
+	MAP.FOREST_RIDGE_ID: {"hour": 15.2, "wind": Vector2(-28, 0.7)},
 }
 const MIN_RESPAWN_DISTANCE := 12.0
 const TRAINING_RESPAWN_DELAY := 0.75
@@ -164,7 +165,7 @@ func _apply_indirect_lighting(environment: Environment) -> void:
 		and DisplayServer.get_name() != "headless" and not Net.dedicated
 	# Closely spaced floors and roofs lose too much ambient fill with SDFGI.
 	environment.sdfgi_enabled = enabled and map_id not in [
-		MAP.OFFICE_ID, MAP.BREAKWATER_ID, MAP.VILLAGE_ID, MAP.WORKSHOP_ID]
+		MAP.OFFICE_ID, MAP.BREAKWATER_ID, MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.FOREST_RIDGE_ID]
 	var probe := $Map.get_node_or_null("OfficeBounce") as VoxelGI
 	if is_instance_valid(_breakwater):
 		probe = _breakwater.get_node("HallBounce") as VoxelGI
@@ -273,13 +274,15 @@ func combatant(id: int) -> Node:
 func arena_width() -> float:
 	if is_instance_valid(_breakwater):
 		return _breakwater.get_arena_bounds().size.x
+	if map_id == MAP.FOREST_RIDGE_ID:
+		return MAP.FOREST_RIDGE.WIDTH
 	return MAP.SIZE_WIDTHS[map_size]
 
 
 func _selected_map_size(arena: int, size: int) -> int:
 	if arena == MAP.OFFICE_ID:
 		return 0
-	if arena == MAP.TEST_RANGE_ID:
+	if arena in [MAP.TEST_RANGE_ID, MAP.FOREST_RIDGE_ID]:
 		return MAP.DEFAULT_SIZE
 	var minimum := MAP.VILLAGE_MIN_SIZE if arena == MAP.VILLAGE_ID else 0
 	return clampi(size, minimum, MAP.SIZE_WIDTHS.size() - 1)
@@ -1002,7 +1005,7 @@ func _grade_arena(world_environment: WorldEnvironment) -> void:
 		environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 		environment.ambient_light_energy = 0.85
 		environment.fog_enabled = true
-		environment.fog_density = 0.0009
+		environment.fog_density = 0.0038 if map_id == MAP.FOREST_RIDGE_ID else 0.0009
 		environment.fog_aerial_perspective = 0.9
 		environment.fog_sky_affect = 0.0
 		# Set the dome's target as well so its day/night tween retains the fill.
@@ -1052,17 +1055,20 @@ func _build_arena(layout_seed: int) -> void:
 		mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 		mesh.geometry_collision_mask = Balance.WORLD_MASK
 		var village := map_id == MAP.VILLAGE_ID
-		mesh.cell_size = 0.25 if village else 0.20
+		var forest := map_id == MAP.FOREST_RIDGE_ID
+		mesh.cell_size = 0.30 if forest else (0.25 if village else 0.20)
 		mesh.cell_height = 0.1
-		mesh.agent_radius = 0.50 if village else 0.40
+		mesh.agent_radius = 0.60 if forest else (0.50 if village else 0.40)
 		mesh.agent_height = 1.8
-		mesh.agent_max_climb = 0.3 if village else 0.1
+		mesh.agent_max_climb = 0.3 if village or forest else 0.1
 		mesh.filter_walkable_low_height_spans = true
 		var width := arena_width()
 		if is_instance_valid(_breakwater):
 			var bounds := _breakwater.get_arena_bounds()
 			mesh.filter_baking_aabb = AABB(Vector3(bounds.position.x, -0.5, bounds.position.y),
 				Vector3(bounds.size.x, 4.5, bounds.size.y))
+		elif forest:
+			mesh.filter_baking_aabb = MAP.FOREST_RIDGE.TERRAIN_BAKE_BOUNDS
 		elif map_id == MAP.DUST2_ID:
 			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -3.0, -width * 0.5), Vector3(width, 7.5, width))
 		else:
@@ -1211,6 +1217,12 @@ func _reserve_bot_slots(count: int) -> void:
 
 
 func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
+	var forest := map_id == MAP.FOREST_RIDGE_ID
+	var forest_slots := PackedInt32Array()
+	if forest and not team_deathmatch:
+		for slot in player_slots.size():
+			if player_slots[slot] == 0:
+				forest_slots.append(slot)
 	if team_deathmatch:
 		count = _bot_slots.size()
 	for index in count:
@@ -1219,8 +1231,10 @@ func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
 		if team_deathmatch and player_slots[_bot_slots[index]] != 0:
 			continue
 		var slot := _bot_slots[index] if team_deathmatch else 0
-		var team_start := team_deathmatch and map_id in [MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.OFFICE_ID]
+		var team_start := team_deathmatch and (forest or map_id in [MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.OFFICE_ID])
 		var spawn_index := slot if team_start else Net.MAX_PLAYERS + index
+		if forest and index < forest_slots.size():
+			spawn_index = forest_slots[index]
 		var bot := _add_bot(index, slot, difficulty, $Map.initial_spawn(spawn_index))
 		if not Net.active or multiplayer.is_server():
 			bot.equip(random_weapon())

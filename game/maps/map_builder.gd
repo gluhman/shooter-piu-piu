@@ -21,6 +21,7 @@ const YARD_GROUND := preload("res://game/maps/procedural/yard_ground.gdshader")
 const ROAD_BARRIER := "res://game/maps/breakwater/art/models/concrete_road_barrier.glb"
 const OFFICE := preload("res://game/maps/procedural/office_layout.gd")
 const WORKSHOP := preload("res://game/maps/procedural/workshop_layout.gd")
+const FOREST_RIDGE := preload("res://game/maps/forest_ridge/forest_ridge_layout.gd")
 const KENNEY_OUTPOST := preload("res://game/maps/procedural/kenney_outpost_layout.gd")
 
 const CONTAINER_HEIGHT := 2.59
@@ -44,6 +45,7 @@ const TEST_RANGE_ID := 7
 const OFFICE_ID := 8
 const OUTPOST_ID := 9
 const STATION_ID := 10
+const FOREST_RIDGE_ID := 11
 const OFFICE_BOUNDS := Rect2(-OFFICE.HALF_X, -OFFICE.HALF_Z, OFFICE.HALF_X * 2.0, OFFICE.HALF_Z * 2.0)
 
 class Cover:
@@ -57,7 +59,7 @@ const COLOR_GREEN := Color(0.28, 0.52, 0.34)
 const COLOR_ORANGE := Color(0.95, 0.48, 0.14)
 const COLOR_GREY := Color(0.72, 0.74, 0.72)
 
-const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон", "Малый офис", "Форпост", "Станция"]
+const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон", "Малый офис", "Форпост", "Станция", "Лесной хребет"]
 
 const PATROL_ROUTES := [
 	[
@@ -110,6 +112,7 @@ const MAP_MATERIALS := {
 	BREAKWATER_ID: [],
 	OUTPOST_ID: [],
 	STATION_ID: [],
+	FOREST_RIDGE_ID: [],
 }
 
 var _textures: Dictionary[String, Texture2D] = {}
@@ -153,6 +156,9 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = layout_seed
 	_half_extent = width * 0.5
+	if map_id == FOREST_RIDGE_ID:
+		_half_extent = FOREST_RIDGE.HALF
+		return FOREST_RIDGE.new(self).build()
 	if map_id == OUTPOST_ID or map_id == STATION_ID:
 		return KENNEY_OUTPOST.new(self).build(width, map_id == STATION_ID)
 	if map_id == OFFICE_ID:
@@ -376,6 +382,9 @@ func _build_small_yard(map_id: int) -> void:
 
 
 func minimap_outline(bounds: Rect2 = Rect2()) -> Array[PackedVector2Array]:
+	var forest := get_node_or_null("ForestRidge")
+	if forest:
+		return forest.get_meta(&"minimap_outline")
 	var outline: Array[PackedVector2Array] = []
 	var limited := bounds.has_area()
 	var bodies := find_children("*", "StaticBody3D", limited, false)

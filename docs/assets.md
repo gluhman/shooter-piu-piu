@@ -13,6 +13,7 @@
 | Арсенал | Модели оружия, гранат и бронежилета, материалы металла и дерева | [Модели проекта, материалы Poly Haven и звук BigSoundBank](../assets/arsenal/CREDITS.md) |
 | Desert Eagle и нож | Модели от первого лица и предметы подбора с PBR-материалами | [SirDraco65 и Poly Haven, CC0](../assets/weapon_models/CREDITS.md) |
 | HDR-панорама двора | Рассеянный свет и отражения на открытых картах Sky3D | [Poly Haven, CC0](../game/maps/lighting/CREDITS.md) |
+| Лесной хребет | Рельеф GDT Terrain Generator, скалы, папоротники, лесная подстилка и текстуры елей Poly Haven | [Источники и лицензии карты](../game/maps/forest_ridge/CREDITS.md) |
 | Материалы Dust II | Песчаник стен и арок, гравий для грунта и пандусов | [Poly Haven, CC0](../assets/map_textures/dust2/CREDITS.md). Карты цвета 4K, нормали и шероховатость 2K |
 | Предметы окружения | Военный ящик, кусты, трава и кузов для металлолома | [Poly Haven и PtDesigns, CC0](../assets/arena_props/CREDITS.md) |
 | Containers Asset Pack | Верхние контейнеры и панели со следами попаданий | [Oxygen и схема подключения](../assets/arena_props/CREDITS.md). Подготовленный GLB лежит в `assets/arena_props/oxygen/` |

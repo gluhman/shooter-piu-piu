@@ -3,19 +3,21 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bg7v8r6dccqrp"
-path="res://.godot/imported/stationery_supplies_diff_2k.jpg-5bd82ab72bb853455a1d4d2e63522852.ctex"
+path.s3tc="res://.godot/imported/stationery_supplies_diff_2k.jpg-5bd82ab72bb853455a1d4d2e63522852.s3tc.ctex"
+path.etc2="res://.godot/imported/stationery_supplies_diff_2k.jpg-5bd82ab72bb853455a1d4d2e63522852.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/arena_props/office/details/stationery_supplies/textures/stationery_supplies_diff_2k.jpg"
-dest_files=["res://.godot/imported/stationery_supplies_diff_2k.jpg-5bd82ab72bb853455a1d4d2e63522852.ctex"]
+dest_files=["res://.godot/imported/stationery_supplies_diff_2k.jpg-5bd82ab72bb853455a1d4d2e63522852.s3tc.ctex", "res://.godot/imported/stationery_supplies_diff_2k.jpg-5bd82ab72bb853455a1d4d2e63522852.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -23,7 +25,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
@@ -37,4 +39,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

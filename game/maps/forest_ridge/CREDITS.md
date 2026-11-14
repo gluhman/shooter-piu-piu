@@ -1,0 +1,5 @@
+# Ресурсы «Лесного хребта»
+
+- [GDT Terrain Generator 1.1.0](https://godotengine.org/asset-library/asset/5160) используется для генерации карты высот из шума и сборки сетки рельефа по чанкам. В `art/gdt/` лежат два исходных модуля из [ревизии Godot Asset Library](https://github.com/wondrkid00/GDT-Terrain-Generator/tree/bd531b00cd7e6f047bc0e8ffe2fbdc0ac59904f1) и [лицензия MIT](art/gdt/LICENSE).
+- Модели [Rock Moss Set 01](https://polyhaven.com/a/rock_moss_set_01) и [Fern 02](https://polyhaven.com/a/fern_02), а также материалы [Forest Ground 04](https://polyhaven.com/a/forest_ground_04), [Rocky Trail](https://polyhaven.com/a/rocky_trail) и текстуры ветвей и коры [Fir Tree 01](https://polyhaven.com/a/fir_tree_01) взяты с Poly Haven по [лицензии CC0](https://polyhaven.com/license). Сетки елей собраны из стволов и ветвей с текстурами 1K. Маска папоротника включена в альфа-канал текстуры.
+- Лесная подстилка дополняется существующими [травой и кустами](../../../assets/arena_props/CREDITS.md). Для кладки и лагерей использованы [материал булыжника, бочка и ящик из «Лесного посёлка»](../../../assets/arena_props/village/CREDITS.md).
