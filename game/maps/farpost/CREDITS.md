@@ -1,0 +1,6 @@
+# Ресурсы «Форпоста»
+
+- Рельеф построен модулями карты высот и сетки [GDT Terrain Generator 1.1.0](https://godotengine.org/asset-library/asset/5160). В проекте используется [ревизия из Godot Asset Library](https://github.com/wondrkid00/GDT-Terrain-Generator/tree/bd531b00cd7e6f047bc0e8ffe2fbdc0ac59904f1) с [лицензией MIT](../forest_ridge/art/gdt/LICENSE).
+- Модели с текстурами 2K взяты с Poly Haven по [лицензии CC0](https://polyhaven.com/license). [Mountainside](https://polyhaven.com/a/mountainside), [Concrete Road Barrier](https://polyhaven.com/a/concrete_road_barrier), [Utility Box 01](https://polyhaven.com/a/utility_box_01), [Portable Generator](https://polyhaven.com/a/portable_generator), [Tree Stump 01](https://polyhaven.com/a/tree_stump_01).
+- Панорама [Kloofendal Overcast (Pure Sky)](https://polyhaven.com/a/kloofendal_overcast_puresky) и материалы [Rocky Terrain 02](https://polyhaven.com/a/rocky_terrain_02) и [Rusty Corrugated Iron](https://polyhaven.com/a/rusty_corrugated_iron) взяты с Poly Haven в разрешении 2K. [Лицензия CC0](https://polyhaven.com/license).
+- [Ресурсы «Лесного хребта»](../forest_ridge/CREDITS.md) используются для хвойного леса, папоротников, россыпи камней и подстилки.

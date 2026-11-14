@@ -54,6 +54,14 @@ func _run() -> void:
 				await _wait_for_navigation(navigation, spawns[0])
 				_check(_connected(navigation.get_navigation_map(), spawns[0], destinations),
 					context + " connects all spawns and supply crates")
+			if id == MAP.OUTPOST_ID:
+				var edge: float = arena.arena_width() * 0.5
+				var hill := _ground_height(map, Vector2(0.77, 0.55) * edge)
+				var west_drain := _ground_height(map, Vector2(-0.56, -0.60) * edge)
+				var east_drain := _ground_height(map, Vector2(0.56, 0.60) * edge)
+				_check(hill > 0.8 and hill < 5.0 and minf(west_drain, east_drain) > -3.0
+					and maxf(west_drain, east_drain) < -0.65,
+					context + " has collision on the hill and in both ditches (%.2f, %.2f, %.2f m)" % [hill, west_drain, east_drain])
 			if id == MAP.FOREST_RIDGE_ID:
 				var forest: Node3D = map.get_node("ForestRidge")
 				_check(arena.arena_width() == 100.0 and forest.find_children("Spawn*", "Marker3D", false, false).size() == 4,

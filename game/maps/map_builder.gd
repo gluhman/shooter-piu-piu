@@ -22,7 +22,8 @@ const ROAD_BARRIER := "res://game/maps/breakwater/art/models/concrete_road_barri
 const OFFICE := preload("res://game/maps/procedural/office_layout.gd")
 const WORKSHOP := preload("res://game/maps/procedural/workshop_layout.gd")
 const FOREST_RIDGE := preload("res://game/maps/forest_ridge/forest_ridge_layout.gd")
-const KENNEY_OUTPOST := preload("res://game/maps/procedural/kenney_outpost_layout.gd")
+const FARPOST := preload("res://game/maps/farpost/farpost_layout.gd")
+const KENNEY_STATION := preload("res://game/maps/procedural/kenney_outpost_layout.gd")
 
 const CONTAINER_HEIGHT := 2.59
 const CONTAINER_WIDTH := 2.44
@@ -159,8 +160,10 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	if map_id == FOREST_RIDGE_ID:
 		_half_extent = FOREST_RIDGE.HALF
 		return FOREST_RIDGE.new(self).build()
-	if map_id == OUTPOST_ID or map_id == STATION_ID:
-		return KENNEY_OUTPOST.new(self).build(width, map_id == STATION_ID)
+	if map_id == OUTPOST_ID:
+		return FARPOST.new(self).build(width)
+	if map_id == STATION_ID:
+		return KENNEY_STATION.new(self).build(width)
 	if map_id == OFFICE_ID:
 		return OFFICE.new(self).build()
 	if map_id == WORKSHOP_ID:

@@ -20,6 +20,7 @@ const KILL_LIMITS := [0, 1, 5, 10, 15, 20, 30, 50, 100]
 const Balance := preload("res://game/combat/combat_balance.gd")
 const POSE_INTERVAL: float = 1.0 / Balance.NETWORK.snapshot_hz
 const DAYLIGHT_EXPOSURE := preload("res://game/maps/lighting/daylight_exposure.tres")
+const FARPOST_HDRI := "res://game/maps/farpost/art/sky/kloofendal_overcast_puresky_2k.hdr"
 const OFFICE_ENVIRONMENT := preload("res://game/maps/lighting/office_environment.tres")
 const OFFICE_EXPOSURE := preload("res://game/maps/lighting/office_exposure.tres")
 const SHADOW_GRADE := preload("res://game/maps/lighting/shadow_grade.tres")
@@ -100,6 +101,7 @@ var _breakwater: BREAKWATER
 var _spawn_retry_left := 0.0
 
 @onready var _base_environment: Environment = $WorldEnvironment.environment
+@onready var _sun_energy: float = $WorldEnvironment.sun_energy
 
 
 var _round_overview: Node3D
@@ -167,7 +169,7 @@ func _apply_indirect_lighting(environment: Environment) -> void:
 		and DisplayServer.get_name() != "headless" and not Net.dedicated
 	# Closely spaced floors and roofs lose too much ambient fill with SDFGI.
 	environment.sdfgi_enabled = enabled and map_id not in [
-		MAP.OFFICE_ID, MAP.BREAKWATER_ID, MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.FOREST_RIDGE_ID]
+		MAP.OFFICE_ID, MAP.BREAKWATER_ID, MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.FOREST_RIDGE_ID, MAP.OUTPOST_ID]
 	var probe := $Map.get_node_or_null("OfficeBounce") as VoxelGI
 	if is_instance_valid(_breakwater):
 		probe = _breakwater.get_node("HallBounce") as VoxelGI
@@ -462,6 +464,7 @@ func _clear_match_map() -> void:
 		_breakwater = null
 	$OutdoorFill.hide()
 	$WorldEnvironment.environment = _base_environment
+	$WorldEnvironment.sun_energy = _sun_energy
 	$WorldEnvironment.camera_attributes = DAYLIGHT_EXPOSURE
 	$WorldEnvironment/SunLight.show()
 	$WorldEnvironment/MoonLight.show()
@@ -1017,6 +1020,21 @@ func _grade_arena(world_environment: WorldEnvironment) -> void:
 		$WorldEnvironment.sky_contribution = 0.55
 
 
+func _configure_farpost_sky() -> void:
+	var environment: Environment = $WorldEnvironment.environment
+	var panorama := PanoramaSkyMaterial.new()
+	panorama.panorama = load(FARPOST_HDRI)
+	panorama.energy_multiplier = 0.90
+	var sky := Sky.new()
+	sky.sky_material = panorama
+	environment.sky = sky
+	environment.fog_density = 0.0018
+	environment.fog_aerial_perspective = 0.39
+	environment.fog_light_color = Color("#8395a3")
+	environment.ambient_light_energy = 0.71
+	$WorldEnvironment.sun_energy = 0.74
+
+
 func _build_arena(layout_seed: int) -> void:
 	if map_id == MAP.BREAKWATER_ID:
 		$WorldEnvironment.environment = null
@@ -1039,7 +1057,12 @@ func _build_arena(layout_seed: int) -> void:
 			$WorldEnvironment.camera_attributes = OFFICE_EXPOSURE
 			$WorldEnvironment/SunLight.hide()
 			$WorldEnvironment/MoonLight.hide()
+		var farpost_sky := map_id == MAP.OUTPOST_ID and DisplayServer.get_name() != "headless"
+		if farpost_sky:
+			$WorldEnvironment.environment = _base_environment.duplicate()
 		_grade_arena($WorldEnvironment)
+		if farpost_sky:
+			_configure_farpost_sky()
 		var supplies: Array[Transform3D] = $Map.build(map_id, layout_seed, arena_width())
 		if map_id == MAP.OFFICE_ID and GameSettings.supports_advanced_graphics() and not Net.dedicated:
 			var probe := VoxelGI.new()
@@ -1061,11 +1084,12 @@ func _build_arena(layout_seed: int) -> void:
 		mesh.geometry_collision_mask = Balance.WORLD_MASK
 		var village := map_id == MAP.VILLAGE_ID
 		var forest := map_id == MAP.FOREST_RIDGE_ID
-		mesh.cell_size = 0.30 if forest else (0.25 if village else 0.20)
+		var farpost := map_id == MAP.OUTPOST_ID
+		mesh.cell_size = 0.30 if forest or farpost else (0.25 if village else 0.20)
 		mesh.cell_height = 0.1
-		mesh.agent_radius = 0.60 if forest else (0.50 if village else 0.40)
+		mesh.agent_radius = 0.60 if forest or farpost else (0.50 if village else 0.40)
 		mesh.agent_height = 1.8
-		mesh.agent_max_climb = 0.3 if village or forest else 0.1
+		mesh.agent_max_climb = 0.3 if village or forest or farpost else 0.1
 		mesh.filter_walkable_low_height_spans = true
 		var width := arena_width()
 		if is_instance_valid(_breakwater):
@@ -1074,7 +1098,7 @@ func _build_arena(layout_seed: int) -> void:
 				Vector3(bounds.size.x, 4.5, bounds.size.y))
 		elif forest:
 			mesh.filter_baking_aabb = MAP.FOREST_RIDGE.TERRAIN_BAKE_BOUNDS
-		elif map_id == MAP.DUST2_ID:
+		elif farpost or map_id == MAP.DUST2_ID:
 			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -3.0, -width * 0.5), Vector3(width, 7.5, width))
 		else:
 			var bake_bottom := -1.3 if village else -0.5
