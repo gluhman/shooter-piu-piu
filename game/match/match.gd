@@ -262,8 +262,11 @@ func allows_weapon(id: String) -> bool:
 	return id in WEAPON_SETS[weapon_set] or (weapon_set == 1 and id == "deagle")
 
 
-func random_weapon(exclude: String = "") -> String:
-	var choices: Array = WEAPON_SETS[weapon_set].duplicate()
+func random_bot_primary(exclude: String = "") -> String:
+	var choices: Array[String] = []
+	for id: String in WEAPON_SETS[weapon_set]:
+		if WEAPON_SCRIPT.inventory_slot(id) == "primary":
+			choices.append(id)
 	if choices.size() > 1:
 		choices.erase(exclude)
 	return choices.pick_random()
@@ -1239,7 +1242,7 @@ func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
 			spawn_index = forest_slots[index]
 		var bot := _add_bot(index, slot, difficulty, $Map.initial_spawn(spawn_index))
 		if not Net.active or multiplayer.is_server():
-			bot.equip(random_weapon())
+			bot.equip(random_bot_primary())
 		if index % 2 == 1 and index + 1 < count:
 			await get_tree().process_frame
 
@@ -1260,7 +1263,6 @@ func _add_bot(index: int, slot: int, difficulty: int, at: Vector3) -> Node:
 	else:
 		bot.patrol_route = $Map.patrol_route()
 	bot.difficulty = difficulty
-	bot.floor_snap_length = 0.2
 	add_child(bot)
 	return bot
 
@@ -1377,7 +1379,7 @@ func _spawn_breakwater_fighters() -> void:
 			new_bots.append(_add_bot(index, slot, bot_difficulty, at))
 			_send_breakwater_spawn(-index, slot, at)
 	for bot in new_bots:
-		bot.equip(random_weapon())
+		bot.equip(random_bot_primary())
 
 
 func _send_breakwater_spawn(id: int, slot: int, at: Vector3) -> void:

@@ -368,7 +368,7 @@ func _claim(actor: Node, target: Vector2i) -> void:
 func _collect_drop(actor: Node, id: int, drop: Dictionary, manual := false) -> void:
 	var amount := _take_amount(actor, drop, manual)
 	if drop.kind == Kind.WEAPON and not actor.owns_weapon(drop.weapon):
-		var previous: String = actor.weapon_id if actor.is_in_group("bot") else actor.weapon_in_slot(WEAPON.inventory_slot(drop.weapon))
+		var previous: String = actor.weapon_in_slot(WEAPON.inventory_slot(drop.weapon))
 		if previous != "" and previous != "knife":
 			var stock: Vector2i = actor.stock_for(previous)
 			_add_drop(Kind.WEAPON, previous, stock.x, drop.position, drop.yaw, true)

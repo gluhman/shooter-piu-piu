@@ -449,12 +449,6 @@ func _restore_starting_supplies() -> void:
 func grant_weapon(id: String, magazine: int = -1, reserve: int = -1) -> void:
 	if not _server_rules() or not get_parent().allows_weapon(id):
 		return
-	if score_id() <= 0:
-		if id == weapon_id and magazine >= 0:
-			grant_ammo(id, magazine + maxi(reserve, 0))
-		else:
-			_set_active_weapon(id, magazine, reserve, false)
-		return
 	var stats: Dictionary = Weapon.WEAPONS[id]
 	var loaded := int(stats.mag) if magazine < 0 else magazine
 	var loose := int(stats.reserve) if reserve < 0 else reserve
@@ -514,7 +508,7 @@ func grant_ammo(id: String, amount: int) -> void:
 		var peer := get_multiplayer_authority()
 		if added > 0 and get_parent().match_peers().has(peer):
 			net_loot_ammo.rpc_id(peer, id, added)
-	elif score_id() > 0:
+	else:
 		var stock := stock_for(id)
 		stock.y += clampi(amount, 0, ammo_space(id))
 		_stored[id] = stock
