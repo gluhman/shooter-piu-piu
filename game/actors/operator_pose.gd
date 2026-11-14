@@ -323,12 +323,13 @@ func _process_modification_with_delta(delta: float) -> void:
 		_pose_arm(skeleton, _right_arm, right_wrist, 1.0, actor_to_rig.basis, world_to_rig)
 		_pose_arm(skeleton, _left_arm, left_wrist, -1.0, actor_to_rig.basis, world_to_rig)
 		_pose_fingers(skeleton, _right_fingers, KNIFE_FINGER_CURL if knife_grip or shovel_grip else FIREARM_FINGER_CURL)
+		var fingers := float(left_wrist.get_meta(&"grip_curl", 0.0))
 		_pose_fingers(skeleton, _left_fingers, KNIFE_FINGER_CURL if shovel_grip else [
-			lerpf(0.18, 0.08, support_grip),
-			lerpf(0.27, 0.02, support_grip),
-			lerpf(0.31, 0.10, support_grip),
-			lerpf(0.34, 0.20, support_grip),
-			lerpf(0.34, 0.22, support_grip),
+			lerpf(0.18 + fingers * 0.25, 0.08, support_grip),
+			lerpf(0.27 + fingers * 0.60, 0.02, support_grip),
+			lerpf(0.31 + fingers * 0.60, 0.10, support_grip),
+			lerpf(0.34 + fingers * 0.65, 0.20, support_grip),
+			lerpf(0.34 + fingers * 0.65, 0.22, support_grip),
 		])
 
 

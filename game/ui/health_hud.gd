@@ -5,7 +5,8 @@ const INVENTORY_HUD := preload("res://game/ui/inventory_hud.gd")
 const BREAKWATER_HUD := preload("res://game/ui/breakwater_hud.gd")
 const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
 const WEAPON_ICONS := {"knife": "knife", "shotgun": "shotgun", "m249": "lmg", "m700": "sniper",
-	"m14": "dmr", "m1": "dmr", "mp5": "smg", "mac10": "smg", "tec9": "pistol",
+	"breacher": "shotgun", "longshot": "sniper", "scout": "dmr", "compact": "smg",
+	"rpk": "lmg", "gpmg": "lmg", "m14": "dmr", "m1": "dmr", "mp5": "smg", "mac10": "smg", "tec9": "pistol",
 	"m1911": "pistol", "deagle": "pistol", "launcher": "target"}
 const UI := preload("res://game/ui/menu_ui.gd")
 const HEALTH_GOOD := Color("#b7d884")

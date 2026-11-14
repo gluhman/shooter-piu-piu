@@ -401,6 +401,8 @@ func _open_crate(actor: Node, index: int, at: Vector3) -> void:
 		net_open_crate.rpc_id(peer, index, true, drop_id)
 	var kind: int = [Kind.AMMO, Kind.MEDKIT, Kind.ARMOR, Kind.GRENADE].pick_random()
 	var weapon: String = actor.ammo_reward_weapon()
+	if kind == Kind.AMMO and not _match.allows_weapon(weapon):
+		kind = Kind.MEDKIT
 	var amount := 1
 	if index < _market_crate_count:
 		var reward: Array = MARKET_REWARDS[index]

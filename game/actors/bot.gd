@@ -23,6 +23,14 @@ const DIFFICULTY := [
 	{"speed": 1.25, "shot_delay": 0.56, "spread": 0.20, "vision": Vector2(0.03, 0.06), "hearing": 46.0, "search_time": 9.0, "flank": 8.0, "cover_cooldown": Vector2(1.6, 2.3)},
 ]
 const FIRE := {
+	"carbine": {"range": 43.0, "preferred": 13.0, "delay": 0.43},
+	"bullpup": {"range": 50.0, "preferred": 17.0, "delay": 0.52},
+	"compact": {"range": 20.0, "preferred": 7.0, "delay": 0.37},
+	"breacher": {"range": 12.0, "preferred": 5.0, "delay": 0.83},
+	"longshot": {"range": 68.0, "preferred": 30.0, "delay": 1.55},
+	"scout": {"range": 52.0, "preferred": 21.0, "delay": 0.87},
+	"rpk": {"range": 39.0, "preferred": 14.0, "delay": 0.42},
+	"gpmg": {"range": 47.0, "preferred": 17.0, "delay": 0.50},
 	"launcher": {"range": 28.0, "preferred": 13.0, "delay": 2.4, "minimum": 7.0},
 	"m249": {"range": 38.0, "preferred": 13.0, "delay": 0.37},
 	"m1": {"range": 45.0, "preferred": 17.0, "delay": 1.04},

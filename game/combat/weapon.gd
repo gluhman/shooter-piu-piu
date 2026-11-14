@@ -1,6 +1,7 @@
 extends Node3D
 
 const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
+const Expanded := preload("res://game/combat/expanded_weapons.gd")
 const Classic := preload("res://game/combat/classic_weapons.gd")
 const WeaponHud := preload("res://game/ui/weapon_hud.gd")
 const Balance := preload("res://game/combat/combat_balance.gd")
@@ -23,26 +24,27 @@ const KNIFE_SWING_TIME := 0.48
 const KNIFE_GRIP_IN_WRIST := Vector3(-0.010, 0.094, 0.020)
 const M249_RELOAD_ACTION_START := 0.34
 const M249_TRIPOD_FROM_MUZZLE := Vector3(0.0, -0.105, 0.19)
-const STOCKED_WEAPONS := ["ak47", "shotgun", "mp5", "m700", "lever", "m14", "launcher", "m249", "m1"]
+const STOCKED_WEAPONS := ["ak47", "shotgun", "mp5", "m700", "lever", "m14", "launcher", "m249", "m1",
+	"carbine", "bullpup", "compact", "longshot", "scout", "rpk", "gpmg"]
 const SIDEARMS := ["deagle", "m1911", "tec9"]
 const SPECIALIZATIONS := {
 	"assault": {
-		"name": "Штурмовик", "weapons": ["ak47", "m14", "lever"],
+		"name": "Штурмовик", "weapons": ["ak47", "m14", "lever", "carbine", "bullpup"],
 		"hint": "Средняя дистанция. Точнее короткими очередями и одиночными.",
 		"aim_seconds": 0.20,
 	},
 	"close": {
-		"name": "Ближний бой", "weapons": ["shotgun", "mac10", "mp5"],
+		"name": "Ближний бой", "weapons": ["shotgun", "mac10", "mp5", "compact", "breacher"],
 		"hint": "Быстрое прицеливание и стрельба на ходу. Урон быстрее падает с расстоянием.",
 		"aim_seconds": 0.13,
 	},
 	"marksman": {
-		"name": "Снайпер", "weapons": ["m700", "m1"],
+		"name": "Снайпер", "weapons": ["m700", "m1", "longshot", "scout"],
 		"hint": "Точные выстрелы на дальней дистанции. Медленное прицеливание и сильный разброс на ходу.",
 		"aim_seconds": 0.34,
 	},
 	"support": {
-		"name": "Поддержка", "weapons": ["m249", "launcher"],
+		"name": "Поддержка", "weapons": ["m249", "launcher", "rpk", "gpmg"],
 		"hint": "Лопата для траншей и мешков. Станок для M249 уменьшает разброс вдвое.",
 		"aim_seconds": 0.28,
 	},
@@ -65,6 +67,14 @@ const FIRST_PERSON_SHOTS := {
 }
 
 static var WEAPONS := Balance.weapon_stats({
+	"carbine": {"name": "CARBINE", "mode": "автоматический", "aim_fov": 70.0, "kick": 0.028},
+	"bullpup": {"name": "BULLPUP", "mode": "автоматический", "aim_fov": 65.0, "kick": 0.042},
+	"compact": {"name": "COMPACT SMG", "mode": "автоматический", "aim_fov": 82.0, "kick": 0.024},
+	"breacher": {"name": "BREACHER", "mode": "помповый", "aim_fov": 81.0, "kick": 0.078},
+	"longshot": {"name": "LONGSHOT", "mode": "болтовой", "aim_fov": 26.0, "kick": 0.095},
+	"scout": {"name": "SCOUT", "mode": "одиночный", "aim_fov": 50.0, "kick": 0.057},
+	"rpk": {"name": "SQUAD LMG", "mode": "пулемёт", "aim_fov": 72.0, "kick": 0.036},
+	"gpmg": {"name": "GPMG", "mode": "пулемёт", "aim_fov": 69.0, "kick": 0.058},
 	"knife": {"name": "НОЖ", "mode": "ближний бой", "mag": 0, "reserve": 0},
 	"deagle": {"name": "DESERT EAGLE", "mode": "одиночный", "aim_fov": 72.0, "kick": 0.045},
 	"shotgun": {"name": "ДРОБОВИК", "mode": "помповый", "aim_fov": 76.0, "kick": 0.09},
@@ -131,6 +141,10 @@ var _kick_pos := Vector3.ZERO
 var _kick_rot := 0.0
 var _bob_t := 0.0
 var _pump_wait := 0.0
+var _pump: Node3D
+var _pump_rest := Vector3.ZERO
+var _bolt: Node3D
+var _bolt_rest: Transform3D
 var _rest_pos := Vector3.ZERO
 var _aim_amount := 0.0
 var _run_carry := 0.0
@@ -314,7 +328,7 @@ func _process(delta: float) -> void:
 		_cross.update_pose(0.0, true, false, 0.0, false)
 		return
 
-	_cross.update_pose(aim_blend(), _reloading, _weapon_id == "knife", _current_spread(), _weapon_id in ["m700", "m1"], _camera)
+	_cross.update_pose(aim_blend(), _reloading, _weapon_id == "knife", _current_spread(), _weapon_id in Expanded.SCOPED, _camera)
 	var shooting := _trigger_held
 	var repeat := bool(_stats.get("automatic", false)) and (_mag > 0 or _reserve > 0)
 	if _fire_requested or (shooting and repeat) or _sprint_fire_queued:
@@ -455,8 +469,13 @@ func _shoot() -> void:
 	_player.add_recoil(recoil, recoil_rng.randf_range(-yaw_limit, yaw_limit))
 	_add_bloom()
 	var volume := -6.0 if _stats.get("automatic", false) else -2.5
-	_play_shot(FIRST_PERSON_SHOTS[_weapon_id], volume, randf_range(0.97, 1.03))
-	if _weapon_id == "shotgun" or _weapon_id in Classic.ACTIONS:
+	var clip: AudioStream = FIRST_PERSON_SHOTS.get(_weapon_id)
+	if _weapon_id == "breacher":
+		clip = FIRST_PERSON_SHOTS.shotgun
+	elif Expanded.MODELS.has(_weapon_id):
+		clip = Expanded.sound(_weapon_id, "local")
+	_play_shot(clip, volume, randf_range(0.97, 1.03))
+	if _action_sound(_weapon_id) != null:
 		_pump_wait = 0.38
 
 
@@ -510,7 +529,12 @@ func _converge_view(view: Transform3D, camera: Transform3D, target: Vector3) -> 
 
 	# A point on the original bore at the target's distance from the pivot.
 	var bore_point := lateral + bore * sqrt(maxf(0.0, target_offset.length_squared() - lateral.length_squared()))
-	var turn := Basis(Quaternion(bore_point.normalized(), target_offset.normalized()))
+	var from := bore_point.normalized()
+	var to := target_offset.normalized()
+	var axis := from.cross(to)
+	# Use the cross product to retain the small corrections made at full ADS.
+	var turn := Basis(axis.normalized(), atan2(axis.length(), from.dot(to))) if not axis.is_zero_approx() \
+		else Basis(Quaternion(from, to))
 	return Transform3D(turn * view.basis, pivot + shift + turn * (view.origin - pivot))
 
 
@@ -694,7 +718,7 @@ func _play_remote_shot(weapon_name: String, barrel: Transform3D) -> void:
 		return
 	_match.get_node("HUD").record_minimap_shot(_player.score_id(), barrel.origin)
 	_ballistics.muzzle_effect(weapon_name, barrel, _player.shot_motion(), true)
-	if weapon_name == "shotgun" or weapon_name in Classic.ACTIONS:
+	if _action_sound(weapon_name) != null:
 		_pump_wait = 0.38
 	_recoil_remote(weapon_name)
 
@@ -708,7 +732,7 @@ func _recoil_remote(weapon_name: String) -> void:
 func _play_world_pump(id: String) -> void:
 	if _weapon_id != id or _match.round_finished():
 		return
-	_world_pump.stream = SHOTGUN_PUMP if id == "shotgun" else Classic.action_sound(id)
+	_world_pump.stream = _action_sound(id)
 	_world_pump.pitch_scale = randf_range(0.97, 1.03)
 	_world_pump.play()
 
@@ -786,10 +810,15 @@ func _begin_reload(units: int) -> void:
 
 
 func _loads_one_round() -> bool:
-	return _weapon_id in ["shotgun", "lever"]
+	return _weapon_id in ["shotgun", "breacher", "lever"]
 
 
 func _reload_stream() -> AudioStream:
+	match _weapon_id:
+		"carbine", "bullpup", "compact", "rpk":
+			return Expanded.sound(_weapon_id, "reload")
+		"longshot", "scout", "gpmg":
+			return Classic.reload_sound("m700" if _weapon_id == "longshot" else "m14")
 	if Classic.SHOT_COUNTS.has(_weapon_id) and not _loads_one_round():
 		return Classic.reload_sound(_weapon_id)
 	if _weapon_id == "m249":
@@ -903,7 +932,7 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	var blend := aim_blend()
 	if _player._is_local():
 		_camera.fov = lerpf(HIP_FOV, float(_stats["aim_fov"]), blend)
-		if _weapon_id in ["m700", "m1"]:
+		if _weapon_id in Expanded.SCOPED:
 			_set_scope_view(blend >= 0.96)
 			_model.visible = not _scope_view
 	_bob_t += delta * speed * 1.7
@@ -914,7 +943,7 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	# Limit the pitch of the reload pose while the support hand reaches for the pouch.
 	var aim_offset := (clampf(_camera.rotation.x, -0.78, 0.78) - _camera.rotation.x) * reload_pose
 	var pitch := Basis(Vector3.RIGHT, aim_offset)
-	var reload_roll := -0.56 if _weapon_id == "shotgun" else -0.40
+	var reload_roll := -0.56 if _weapon_id in ["shotgun", "breacher"] else -0.40
 	var handling_offset := _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose
 	var handling_rotation := Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose,
 		0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
@@ -960,7 +989,9 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 		_view.global_position += axis * minf(depth, _aim_depth_limit) * blend
 	if _reloading:
 		_pose_reload(progress)
-	elif converge and not bot and not _player.sprinting:
+	else:
+		_pose_action()
+	if not _reloading and converge and not bot and not _player.sprinting:
 		var camera := _camera.global_transform
 		var target := _sight_target(camera)
 		# Near targets require a steeper bore angle than the visible sights.
@@ -1003,13 +1034,15 @@ func _build_viewmodel(weapon_id: String) -> void:
 	for animation_player in model.find_children("*", "AnimationPlayer", true, false):
 		animation_player.active = false
 
+	var marked_model := Expanded.MODELS.has(weapon_id)
 	var grip := Vector3.ZERO
 	var support := Vector3.ZERO
 	var right_fingers := Vector3(-0.06, 0.24, -1.0)
 	var right_palm := Vector3(-1.0, 0.15, 0.0)
 	var left_fingers := Vector3(0.20, 0.14, -1.0)
 	var left_palm := Vector3(0.33, 0.94, 0.0)
-	match weapon_id:
+	var pose_id := "marked" if marked_model else weapon_id
+	match pose_id:
 		"knife":
 			_rest_pos = Vector3(0.23, -0.24, -0.34)
 			right_fingers = Vector3(-0.14, 0.23, -1.0)
@@ -1040,11 +1073,21 @@ func _build_viewmodel(weapon_id: String) -> void:
 			support = model.basis * Vector3(-0.032, -0.011, -0.19)
 			_rest_pos = Vector3(0.125, -0.219, -0.109)
 			_barrel_length = 0.48
-		"launcher", "m249", "m1":
+		"launcher", "m249", "m1", "marked":
 			grip = _model_marker(model, "Grip")
 			support = _model_marker(model, "Support")
 			_rest_pos = Vector3(0.128, -0.224, -0.12)
 			_barrel_length = _model_marker(model, "Muzzle").distance_to(Vector3(0.0, 0.04, 0.055))
+			if marked_model:
+				_barrel_length = absf(_model_marker(model, "Muzzle").z - grip.z)
+				if weapon_id == "breacher":
+					_rest_pos = Vector3(0.135, -0.215, -0.21)
+				if weapon_id in ["compact", "bullpup"]:
+					left_fingers = Vector3(0.36, 0.16, -1.0)
+					left_palm = Vector3(0.51, 0.86, 0.0)
+				elif weapon_id in Expanded.SCOPED:
+					left_fingers = Vector3(0.29, 0.32, -1.0)
+					left_palm = Vector3(0.55, 0.83, 0.0)
 		_:
 			var setup: Array = Classic.MODELS[weapon_id]
 			# The pack faces +Z, so rotate depth while retaining the left/right grip offsets.
@@ -1072,6 +1115,8 @@ func _build_viewmodel(weapon_id: String) -> void:
 	_left_wrist = _marker(_support_rest)
 	_left_wrist.name = "LeftGrip"
 	_left_wrist.basis = _support_basis
+	if marked_model:
+		_left_wrist.set_meta(&"grip_curl", 0.21 if weapon_id in ["breacher", "compact"] else 0.12)
 	_player.set_weapon_grips(_right_wrist, _left_wrist, weapon_id == "knife")
 
 	_muzzle = _marker(_muzzle_point(model, weapon_id))
@@ -1100,7 +1145,8 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 	var front: Vector3
 	var eye_relief := 0.21
 	var sight_clearance := 0.004
-	match weapon_id:
+	var pose_id := "marked" if Expanded.MODELS.has(weapon_id) else weapon_id
+	match pose_id:
 		"ak47":
 			rear = Vector3(0.0, 0.128, -0.104)
 			front = Vector3(0.0, 0.127, -0.586)
@@ -1115,9 +1161,11 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 			rear = Vector3(0.0, 0.235, -0.080)
 			front = Vector3(0.0, 0.234, 0.100)
 			eye_relief = 0.31
-		"launcher", "m249", "m1":
+		"launcher", "m249", "m1", "marked":
 			rear = _model_marker(model, "RearSight")
 			front = _model_marker(model, "FrontSight")
+			if weapon_id in ["longshot", "scout"]:
+				eye_relief = 0.13
 		"m700":
 			rear = Classic.SCOPE_REAR
 			front = Classic.SCOPE_FRONT
@@ -1206,6 +1254,11 @@ func _prepare_reload(model: Node3D) -> void:
 	_magazine_skeleton = null
 	_magazine_bone = -1
 	_shell = null
+	_pump = null
+	_bolt = null
+	if Expanded.MODELS.has(_weapon_id):
+		_prepare_expanded_reload(model)
+		return
 	match _weapon_id:
 		"deagle":
 			_magazine = model.find_child("magazine", true, false) as Node3D
@@ -1233,7 +1286,42 @@ func _prepare_reload(model: Node3D) -> void:
 			_magazine_seat = _view.to_local(_magazine_skeleton.to_global(_magazine_rest.origin))
 
 
+func _prepare_expanded_reload(model: Node3D) -> void:
+	if _weapon_id == "breacher":
+		_loading_port = model.transform * _model_marker(model, "LoadingPort")
+		_shell = _make_shell()
+		_view.add_child(_shell)
+		_pump = model.find_child("Pump", true, false) as Node3D
+		_pump_rest = _pump.position
+		return
+	_magazine = model.find_child("Magazine", true, false) as Node3D
+	_magazine_rest = _magazine.transform
+	_magazine_seat = _view.to_local(_magazine.global_position)
+	_bolt = model.find_child("Bolt", true, false) as Node3D
+	if _bolt:
+		_bolt_rest = _bolt.transform
+
+
+func _pose_action() -> void:
+	if _pump == null and _bolt == null:
+		return
+	var progress := 1.0 - _pump_wait / 0.38
+	var travel := smoothstep(0.42, 0.69, progress) * (1.0 - smoothstep(0.69, 1.0, progress))
+	if _pump:
+		var offset := Vector3.BACK * 0.065 * travel
+		_pump.position = _pump_rest + offset
+		_left_wrist.position = _support_rest + offset
+	if _bolt:
+		_bolt.position = _bolt_rest.origin + Vector3.BACK * 0.060 * travel
+		var lift := smoothstep(0.19, 0.41, progress) * (1.0 - smoothstep(0.83, 1.0, progress))
+		_bolt.basis = _bolt_rest.basis.rotated(Vector3.BACK, 0.74 * lift)
+
+
 func _reset_reload_pose() -> void:
+	if _pump:
+		_pump.position = _pump_rest
+	if _bolt:
+		_bolt.transform = _bolt_rest
 	_left_wrist.position = _support_rest
 	_left_wrist.basis = _support_basis
 	_player.set_support_grip(0.0)
@@ -1379,7 +1467,7 @@ static func render_warmup(weapons: Array) -> Node3D:
 		warmup.add_child(model)
 		if id == "shotgun":
 			_apply_shotgun_material(model)
-		if id in ["shotgun", "lever"]:
+		if id in ["shotgun", "breacher", "lever"]:
 			warmup.add_child(_make_shell())
 	warmup.add_child(_make_knife_model())
 	return warmup
@@ -1394,6 +1482,8 @@ static func _make_model(weapon_id: String) -> Node3D:
 		return DEAGLE_MODEL.instantiate() as Node3D
 	if Classic.MODELS.has(weapon_id):
 		return Classic.make_model(weapon_id)
+	if Expanded.MODELS.has(weapon_id):
+		return Expanded.make_model(weapon_id)
 	if ARSENAL.MODELS.has(weapon_id):
 		return ARSENAL.make_model(weapon_id)
 	var holder := Node3D.new()
@@ -1451,7 +1541,7 @@ static func add_pickup_model(parent: Node3D, id: String) -> void:
 
 
 static func _muzzle_point(model: Node3D, weapon_id: String) -> Vector3:
-	if weapon_id in ["launcher", "m249", "m1"]:
+	if weapon_id in ["launcher", "m249", "m1"] or Expanded.MODELS.has(weapon_id):
 		return model.transform * _model_marker(model, "Muzzle")
 	if Classic.MODELS.has(weapon_id):
 		return model.transform * Classic.bone_point(model, &"FX_FIRE")
@@ -1537,7 +1627,15 @@ func _play_on(player: AudioStreamPlayer, stream: AudioStream, volume_db: float, 
 
 
 func _play_pump() -> void:
-	_play_on(_pump_player, SHOTGUN_PUMP if _weapon_id == "shotgun" else Classic.action_sound(_weapon_id), -6.0, true)
+	_play_on(_pump_player, _action_sound(_weapon_id), -6.0, true)
+
+
+static func _action_sound(id: String) -> AudioStream:
+	if id in ["shotgun", "breacher"]:
+		return SHOTGUN_PUMP
+	if id == "longshot":
+		return Classic.action_sound("m700")
+	return Classic.action_sound(id) if id in Classic.ACTIONS else null
 
 
 func _make_insert_sound() -> AudioStreamWAV:

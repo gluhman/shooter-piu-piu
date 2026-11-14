@@ -1,6 +1,7 @@
 extends Node3D
 
 const Balance := preload("res://game/combat/combat_balance.gd")
+const Expanded := preload("res://game/combat/expanded_weapons.gd")
 const Classic := preload("res://game/combat/classic_weapons.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const SpatialAudio := preload("res://addons/spatial_audio_3d/spatial_audio_3d.gd")
@@ -19,8 +20,8 @@ const SURFACES := {
 	"concrete": [Color(0.71, 0.68, 0.60), Color(0.55, 0.52, 0.46), 7, 0.16],
 	"operator": [Color(0.48, 0.12, 0.09), Color(0.37, 0.10, 0.08), 5, 0.05],
 }
-const FLASH_SIZE := {"deagle": 0.21, "shotgun": 0.32, "ak47": 0.26, "m249": 0.27, "m14": 0.29, "m1": 0.32, "launcher": 0.38}
-const MARK_SIZE := {"deagle": 0.12, "shotgun": 0.07, "ak47": 0.105, "m249": 0.095, "m14": 0.11, "m1": 0.115, "m700": 0.125}
+const FLASH_SIZE := {"deagle": 0.21, "shotgun": 0.32, "breacher": 0.29, "ak47": 0.26, "m249": 0.27, "m14": 0.29, "m1": 0.32, "launcher": 0.38}
+const MARK_SIZE := {"deagle": 0.12, "shotgun": 0.07, "breacher": 0.07, "ak47": 0.105, "m249": 0.095, "m14": 0.11, "m1": 0.115, "m700": 0.125}
 const SHOT_SOUNDS := {
 	"ak47": preload("res://assets/ak47/fire.wav"),
 	"m249": preload("res://assets/arsenal/m249_fire.wav"),
@@ -210,6 +211,10 @@ func muzzle(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio
 
 
 static func shot_sound(profile: String) -> AudioStream:
+	if profile == "breacher":
+		return SHOT_SOUNDS.shotgun
+	if Expanded.MODELS.has(profile):
+		return Expanded.sound(profile, "world")
 	if profile != "ak47" and Classic.SHOT_COUNTS.has(profile):
 		return Classic.shot_sound(profile)
 	return SHOT_SOUNDS[profile]
@@ -303,7 +308,7 @@ func impact(at: Vector3, normal: Vector3, surface: String, profile: String, rema
 	if surface == "glass":
 		glass_shatter(at, normal)
 		return
-	var power := 0.68 if profile == "shotgun" else sqrt(float(Weapon.WEAPONS[profile].damage) / 45.0)
+	var power := 0.68 if Balance.WEAPON_CLASSES.get(profile) == "shotgun" else sqrt(float(Weapon.WEAPONS[profile].damage) / 45.0)
 	var strength := clampf(power * remaining_force, 0.32, 1.45)
 	_play_impact_sound(at, surface, strength)
 	var camera := get_viewport().get_camera_3d()

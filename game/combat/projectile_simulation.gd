@@ -4,6 +4,14 @@ const Effects := preload("res://game/combat/projectile_effects.gd")
 
 # Gameplay flight, cover penetration power and tracer appearance by model.
 const AMMO := {
+	"carbine": {"speed": 810.0, "drag": 0.30, "power": 1.23, "trail": 2.2, "width": 0.009, "color": Color(1.0, 0.69, 0.39)},
+	"bullpup": {"speed": 840.0, "drag": 0.23, "power": 1.34, "trail": 2.4, "width": 0.010, "color": Color(1.0, 0.65, 0.32)},
+	"compact": {"speed": 370.0, "drag": 0.75, "power": 0.52, "trail": 0.8, "width": 0.007, "color": Color(1.0, 0.72, 0.44)},
+	"breacher": {"speed": 360.0, "drag": 1.85, "power": 0.23, "trail": 0.0, "width": 0.0, "color": Color.WHITE},
+	"longshot": {"speed": 900.0, "drag": 0.12, "power": 1.85, "trail": 3.1, "width": 0.013, "color": Color(1.0, 0.65, 0.34)},
+	"scout": {"speed": 790.0, "drag": 0.23, "power": 1.51, "trail": 1.8, "width": 0.009, "color": Color(1.0, 0.70, 0.42)},
+	"rpk": {"speed": 745.0, "drag": 0.26, "power": 1.37, "trail": 2.6, "width": 0.010, "color": Color(1.0, 0.65, 0.34)},
+	"gpmg": {"speed": 860.0, "drag": 0.21, "power": 1.52, "trail": 3.0, "width": 0.011, "color": Color(1.0, 0.63, 0.28)},
 	"m249": {"speed": 875.0, "drag": 0.24, "power": 1.35, "trail": 2.9, "width": 0.009, "color": Color(1.0, 0.66, 0.31)},
 	"m1": {"speed": 820.0, "drag": 0.14, "power": 1.65, "trail": 1.8, "width": 0.009, "color": Color(1.0, 0.70, 0.40)},
 	"ak47": {"speed": 715.0, "drag": 0.26, "power": 1.42, "trail": 2.4, "width": 0.012, "color": Color(1.0, 0.63, 0.24)},
@@ -271,7 +279,7 @@ func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3, ener
 	var steel := surface == "metal" and energy >= STEEL_MIN_ENERGY and not projectile.penetrated_metal
 	var material: String = collider.get_meta(&"ballistic_material", surface)
 	var laminate := material == "laminate" and energy >= STEEL_MIN_ENERGY
-	var wood := (material == "wood" and projectile.profile != "shotgun" or laminate) and not projectile.penetrated_wood
+	var wood: bool = (material == "wood" and Balance.WEAPON_CLASSES[projectile.profile] != "shotgun" or laminate) and not projectile.penetrated_wood
 	if not steel and not wood:
 		return {}
 	var exit := _cover_exit(collider, hit.position, direction)

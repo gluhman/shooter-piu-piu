@@ -637,10 +637,39 @@ const DATA := {
 const WEAPON_CLASSES := {
 	"ak47": "assault_rifle", "mac10": "smg", "mp5": "smg", "m249": "lmg",
 	"m14": "dmr", "m1": "dmr", "shotgun": "shotgun", "lever": "dmr",
+	"carbine": "assault_rifle", "bullpup": "assault_rifle",
+	"compact": "smg", "breacher": "shotgun", "longshot": "sniper", "scout": "dmr",
+	"rpk": "lmg", "gpmg": "lmg",
 	"m700": "sniper", "deagle": "pistol", "m1911": "pistol", "tec9": "pistol",
+}
+const WEAPON_VARIANTS := {
+	"carbine": {"rpm": 800, "damage_max": 28, "damage_min": 20, "falloff_start_m": 22,
+		"ads_s": 0.20, "vertical_kick_deg": 0.76, "shot_bloom_cap_deg": 0.66},
+	"bullpup": {"rpm": 600, "damage_max": 33, "damage_min": 24, "magazine": 24,
+		"reserve_ammo": 96, "ads_cone_half_angle_deg": 0.12, "reload_tactical_s": 2.38,
+		"reload_empty_s": 2.65, "vertical_kick_deg": 1.24},
+	"compact": {"rpm": 1000, "damage_max": 24, "damage_min": 15, "magazine": 25,
+		"reserve_ammo": 125, "falloff_start_m": 9, "falloff_end_m": 28, "ads_s": 0.14,
+		"hip_cone_half_angle_deg": 1.52, "horizontal_kick_random_max_deg": 0.47},
+	"breacher": {"rpm": 100, "damage_max": 17, "damage_min": 5, "magazine": 4,
+		"reserve_ammo": 24, "falloff_start_m": 4, "falloff_end_m": 11, "max_range_m": 16,
+		"ads_s": 0.15, "hip_cone_half_angle_deg": 3.65, "ads_cone_half_angle_deg": 2.75},
+	"longshot": {"rpm": 43, "damage_max": 155, "damage_min": 105, "magazine": 4,
+		"reserve_ammo": 16, "ads_s": 0.52, "reload_tactical_s": 3.2, "reload_empty_s": 3.6,
+		"falloff_start_m": 75, "falloff_end_m": 175, "vertical_kick_deg": 4.85},
+	"scout": {"rpm": 230, "damage_max": 62, "damage_min": 43, "magazine": 5,
+		"reserve_ammo": 35, "ads_s": 0.25, "reload_tactical_s": 1.95, "reload_empty_s": 2.25,
+		"vertical_kick_deg": 2.62},
+	"rpk": {"rpm": 690, "damage_max": 31, "damage_min": 22, "magazine": 45,
+		"reserve_ammo": 135, "ads_s": 0.29, "reload_tactical_s": 3.0, "reload_empty_s": 3.35,
+		"vertical_kick_deg": 1.05, "falloff_start_m": 29},
+	"gpmg": {"rpm": 520, "damage_max": 35, "damage_min": 27, "magazine": 90,
+		"reserve_ammo": 180, "ads_s": 0.42, "sprint_to_fire_s": 0.33, "reload_tactical_s": 5.55,
+		"reload_empty_s": 6.0, "vertical_kick_deg": 1.62, "hip_cone_half_angle_deg": 3.6},
 }
 const HEAD_MULTIPLIERS := {
 	"ak47": 3.5, "m249": 3.2, "deagle": 3.3, "m1911": 2.7,
+	"carbine": 3.15, "bullpup": 3.1, "compact": 2.6, "breacher": 1.4, "rpk": 3.1, "gpmg": 2.9,
 	"mac10": 2.6, "mp5": 2.8, "tec9": 2.5, "shotgun": 1.45,
 }
 const MOVEMENT: Dictionary = DATA.movement
@@ -660,7 +689,7 @@ const WORLD_AND_CAPSULES := WORLD_MASK | MOVEMENT_CAPSULE_MASK
 static func weapon_stats(base: Dictionary) -> Dictionary:
 	var result := base.duplicate(true)
 	for id: String in WEAPON_CLASSES:
-		var profile: Dictionary = DATA.weapons[WEAPON_CLASSES[id]]
+		var profile := weapon_profile(id)
 		var stats: Dictionary = result[id]
 		stats.merge({
 			"mag": profile.magazine, "reserve": profile.reserve_ammo,
@@ -680,10 +709,16 @@ static func weapon_stats(base: Dictionary) -> Dictionary:
 	return result
 
 
+static func weapon_profile(id: String) -> Dictionary:
+	var profile: Dictionary = DATA.weapons[WEAPON_CLASSES[id]]
+	return profile.merged(WEAPON_VARIANTS[id], true) if WEAPON_VARIANTS.has(id) else profile
+
+
 static func validate() -> bool:
 	if DATA.schema_version != "1.0.0" or not VESTS.has(PLAYER.spawn_vest):
 		return false
-	for profile: Dictionary in DATA.weapons.values():
+	for id: String in WEAPON_CLASSES:
+		var profile := weapon_profile(id)
 		if profile.rpm <= 0 or profile.magazine <= 0 or profile.reserve_ammo < 0:
 			return false
 		if not (0 <= profile.falloff_start_m and profile.falloff_start_m < profile.falloff_end_m

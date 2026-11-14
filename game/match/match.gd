@@ -41,9 +41,11 @@ const MIN_RESPAWN_DISTANCE := 12.0
 const TRAINING_RESPAWN_DELAY := 0.75
 const DIFFICULTY_NAMES := ["Легко", "Обычно", "Сложно", "Эксперт", "Элита"]
 const WEAPON_SETS := [
-	["deagle", "shotgun", "ak47", "m1911", "mac10", "mp5", "m700", "tec9", "lever", "m14", "launcher", "m249", "m1"],
-	["shotgun"],
-	["deagle", "ak47", "m1911", "mac10", "mp5", "m700", "tec9", "lever", "m14", "launcher", "m249", "m1"],
+	["deagle", "shotgun", "breacher", "ak47", "m1911", "mac10", "mp5", "m700", "tec9", "lever", "m14", "launcher", "m249", "m1",
+		"carbine", "bullpup", "compact", "longshot", "scout", "rpk", "gpmg"],
+	["shotgun", "breacher"],
+	["deagle", "ak47", "m1911", "mac10", "mp5", "m700", "tec9", "lever", "m14", "launcher", "m249", "m1",
+		"carbine", "bullpup", "compact", "longshot", "scout", "rpk", "gpmg"],
 ]
 
 signal damage_resolved(event: Dictionary)
