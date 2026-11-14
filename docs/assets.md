@@ -10,7 +10,7 @@
 | Universal Animation Library | Стойка, движение, присед и прыжок бойцов | [Quaternius, CC0](../assets/animations/CREDITS.md) |
 | Human Character Dummy и Human Basic Motions FREE | Исходная поза и восемь направлений ходьбы и бега в локальной сборке | [Кевин Иглесиас и условия использования](../assets/animations/CREDITS.md). Подготовленная библиотека лежит в `assets/animations/local/` |
 | Classic Weapons Pack | Модели огнестрельного оружия, выстрелы и перезарядка | [Stein Games, CC0](../assets/classic_weapons/CREDITS.md). [Отдельные материалы AK-47](../assets/ak47/CREDITS.md) |
-| Расширение арсенала | Восемь основных стволов, раздельные магазины и помпа, карты окклюзии | [3DAssets.dev, Poly Haven, ambientCG и Stein Games](../assets/weapon_expansion/CREDITS.md), CC0 |
+| Расширение арсенала | Восемь основных стволов, раздельные магазины и помпа, карты окклюзии и HDR-отражения | [3DAssets.dev, Poly Haven и Stein Games](../assets/weapon_expansion/CREDITS.md), CC0 |
 | Арсенал | Модели оружия, гранат и бронежилета, материалы металла и дерева | [Модели проекта, материалы Poly Haven и звук BigSoundBank](../assets/arsenal/CREDITS.md) |
 | Desert Eagle и нож | Модели от первого лица и предметы подбора с PBR-материалами | [SirDraco65 и Poly Haven, CC0](../assets/weapon_models/CREDITS.md) |
 | HDR-панорама двора | Рассеянный свет и отражения на открытых картах Sky3D | [Poly Haven, CC0](../game/maps/lighting/CREDITS.md) |

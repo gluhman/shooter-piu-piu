@@ -1,6 +1,7 @@
 extends Node3D
 
 const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
+const Collimator := preload("res://game/combat/collimator.gd")
 const Expanded := preload("res://game/combat/expanded_weapons.gd")
 const Classic := preload("res://game/combat/classic_weapons.gd")
 const WeaponHud := preload("res://game/ui/weapon_hud.gd")
@@ -22,6 +23,15 @@ const SHELL_IN_HAND := Vector3(-0.024, 0.126, 0.052)
 const HIP_FOV := 110.0
 const KNIFE_SWING_TIME := 0.48
 const KNIFE_GRIP_IN_WRIST := Vector3(-0.010, 0.094, 0.020)
+# Physical sight alignment uses the aperture center and the top of the front post.
+const IRON_SIGHT_OFFSETS := {
+	"breacher": Vector2(0.005, 0.002),
+	"rpk": Vector2(-0.0005, 0.0071),
+}
+const COLLIMATOR_MOUNTS := {
+	"carbine": Vector3(0, 0.235, 0.055),
+	"m14": Vector3(0, 0.077, 0.205),
+}
 const M249_RELOAD_ACTION_START := 0.34
 const M249_TRIPOD_FROM_MUZZLE := Vector3(0.0, -0.105, 0.19)
 const STOCKED_WEAPONS := ["ak47", "shotgun", "mp5", "m700", "lever", "m14", "launcher", "m249", "m1",
@@ -328,7 +338,8 @@ func _process(delta: float) -> void:
 		_cross.update_pose(0.0, true, false, 0.0, false)
 		return
 
-	_cross.update_pose(aim_blend(), _reloading, _weapon_id == "knife", _current_spread(), _weapon_id in Expanded.SCOPED, _camera)
+	var optic_id := _weapon_id if _weapon_id in ["longshot", "scout"] else ""
+	_cross.update_pose(aim_blend(), _reloading, _weapon_id == "knife", _current_spread(), _weapon_id in Expanded.SCOPED, _camera, optic_id, _uses_physical_sight(_weapon_id))
 	var shooting := _trigger_held
 	var repeat := bool(_stats.get("automatic", false)) and (_mag > 0 or _reserve > 0)
 	if _fire_requested or (shooting and repeat) or _sprint_fire_queued:
@@ -933,7 +944,9 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	if _player._is_local():
 		_camera.fov = lerpf(HIP_FOV, float(_stats["aim_fov"]), blend)
 		if _weapon_id in Expanded.SCOPED:
-			_set_scope_view(blend >= 0.96)
+			# Hide the physical lens as soon as the expanded scope overlay starts.
+			var scope_threshold := 0.87 if Expanded.MODELS.has(_weapon_id) else 0.96
+			_set_scope_view(blend >= scope_threshold)
 			_model.visible = not _scope_view
 	_bob_t += delta * speed * 1.7
 	var sway := minf(speed / 5.0, 1.0)
@@ -1146,7 +1159,23 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 	var eye_relief := 0.21
 	var sight_clearance := 0.004
 	var pose_id := "marked" if Expanded.MODELS.has(weapon_id) else weapon_id
+	if COLLIMATOR_MOUNTS.has(weapon_id):
+		pose_id = "collimator"
+	elif Expanded.SIGHTS.has(weapon_id):
+		pose_id = "replacement_sight"
 	match pose_id:
+		"replacement_sight":
+			rear = _model_marker(model, "RearAnchor")
+			front = _model_marker(model, "FrontAnchor")
+			eye_relief = Expanded.SIGHTS[weapon_id][2]
+			sight_clearance = 0.0
+		"collimator":
+			var mount: Vector3 = COLLIMATOR_MOUNTS[weapon_id]
+			var direction := Vector3.BACK if weapon_id == "m14" else Vector3.FORWARD
+			rear = mount + Vector3.UP * Collimator.AXIS_HEIGHT
+			front = rear + direction * 0.20
+			eye_relief = 0.24
+			sight_clearance = 0.0
 		"ak47":
 			rear = Vector3(0.0, 0.128, -0.104)
 			front = Vector3(0.0, 0.127, -0.586)
@@ -1164,7 +1193,14 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 		"launcher", "m249", "m1", "marked":
 			rear = _model_marker(model, "RearSight")
 			front = _model_marker(model, "FrontSight")
-			if weapon_id in ["longshot", "scout"]:
+			if IRON_SIGHT_OFFSETS.has(weapon_id):
+				var offsets: Vector2 = IRON_SIGHT_OFFSETS[weapon_id]
+				rear.y += offsets.x
+				front.y += offsets.y
+				rear.x = front.x
+				eye_relief = 0.25
+				sight_clearance = 0.0
+			elif weapon_id in ["longshot", "scout"]:
 				eye_relief = 0.13
 		"m700":
 			rear = Classic.SCOPE_REAR
@@ -1193,7 +1229,7 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 	var line := (front_sight.position - _rear_sight.position).normalized()
 	var basis := Basis.looking_at(line).inverse()
 	_aim_pose = Transform3D(basis, Vector3(0.0, -sight_clearance, -eye_relief) - basis * _rear_sight.position)
-	_aim_depth_limit = eye_relief - 0.10
+	_aim_depth_limit = 0.05 if _uses_physical_sight(weapon_id) else eye_relief - 0.10
 	match weapon_id:
 		"lever":
 			_aim_depth_limit = 0.11
@@ -1480,6 +1516,14 @@ static func _make_model(weapon_id: String) -> Node3D:
 		return AK47_MODEL.instantiate() as Node3D
 	if weapon_id == "deagle":
 		return DEAGLE_MODEL.instantiate() as Node3D
+	if COLLIMATOR_MOUNTS.has(weapon_id):
+		var model := Classic.make_model(weapon_id) if weapon_id == "m14" else Expanded.make_model(weapon_id)
+		var optic := Collimator.new()
+		optic.position = COLLIMATOR_MOUNTS[weapon_id]
+		if weapon_id == "m14":
+			optic.rotation.y = PI
+		model.add_child(optic)
+		return model
 	if Classic.MODELS.has(weapon_id):
 		return Classic.make_model(weapon_id)
 	if Expanded.MODELS.has(weapon_id):
@@ -1491,6 +1535,10 @@ static func _make_model(weapon_id: String) -> Node3D:
 	mesh_instance.mesh = SHOTGUN_MESH
 	holder.add_child(mesh_instance)
 	return holder
+
+
+static func _uses_physical_sight(id: String) -> bool:
+	return Expanded.SIGHTS.has(id) or IRON_SIGHT_OFFSETS.has(id) or COLLIMATOR_MOUNTS.has(id)
 
 
 static func _make_knife_model() -> Node3D:

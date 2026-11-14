@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://coxbo3gcut0ax"
-path="res://.godot/imported/polymer_normal.jpg-5cec21fc0a9f78b6165980815b0af0b6.ctex"
+uid="uid://beprtfa0vvgju"
+path="res://.godot/imported/american_walnut_veneer_arm_2k.jpg-127bcfdcae53ed313128630c00f52db6.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/weapon_expansion/polymer_normal.jpg"
-dest_files=["res://.godot/imported/polymer_normal.jpg-5cec21fc0a9f78b6165980815b0af0b6.ctex"]
+source_file="res://assets/weapon_expansion/american_walnut_veneer_arm_2k.jpg"
+dest_files=["res://.godot/imported/american_walnut_veneer_arm_2k.jpg-127bcfdcae53ed313128630c00f52db6.ctex"]
 
 [params]
 
@@ -21,7 +21,7 @@ compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=1
+compress/normal_map=0
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

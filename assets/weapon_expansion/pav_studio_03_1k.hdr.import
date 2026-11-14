@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d23cud7hytnlq"
-path="res://.godot/imported/polymer_color.jpg-5d7dc3d81d1475be96aa1e89d0c5fcce.ctex"
+uid="uid://n0ncjtiim060"
+path="res://.godot/imported/pav_studio_03_1k.hdr-3cdce76ba777b5dfa5d35291eff76e2a.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/weapon_expansion/polymer_color.jpg"
-dest_files=["res://.godot/imported/polymer_color.jpg-5d7dc3d81d1475be96aa1e89d0c5fcce.ctex"]
+source_file="res://assets/weapon_expansion/pav_studio_03_1k.hdr"
+dest_files=["res://.godot/imported/pav_studio_03_1k.hdr-3cdce76ba777b5dfa5d35291eff76e2a.ctex"]
 
 [params]
 

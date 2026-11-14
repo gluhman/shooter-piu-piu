@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://baidlvooddtr6"
-path="res://.godot/imported/polymer_roughness.jpg-51c151a1b41f2ae7bfee428a55551b7a.ctex"
+uid="uid://1hcwo2v08syy"
+path="res://.godot/imported/rubber_tiles_arm_2k.jpg-356a2c896ebf1d3dc73e592251bdb697.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/weapon_expansion/polymer_roughness.jpg"
-dest_files=["res://.godot/imported/polymer_roughness.jpg-51c151a1b41f2ae7bfee428a55551b7a.ctex"]
+source_file="res://assets/weapon_expansion/rubber_tiles_arm_2k.jpg"
+dest_files=["res://.godot/imported/rubber_tiles_arm_2k.jpg-356a2c896ebf1d3dc73e592251bdb697.ctex"]
 
 [params]
 

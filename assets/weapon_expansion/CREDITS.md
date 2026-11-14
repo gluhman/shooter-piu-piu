@@ -13,7 +13,15 @@ The eight CC0 models are from the [3DAssets.dev Mega Weapon Pack](https://3dasse
 | Squad LMG | Drum Fed Squad Gun | 52,952 |
 | GPMG | General Purpose Machine Gun | 47,548 |
 
-The 2K material maps are from [Poly Haven's metal and walnut sets](../arsenal/CREDITS.md) and [ambientCG Plastic 012 B](https://ambientcg.com/view?id=Plastic012B), all CC0. Each weapon has a custom 1K UV2 ambient-occlusion bake for self-shadowing. Moving weapons receive direct lighting and shadows from the arena.
+The 2K material maps are from Poly Haven, all CC0. [Metal Plate 02](https://polyhaven.com/a/metal_plate_02) supplies steel finishes. [American Walnut Veneer](https://polyhaven.com/a/american_walnut_veneer) supplies wood. [Rubber Tiles](https://polyhaven.com/a/rubber_tiles) supplies fine grain and scuffs for polymer and rubber surfaces. These sets provide color, normal and roughness maps. Each weapon retains its custom 1K UV2 ambient-occlusion bake.
+
+[PAV Studio 03](https://polyhaven.com/a/pav_studio_03) by Grzegorz Wronkowski, CC0, supplies a 1K HDR reflection pass on weapon surfaces. Direct lighting and shadows come from the active arena.
+
+## Replacement sights
+
+- **Bullpup** uses the CC0 [3DAssets.dev Reflex Sight](https://3dassets.dev/assets/mega-weapon-pack-reflex-sight-27c159a4). The housing was widened and fitted with a transparent amber window and a centered emitter for first-person aiming.
+- **Compact SMG** and **GPMG** use original Blender sight assemblies modeled from the supplied in-game references. Compact SMG has an open notch and protected front blade. GPMG has a raised aperture, separate rear ears, and a guarded front post.
+- All three assemblies use the project's 2K [Metal Plate 02](https://polyhaven.com/a/metal_plate_02) color, normal and roughness maps. The reflex window and emitter use game materials.
 
 The Ogg clips are from the project's [Classic Weapons Pack sound archive](../classic_weapons/CREDITS.md). Report pairs use different source takes or perspectives. Existing effects cover handling where the archive lacks a matching clip.
 

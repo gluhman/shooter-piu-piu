@@ -651,7 +651,7 @@ const WEAPON_VARIANTS := {
 	"compact": {"rpm": 1000, "damage_max": 24, "damage_min": 15, "magazine": 25,
 		"reserve_ammo": 125, "falloff_start_m": 9, "falloff_end_m": 28, "ads_s": 0.14,
 		"hip_cone_half_angle_deg": 1.52, "horizontal_kick_random_max_deg": 0.47},
-	"breacher": {"rpm": 100, "damage_max": 17, "damage_min": 5, "magazine": 4,
+	"breacher": {"rpm": 100, "damage_max": 25, "damage_min": 5, "pellets": 8, "magazine": 4,
 		"reserve_ammo": 24, "falloff_start_m": 4, "falloff_end_m": 11, "max_range_m": 16,
 		"ads_s": 0.15, "hip_cone_half_angle_deg": 3.65, "ads_cone_half_angle_deg": 2.75},
 	"longshot": {"rpm": 43, "damage_max": 155, "damage_min": 105, "magazine": 4,
@@ -663,9 +663,10 @@ const WEAPON_VARIANTS := {
 	"rpk": {"rpm": 690, "damage_max": 31, "damage_min": 22, "magazine": 45,
 		"reserve_ammo": 135, "ads_s": 0.29, "reload_tactical_s": 3.0, "reload_empty_s": 3.35,
 		"vertical_kick_deg": 1.05, "falloff_start_m": 29},
-	"gpmg": {"rpm": 520, "damage_max": 35, "damage_min": 27, "magazine": 90,
+	"gpmg": {"rpm": 520, "damage_max": 72, "damage_min": 27, "magazine": 90,
 		"reserve_ammo": 180, "ads_s": 0.42, "sprint_to_fire_s": 0.33, "reload_tactical_s": 5.55,
-		"reload_empty_s": 6.0, "vertical_kick_deg": 1.62, "hip_cone_half_angle_deg": 3.6},
+		"reload_empty_s": 6.0, "vertical_kick_deg": 1.62,
+		"hip_cone_half_angle_deg": 5.4, "ads_cone_half_angle_deg": 0.36},
 }
 const HEAD_MULTIPLIERS := {
 	"ak47": 3.5, "m249": 3.2, "deagle": 3.3, "m1911": 2.7,

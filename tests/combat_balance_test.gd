@@ -39,6 +39,14 @@ func _run() -> void:
 	_check("A05", _lethal_in("m249", 10, "standard", 5, 369.23))
 	_check("A06", _lethal_in("m1911", 10, "standard", 4, 400.0))
 
+	_reset_target("none")
+	_hit("gpmg", 4)
+	_check("GPMG deals 72 base damage to an unarmored chest", _near(target.health, 28.0))
+	_reset_target("none")
+	_hit("breacher", 4)
+	_check("Breacher fires eight pellets with 25 base damage each",
+		_near(target.health, 75.0) and int(weapons.breacher.pellets) == 8)
+
 	_reset_target("heavy")
 	_hit("m14", 10, "head")
 	_check("A07", target._dead and _near(target.armor, 75.0)
