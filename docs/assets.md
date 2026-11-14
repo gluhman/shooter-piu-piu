@@ -24,7 +24,7 @@
 
 | Ресурс | Использование | Источник и условия |
 | --- | --- | --- |
-| Impact Sounds и ветер Dust II | Шаги, звуки попаданий и зацикленный фон карты | [Kenney и dhallcomposer, CC0](../assets/match_audio/CREDITS.md) |
+| Impact Sounds, Metal Hit 95 и ветер Dust II | Шаги, звуки попаданий и зацикленный фон карты | [Источники и лицензии](../assets/match_audio/CREDITS.md) |
 | Записи выстрелов и механики | Выстрелы от первого лица, затворы и перезарядка | [Авторы, исходные записи и лицензии](../assets/weapon_audio/CREDITS.md) |
 | Текстуры дыма взрыва | Кадры дыма и карты нормалей для выстрела гранатомёта | [Duarte David и порт memo1918, MIT](../assets/explosion_vfx/LICENSE.txt) |
 | PYROLUX Lite | Вспышка, огненное облако, дым, пыль, искры и ударное кольцо осколочной гранаты. У взрыва в воздухе нет слоя пыли с поверхности | [gennai](https://gennai.itch.io/pyrolux-lite), [исходный код и пресет](https://github.com/kai777123/godot-4-free-vfx/tree/15b8e21925841b10fa3e19aab99fff1038c1486b/fire), [MIT](../addons/pyrolux_fx/LICENSE.txt). Плотность, яркость и время дыма настроены в [сцене осколочного взрыва](../game/combat/frag_explosion.tscn) |
@@ -71,8 +71,8 @@ godot --headless --path . --script res://addons/gut/gut_cmdln.gd -gdir=res://tes
 
 | Пакет | Применение в Shooter |
 | --- | --- |
-| GDT Terrain Generator и Poly Haven | Модули GDT 1.1.0 используются в рельефе «Лесного хребта» и «Форпоста». «Форпост» использует HDRI, PBR-материалы и модели Poly Haven с текстурами 2K. [Источники и лицензии «Форпоста»](../game/maps/farpost/CREDITS.md). |
-| Kenney Starter Kit FPS | Использованы две модели стен, платформа и общий атлас. Модели и атлас распространяются по CC0. Из этих моделей собрана «Станция». [Исходный пакет](https://github.com/KenneyNL/Starter-Kit-FPS/tree/185fd2326d74a5cf858cffc616f87cf9696f9cc0) и [копия лицензии в репозитории](../game/maps/kenney_outpost/art/LICENSE.md). |
+| GDT Terrain Generator и Poly Haven | Модули GDT 1.1.0 используются в рельефе «Лесного хребта», «Форпоста» и за обзорными окнами «Станции». «Форпост» и «Станция» используют HDRI, PBR-материалы и модели Poly Haven с текстурами 2K. [Ресурсы «Форпоста»](../game/maps/farpost/CREDITS.md), [ресурсы «Станции»](../game/maps/station/CREDITS.md). |
+| Pixabay / Freesound Community | Записи шагов по металлу и лестнице нарезаны на отдельные звуки для «Станции». [Авторы и условия использования](../game/maps/station/CREDITS.md). |
 | Quaternius Modular Sci-Fi MegaKit | Набор CC0 для следующей интерьерной карты. У него есть модульные стены, двери и элементы окружения. В прототипе стоит проверить единый материал и простые коллайдеры для повторяющихся модулей. [Страница автора в Godot Asset Store](https://store.godotengine.org/asset/quaternius/modular-sci-fi-megakit/). |
 | FuncGodot | Кандидат для карт, построенных в TrenchBroom. Импортирует MAP в Godot и сопоставляет объекты карты с игровыми сущностями. Перед подключением стоит проверить масштаб, коллизии и сохранение маркеров спавна и лута на одной тестовой арене. [Репозиторий FuncGodot](https://github.com/func-godot/func_godot_plugin). |
 | Cyclops Level Builder | Кандидат для быстрого проектирования уровней внутри Godot. Блоки можно преобразовать в обычные меши и коллайдеры для экспорта. [Документация Cyclops](https://github.com/blackears/cyclopsLevelBuilder/blob/master/doc/index.md). |

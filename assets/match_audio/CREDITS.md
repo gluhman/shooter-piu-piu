@@ -4,6 +4,8 @@
 
 Использованы `footstep_concrete_000`, `impactMetal_medium_000`, `impactMetal_medium_002`, `impactMining_000`, `impactWood_heavy_000` и `impactSoft_heavy_000`. Файлы сведены в моно, отфильтрованы и при необходимости укорочены.
 
+Для попаданий пуль по металлу используется предоставленная запись [Metal Hit 95 — floraphonic](https://pixabay.com/sound-effects/metal-hit-95-200424/) по [Pixabay Content License](https://pixabay.com/service/license-summary/). В игровой версии укорочено затухание и приглушён низкочастотный удар.
+
 Звуки осколочной и светошумовой гранат синтезированы для игры.
 
 Усиленный взрыв использует [запись Explosion #2](../arsenal/CREDITS.md) с добавленными низкочастотным ударом и затуханием.

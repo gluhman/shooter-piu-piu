@@ -23,7 +23,7 @@ const OFFICE := preload("res://game/maps/procedural/office_layout.gd")
 const WORKSHOP := preload("res://game/maps/procedural/workshop_layout.gd")
 const FOREST_RIDGE := preload("res://game/maps/forest_ridge/forest_ridge_layout.gd")
 const FARPOST := preload("res://game/maps/farpost/farpost_layout.gd")
-const KENNEY_STATION := preload("res://game/maps/procedural/kenney_outpost_layout.gd")
+const STATION := preload("res://game/maps/station/station_layout.gd")
 
 const CONTAINER_HEIGHT := 2.59
 const CONTAINER_WIDTH := 2.44
@@ -163,7 +163,7 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 	if map_id == OUTPOST_ID:
 		return FARPOST.new(self).build(width)
 	if map_id == STATION_ID:
-		return KENNEY_STATION.new(self).build(width)
+		return STATION.new(self).build(width)
 	if map_id == OFFICE_ID:
 		return OFFICE.new(self).build()
 	if map_id == WORKSHOP_ID:
@@ -384,13 +384,13 @@ func _build_small_yard(map_id: int) -> void:
 			_add_crate(Vector3(-3.2, 0.55, 5.1))
 
 
-func minimap_outline(bounds: Rect2 = Rect2()) -> Array[PackedVector2Array]:
+func minimap_outline(bounds: Rect2 = Rect2(), floor_height := 0.0) -> Array[PackedVector2Array]:
 	var forest := get_node_or_null("ForestRidge")
 	if forest:
 		return forest.get_meta(&"minimap_outline")
 	var outline: Array[PackedVector2Array] = []
 	var limited := bounds.has_area()
-	var bodies := find_children("*", "StaticBody3D", limited, false)
+	var bodies := find_children("*", "StaticBody3D", limited or has_node("Station"), false)
 	var to_map := global_transform.affine_inverse()
 	var clip := PackedVector2Array([bounds.position, Vector2(bounds.end.x, bounds.position.y),
 		bounds.end, Vector2(bounds.position.x, bounds.end.y)])
@@ -404,14 +404,14 @@ func minimap_outline(bounds: Rect2 = Rect2()) -> Array[PackedVector2Array]:
 			var polygon := PackedVector2Array()
 			if collider.shape is BoxShape3D:
 				var half: Vector3 = collider.shape.size * 0.5
-				if transform.origin.y + half.y <= 0.65 or transform.origin.y - half.y >= 1.4:
+				if transform.origin.y + half.y <= floor_height + 0.65 or transform.origin.y - half.y >= floor_height + 1.4:
 					continue
 				for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
 					var point := transform * Vector3(corner.x * half.x, 0.0, corner.y * half.z)
 					polygon.append(Vector2(point.x, point.z))
 			elif limited and collider.shape is CylinderShape3D:
 				var half_height: float = collider.shape.height * 0.5
-				if transform.origin.y + half_height <= 0.65 or transform.origin.y - half_height >= 1.4:
+				if transform.origin.y + half_height <= floor_height + 0.65 or transform.origin.y - half_height >= floor_height + 1.4:
 					continue
 				for index in 16:
 					var edge := Vector2.from_angle(index * TAU / 16.0) * float(collider.shape.radius)

@@ -20,6 +20,9 @@ const KILL_LIMITS := [0, 1, 5, 10, 15, 20, 30, 50, 100]
 const Balance := preload("res://game/combat/combat_balance.gd")
 const POSE_INTERVAL: float = 1.0 / Balance.NETWORK.snapshot_hz
 const DAYLIGHT_EXPOSURE := preload("res://game/maps/lighting/daylight_exposure.tres")
+const STATION_HDRI := "res://game/maps/station/art/qwantani_night_puresky_2k.hdr"
+const STATION_SKY := preload("res://game/maps/station/station_sky.gdshader")
+const STATION_EXPOSURE := preload("res://game/maps/station/station_exposure.tres")
 const FARPOST_HDRI := "res://game/maps/farpost/art/sky/kloofendal_overcast_puresky_2k.hdr"
 const OFFICE_ENVIRONMENT := preload("res://game/maps/lighting/office_environment.tres")
 const OFFICE_EXPOSURE := preload("res://game/maps/lighting/office_exposure.tres")
@@ -169,7 +172,7 @@ func _apply_indirect_lighting(environment: Environment) -> void:
 		and DisplayServer.get_name() != "headless" and not Net.dedicated
 	# Closely spaced floors and roofs lose too much ambient fill with SDFGI.
 	environment.sdfgi_enabled = enabled and map_id not in [
-		MAP.OFFICE_ID, MAP.BREAKWATER_ID, MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.FOREST_RIDGE_ID, MAP.OUTPOST_ID]
+		MAP.OFFICE_ID, MAP.BREAKWATER_ID, MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.FOREST_RIDGE_ID, MAP.OUTPOST_ID, MAP.STATION_ID]
 	var probe := $Map.get_node_or_null("OfficeBounce") as VoxelGI
 	if is_instance_valid(_breakwater):
 		probe = _breakwater.get_node("HallBounce") as VoxelGI
@@ -177,7 +180,8 @@ func _apply_indirect_lighting(environment: Environment) -> void:
 		probe.visible = enabled
 	var baked_bounce := probe != null and probe.visible
 	environment.ssil_enabled = GameSettings.supports_advanced_graphics() \
-		and (enabled or GameSettings.ambient_occlusion) and not environment.sdfgi_enabled and not baked_bounce
+		and (enabled or GameSettings.ambient_occlusion) and not environment.sdfgi_enabled and not baked_bounce \
+		and map_id != MAP.STATION_ID
 
 
 func prepare_startup_resources() -> void:
@@ -983,12 +987,6 @@ func _play_ambience() -> void:
 
 func _grade_arena(world_environment: WorldEnvironment) -> void:
 	var environment := world_environment.environment
-	# Physical exposure enables depth of field. Disable the blur pass for gameplay
-	# so the first-person hands and weapon stay sharp at any focus distance.
-	var camera_attributes := world_environment.camera_attributes
-	if camera_attributes:
-		RenderingServer.camera_attributes_set_dof_blur(camera_attributes.get_rid(),
-			false, 0.0, 0.0, false, 0.0, 0.0, 0.0)
 	environment.tonemap_mode = Environment.TONE_MAPPER_AGX
 	environment.tonemap_exposure = 1.0
 	environment.glow_enabled = true
@@ -1035,7 +1033,39 @@ func _configure_farpost_sky() -> void:
 	$WorldEnvironment.sun_energy = 0.74
 
 
+func _configure_station_sky() -> void:
+	var environment: Environment = $WorldEnvironment.environment
+	var panorama := ShaderMaterial.new()
+	panorama.shader = STATION_SKY
+	panorama.set_shader_parameter("night_panorama", load(STATION_HDRI))
+	var sky := Sky.new()
+	sky.sky_material = panorama
+	environment.sky = sky
+	environment.background_intensity = 1.0
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = Color("#a0bfd6")
+	environment.ambient_light_sky_contribution = 0.0
+	environment.ambient_light_energy = 0.69
+	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	environment.fog_enabled = false
+	environment.adjustment_saturation = 1.0
+	environment.glow_bloom = 0.0
+	environment.glow_intensity = 0.11
+	environment.glow_hdr_threshold = 1.75
+	$WorldEnvironment.camera_attributes = STATION_EXPOSURE
+	$WorldEnvironment/SunLight.hide()
+	$WorldEnvironment/MoonLight.hide()
+
+
+func _disable_gameplay_depth_of_field(world_environment: WorldEnvironment) -> void:
+	var attributes := world_environment.camera_attributes
+	if attributes:
+		RenderingServer.camera_attributes_set_dof_blur(attributes.get_rid(),
+			false, 0.0, 0.0, false, 0.0, 0.0, 0.0)
+
+
 func _build_arena(layout_seed: int) -> void:
+	var world_environment: WorldEnvironment = $WorldEnvironment
 	if map_id == MAP.BREAKWATER_ID:
 		$WorldEnvironment.environment = null
 		$WorldEnvironment.camera_attributes = null
@@ -1044,7 +1074,8 @@ func _build_arena(layout_seed: int) -> void:
 		_breakwater = BREAKWATER_SCENE.instantiate()
 		$Map.add_child(_breakwater)
 		_breakwater.apply_layout(map_size)
-		_grade_arena(_breakwater.get_node("WorldEnvironment"))
+		world_environment = _breakwater.get_node("WorldEnvironment")
+		_grade_arena(world_environment)
 		$Loot.build_crates(_breakwater.get_supply_placements())
 	else:
 		var weather: Dictionary = ARENA_WEATHER[map_id]
@@ -1058,11 +1089,14 @@ func _build_arena(layout_seed: int) -> void:
 			$WorldEnvironment/SunLight.hide()
 			$WorldEnvironment/MoonLight.hide()
 		var farpost_sky := map_id == MAP.OUTPOST_ID and DisplayServer.get_name() != "headless"
-		if farpost_sky:
+		var station_sky := map_id == MAP.STATION_ID and DisplayServer.get_name() != "headless"
+		if farpost_sky or station_sky:
 			$WorldEnvironment.environment = _base_environment.duplicate()
-		_grade_arena($WorldEnvironment)
+		_grade_arena(world_environment)
 		if farpost_sky:
 			_configure_farpost_sky()
+		if station_sky:
+			_configure_station_sky()
 		var supplies: Array[Transform3D] = $Map.build(map_id, layout_seed, arena_width())
 		if map_id == MAP.OFFICE_ID and GameSettings.supports_advanced_graphics() and not Net.dedicated:
 			var probe := VoxelGI.new()
@@ -1074,6 +1108,9 @@ func _build_arena(layout_seed: int) -> void:
 			probe.data = load(OFFICE_BOUNCE) as VoxelGIData
 			$Map.add_child(probe)
 		$Loot.build_crates(supplies, $Map.market_supply_count)
+	# Physical camera profiles enable depth of field when created. Clear it on the
+	# active profile after the map has selected its final exposure settings.
+	_disable_gameplay_depth_of_field(world_environment)
 	_apply_graphics()
 	if not Net.dedicated:
 		var bounds := _breakwater.get_arena_bounds() if is_instance_valid(_breakwater) else Rect2()
@@ -1085,11 +1122,12 @@ func _build_arena(layout_seed: int) -> void:
 		var village := map_id == MAP.VILLAGE_ID
 		var forest := map_id == MAP.FOREST_RIDGE_ID
 		var farpost := map_id == MAP.OUTPOST_ID
+		var station := map_id == MAP.STATION_ID
 		mesh.cell_size = 0.30 if forest or farpost else (0.25 if village else 0.20)
 		mesh.cell_height = 0.1
 		mesh.agent_radius = 0.60 if forest or farpost else (0.50 if village else 0.40)
 		mesh.agent_height = 1.8
-		mesh.agent_max_climb = 0.3 if village or forest or farpost else 0.1
+		mesh.agent_max_climb = 0.3 if village or forest or farpost or station else 0.1
 		mesh.filter_walkable_low_height_spans = true
 		var width := arena_width()
 		if is_instance_valid(_breakwater):
@@ -1098,6 +1136,9 @@ func _build_arena(layout_seed: int) -> void:
 				Vector3(bounds.size.x, 4.5, bounds.size.y))
 		elif forest:
 			mesh.filter_baking_aabb = MAP.FOREST_RIDGE.TERRAIN_BAKE_BOUNDS
+		elif station:
+			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -0.6, -width * 0.5),
+				Vector3(width, MAP.STATION.ROOF + 0.4, width))
 		elif farpost or map_id == MAP.DUST2_ID:
 			mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -3.0, -width * 0.5), Vector3(width, 7.5, width))
 		else:

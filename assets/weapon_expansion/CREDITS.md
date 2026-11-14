@@ -23,7 +23,7 @@ The 2K material maps are from Poly Haven, all CC0. [Metal Plate 02](https://poly
 - **Compact SMG** and **GPMG** use original Blender sight assemblies modeled from the supplied in-game references. Compact SMG has an open notch and protected front blade. GPMG has a raised aperture, separate rear ears, and a guarded front post.
 - All three assemblies use the project's 2K [Metal Plate 02](https://polyhaven.com/a/metal_plate_02) color, normal and roughness maps. The reflex window and emitter use game materials.
 
-The Ogg clips are from the project's [Classic Weapons Pack sound archive](../classic_weapons/CREDITS.md). Report pairs use different source takes or perspectives. Existing effects cover handling where the archive lacks a matching clip.
+The Ogg clips are from the project's [Classic Weapons Pack sound archive](../classic_weapons/CREDITS.md). Report pairs use different source takes or perspectives. Existing effects cover handling where the archive lacks a matching clip. The reports are level-matched and the long takes have shortened tails for sustained fire.
 
 | Weapon | Local report | Positional report | Reload and action |
 | --- | --- | --- | --- |
@@ -35,5 +35,7 @@ The Ogg clips are from the project's [Classic Weapons Pack sound archive](../cla
 | Scout | 762 Ext Med1p 003 | FAL fire 3p close 01 | Existing M14 reload |
 | Squad LMG | 762 Ext Med1p 007 | 762 Ext Close 007 | AK-102 empty reload 02 |
 | GPMG | 762 Ext Med1p 001 | M14 fire 05 | Existing M14 reload |
+
+Both GPMG reports are pitched down three semitones and equalized for a deeper tone.
 
 See [weapon audio credits](../weapon_audio/CREDITS.md) for the Breacher's reused Freesound recordings.
