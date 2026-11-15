@@ -2,13 +2,16 @@ extends Node
 
 const PORT := 7777
 const CHANNEL_COUNT := 4
-const PROTOCOL_VERSION := 18
+# Map IDs on the wire require both builds to have the same map catalog.
+const PROTOCOL_VERSION := 19
+const MAP_LOADING_TIMEOUT_MS := 90000
 const Balance := preload("res://game/combat/combat_balance.gd")
 const MAX_PLAYERS: int = Balance.MATCH.max_players_total
 const MAX_NAME_LENGTH := 24
 const INTERNET_ADDRESS := "136.234.32.193"
 
 signal joined
+signal peer_protocol_accepted(peer_id: int)
 signal connection_failed
 signal host_lost
 
@@ -69,6 +72,17 @@ func peer_ping_ms(peer_id: int) -> int:
 	if peer == null:
 		return -1
 	return roundi(peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME))
+
+
+func set_peer_loading(peer_id: int, loading: bool) -> void:
+	var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if not transport or not multiplayer.get_peers().has(peer_id):
+		return
+	var peer := transport.get_peer(peer_id)
+	if peer:
+		# Map building and shader warmup can block ENet polling. Zero restores ENet defaults.
+		var timeout := MAP_LOADING_TIMEOUT_MS if loading else 0
+		peer.set_timeout(0, timeout, timeout)
 
 
 func lan_addresses() -> PackedStringArray:
@@ -205,10 +219,10 @@ func leave_game() -> void:
 
 
 func _close() -> void:
+	active = false
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 		multiplayer.multiplayer_peer = null
-	active = false
 	solo = false
 	dedicated = false
 	directory = false
@@ -244,17 +258,19 @@ func _on_connected() -> void:
 
 @rpc("any_peer", "reliable")
 func net_protocol_hello(protocol: int, _client_version: String) -> void:
-	if not multiplayer.is_server():
+	if not active or not multiplayer.is_server():
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	var accepted := protocol == PROTOCOL_VERSION
 	var message := "" if accepted else "Несовместимая версия сетевого протокола. Обновите игру."
 	net_protocol_result.rpc_id(sender, accepted, message)
-	if not accepted:
+	if accepted:
+		peer_protocol_accepted.emit(sender)
+	else:
+		var transport := multiplayer.multiplayer_peer
 		get_tree().create_timer(0.2).timeout.connect(func():
-			var peer := multiplayer.multiplayer_peer
-			if peer:
-				peer.disconnect_peer(sender), CONNECT_ONE_SHOT)
+			if multiplayer.multiplayer_peer == transport and multiplayer.get_peers().has(sender):
+				transport.disconnect_peer(sender), CONNECT_ONE_SHOT)
 
 
 @rpc("authority", "reliable")
@@ -276,7 +292,10 @@ func _on_connection_failed() -> void:
 
 
 func _on_server_disconnected() -> void:
+	if not active:
+		return
 	if not client_session:
+		_on_connection_failed()
 		return
 	client_session = false
 	if notice.is_empty():

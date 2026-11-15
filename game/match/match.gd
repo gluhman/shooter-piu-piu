@@ -146,8 +146,8 @@ func _ready() -> void:
 		room_owner = 0
 	else:
 		player_slots[0] = 1
-	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	Net.peer_protocol_accepted.connect(_on_peer_protocol_accepted)
 	Net.joined.connect(_on_joined)
 	Net.connection_failed.connect(_on_connection_failed)
 	Net.host_lost.connect(_on_host_lost)
@@ -543,6 +543,7 @@ func exit_to_lobby() -> void:
 	_map_revision += 1
 	for peer in player_slots:
 		if peer > 1:
+			Net.set_peer_loading(peer, false)
 			net_return_to_lobby.rpc_id(peer, _map_revision)
 	_return_to_lobby()
 	if Net.active:
@@ -567,6 +568,8 @@ func _return_to_lobby() -> void:
 	_clear_match_map()
 	_waiting_for_host = false
 	_loading = false
+	if Net.active and not multiplayer.is_server():
+		Net.set_peer_loading(1, false)
 	get_tree().paused = false
 	GameSettings.set_match_audio_enabled(false)
 	if not Net.dedicated:
@@ -750,6 +753,7 @@ func start_host_match() -> void:
 	_show_loading()
 	for peer in player_slots:
 		if peer > 1:
+			Net.set_peer_loading(peer, true)
 			net_wait_for_arena.rpc_id(peer)
 	_layout_seed = randi()
 	_reserve_bot_slots(lan_bot_count)
@@ -846,7 +850,7 @@ func net_room_owner(owner: int) -> void:
 @rpc("authority", "reliable")
 func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: Vector2i,
 		difficulty: int, bot_count: int, names: Dictionary[int, String], size: int, owner: int, teams: bool, random_map: bool, blue_bots: int, mode := -1) -> void:
-	if _started or _loading:
+	if not Net.client_session or _started or _loading:
 		return
 	var editing: bool = Net.internet and owner == 0 and $HUD/Lobby.is_editing_setup()
 	if editing:
@@ -874,8 +878,9 @@ func net_room_state(weapons: int, arena: int, roster: PackedInt32Array, limits: 
 
 @rpc("authority", "reliable")
 func net_wait_for_arena() -> void:
-	if _started or _loading:
+	if not Net.client_session or _started or _loading:
 		return
+	Net.set_peer_loading(1, true)
 	_waiting_for_host = true
 	$HUD/MatchMenu.close()
 	$HUD/Lobby.show_loading()
@@ -886,7 +891,7 @@ func net_wait_for_arena() -> void:
 func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: int, limits: Vector2i,
 		difficulty: int, bot_count: int, revision: int, size: int, teams: bool, bot_slots: PackedInt32Array,
 		random_map: bool, preferred_size: int, blue_bots: int, mode := -1, pending := PackedInt32Array(), attack_side := 0) -> void:
-	if revision < _map_revision:
+	if not Net.client_session or revision < _map_revision:
 		return
 	if revision > _map_revision:
 		while _loading and not _reloading:
@@ -906,13 +911,17 @@ func net_begin(weapons: int, arena: int, roster: PackedInt32Array, layout_seed: 
 	random_map_each_match = random_map
 	lobby_map_size = preferred_size
 	blue_bot_count = blue_bots
+	var token := _load_token
+	Net.set_peer_loading(1, true)
 	_show_loading()
 	await _begin_network_match(weapons, arena, layout_seed, limits, difficulty, bot_count, size)
-	if not _reloading and Net.active:
+	if _load_current(token):
+		Net.set_peer_loading(1, false)
 		net_ready.rpc_id(1, revision)
 
 
 func _send_begin(peer: int) -> void:
+	Net.set_peer_loading(peer, true)
 	net_begin.rpc_id(peer, weapon_set, map_id, player_slots, _layout_seed, _match_limits(),
 		bot_difficulty, lan_bot_count, _map_revision, map_size, team_deathmatch, _bot_slots,
 		random_map_each_match, lobby_map_size, blue_bot_count, play_mode, PackedInt32Array(_objective_pending.keys()), objective_attack_side)
@@ -1722,11 +1731,10 @@ func _on_connection_failed() -> void:
 	_reload_main_menu()
 
 
-func _on_peer_connected(id: int) -> void:
+func _on_peer_protocol_accepted(id: int) -> void:
 	if Net.match_server:
 		return
-	if Net.active and multiplayer.is_server():
-		call_deferred("_welcome", id)
+	_welcome(id)
 
 
 @rpc("any_peer", "reliable")
@@ -1781,6 +1789,7 @@ func net_ready(revision: int) -> void:
 		return
 	# Gameplay RPCs can target this guest once it has built the match scene.
 	_ready_peers.append(id)
+	Net.set_peer_loading(id, false)
 	net_display_names.rpc_id(id, _display_names)
 	if is_instance_valid(_breakwater) and not objectives:
 		for actor in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):

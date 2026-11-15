@@ -145,8 +145,12 @@ func show_guest_room() -> void:
 func join_failed() -> void:
 	if _screen == Screen.MAIN and _busy:
 		var online := Net.last_failure == "internet"
+		var message := Net.notice
 		Net.last_failure = ""
-		_finish_join("Сервер недоступен." if online else "Не удалось подключиться. Проверь IP, сеть и наличие места.")
+		Net.notice = ""
+		if message.is_empty():
+			message = "Сервер недоступен." if online else "Не удалось подключиться. Проверь IP, сеть и наличие места."
+		_finish_join(message)
 
 
 func restore_focus(previous: Control) -> void:
