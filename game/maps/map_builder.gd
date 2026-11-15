@@ -28,6 +28,7 @@ const OFFICE := preload("res://game/maps/procedural/office_layout.gd")
 const WORKSHOP := preload("res://game/maps/procedural/workshop_layout.gd")
 const FOREST_RIDGE := preload("res://game/maps/forest_ridge/forest_ridge_layout.gd")
 const FARPOST := preload("res://game/maps/farpost/farpost_layout.gd")
+const REFINERY := preload("res://game/maps/refinery/refinery_layout.gd")
 const STATION := preload("res://game/maps/station/station_layout.gd")
 
 const CONTAINER_HEIGHT := 2.59
@@ -52,6 +53,7 @@ const OFFICE_ID := 8
 const OUTPOST_ID := 9
 const STATION_ID := 10
 const FOREST_RIDGE_ID := 11
+const REFINERY_ID := REFINERY.MAP_ID
 const OFFICE_BOUNDS := Rect2(-OFFICE.HALF_X, -OFFICE.HALF_Z, OFFICE.HALF_X * 2.0, OFFICE.HALF_Z * 2.0)
 
 class Cover:
@@ -65,7 +67,7 @@ const COLOR_GREEN := Color(0.28, 0.52, 0.34)
 const COLOR_ORANGE := Color(0.95, 0.48, 0.14)
 const COLOR_GREY := Color(0.72, 0.74, 0.72)
 
-const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон", "Малый офис", "Форпост", "Станция", "Лесной хребет"]
+const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон", "Малый офис", "Форпост", "Станция", "Лесной хребет", "НПЗ"]
 
 const PATROL_ROUTES := [
 	[
@@ -120,6 +122,7 @@ const MAP_MATERIALS := {
 	OUTPOST_ID: [],
 	STATION_ID: [],
 	FOREST_RIDGE_ID: [],
+	REFINERY_ID: [],
 }
 
 var _textures: Dictionary[String, Texture2D] = {}
@@ -167,6 +170,9 @@ func build(map_id: int, layout_seed: int, width: float, objective := 0, size := 
 	_objective_reservations.clear()
 	if objective >= OBJECTIVE_LAYOUT.HILL and map_id < VILLAGE_ID:
 		_objective_reservations = OBJECTIVE_LAYOUT.reserved_areas(objective, map_id, size)
+	if map_id == REFINERY_ID:
+		_half_extent = REFINERY.HALF
+		return REFINERY.new(self).build()
 	if map_id == FOREST_RIDGE_ID:
 		_half_extent = FOREST_RIDGE.HALF
 		return FOREST_RIDGE.new(self).build()
@@ -212,10 +218,7 @@ func build(map_id: int, layout_seed: int, width: float, objective := 0, size := 
 		_add_box(Vector3(0.0, 2.75, edge), Vector3(width + 1.0, 5.5, 0.5), _wall_mat, 0.0, "brick")
 		_add_box(Vector3(edge, 2.75, 0.0), Vector3(0.5, 5.5, width), _wall_mat, 0.0, "brick")
 
-	_container_fittings = SurfaceTool.new()
-	_container_fittings.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var fittings := _world_mat("corrugated", Color("#5f6059"), 0.52, 1.0, 0.55, true)
-	_container_fittings.set_material(fittings)
+	_begin_container_fittings()
 	if width == 20.0:
 		_build_small_yard(map_id)
 	else:
@@ -229,11 +232,7 @@ func build(map_id: int, layout_seed: int, width: float, objective := 0, size := 
 	_build_yard_routes(map_id, width)
 	if width > 20.0:
 		_scatter_passages(rng)
-	var details := MeshInstance3D.new()
-	details.name = "ContainerHardware"
-	details.mesh = _container_fittings.commit()
-	add_child(details)
-	_container_fittings = null
+	_finish_container_fittings()
 	var crates := _scatter_crates(rng)
 	_build_respawn_grid(steps, spacing, _half_extent)
 	_scatter_foliage(rng)
@@ -397,9 +396,9 @@ func _build_small_yard(map_id: int) -> void:
 
 
 func minimap_outline(bounds: Rect2 = Rect2(), floor_height := 0.0) -> Array[PackedVector2Array]:
-	var forest := get_node_or_null("ForestRidge")
-	if forest:
-		return forest.get_meta(&"minimap_outline")
+	for child in get_children():
+		if child.has_meta(&"minimap_outline"):
+			return child.get_meta(&"minimap_outline")
 	var outline: Array[PackedVector2Array] = []
 	var limited := bounds.has_area()
 	var bodies := find_children("*", "StaticBody3D", limited or has_node("Station"), false)
@@ -569,6 +568,20 @@ func _add_container(center: Vector3, size_x: float, size_z: float, color: Color,
 		var face := Transform3D(Basis(Vector3.UP, facing),
 			center + Vector3(0, 0, (size.x if along_x else size.z) * 0.5).rotated(Vector3.UP, facing))
 		_add_container_fittings(face, end_width, size.y)
+
+
+func _begin_container_fittings() -> void:
+	_container_fittings = SurfaceTool.new()
+	_container_fittings.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_container_fittings.set_material(_world_mat("corrugated", Color("#5f6059"), 0.52, 1.0, 0.55, true))
+
+
+func _finish_container_fittings() -> void:
+	var details := MeshInstance3D.new()
+	details.name = "ContainerHardware"
+	details.mesh = _container_fittings.commit()
+	add_child(details)
+	_container_fittings = null
 
 
 func _add_container_fittings(face: Transform3D, width: float, height: float) -> void:
@@ -941,7 +954,8 @@ func _apply_bullet_holes(cover: PerforatedCover) -> void:
 			material.set_shader_parameter("metalness", source.metallic)
 			material.set_shader_parameter("normal_strength", source.normal_scale if source.normal_enabled else 0.0)
 			material.set_shader_parameter("use_mesh_uv", not source.uv1_triplanar)
-			material.set_shader_parameter("roughness_factor", source.roughness if not source.uv1_triplanar else 1.0)
+			material.set_shader_parameter("roughness_factor", source.roughness)
+			material.set_shader_parameter("roughness_channel", source.roughness_texture_channel)
 			mesh.material_override = material
 			cover.materials.append(material)
 	var points := cover.points.duplicate()
@@ -1043,18 +1057,21 @@ static func navigation_mesh(map_id: int, width: float, authored: Node3D = null) 
 	mesh.geometry_collision_mask = BALANCE.WORLD_MASK
 	var village := map_id == VILLAGE_ID
 	var forest := map_id == FOREST_RIDGE_ID
+	var refinery := map_id == REFINERY_ID
 	var farpost := map_id == OUTPOST_ID
 	var station := map_id == STATION_ID
-	mesh.cell_size = 0.30 if forest or farpost else (0.25 if village else 0.20)
+	mesh.cell_size = 0.30 if forest or farpost or refinery else (0.25 if village else 0.20)
 	mesh.cell_height = 0.1
-	mesh.agent_radius = 0.60 if forest or farpost else (0.50 if village else 0.40)
+	mesh.agent_radius = 0.60 if forest or farpost or refinery else (0.50 if village else 0.40)
 	mesh.agent_height = 1.8
-	mesh.agent_max_climb = 0.3 if village or forest or farpost or station else 0.1
+	mesh.agent_max_climb = 0.3 if village or forest or farpost or station or refinery else 0.1
 	mesh.filter_walkable_low_height_spans = true
 	if is_instance_valid(authored):
 		var bounds: Rect2 = authored.get_arena_bounds()
 		mesh.filter_baking_aabb = AABB(Vector3(bounds.position.x, -0.5, bounds.position.y),
 			Vector3(bounds.size.x, 4.5, bounds.size.y))
+	elif refinery:
+		mesh.filter_baking_aabb = REFINERY.BAKE_BOUNDS
 	elif forest:
 		mesh.filter_baking_aabb = FOREST_RIDGE.TERRAIN_BAKE_BOUNDS
 	elif station:

@@ -25,7 +25,7 @@ func _run() -> void:
 		for frame in 4:
 			await physics_frame
 		_check_layout(map, width)
-		var ladders := map.get_node("WorkshopLadders")
+		var ladders := map.get_node("ArenaLadders")
 		_check("Each hall has two exterior ladders", ladders.ladders.size() == 4)
 		for ladder in ladders.ladders:
 			actor.global_position = ladder.bottom + ladder.face * 0.48

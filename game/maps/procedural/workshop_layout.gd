@@ -40,7 +40,7 @@ func build(width: float) -> Array[Transform3D]:
 	_compact = width < 40.0
 	_materials()
 	_ladders = Ladders.new()
-	_ladders.name = "WorkshopLadders"
+	_ladders.name = "ArenaLadders"
 	_map.add_child(_ladders)
 	var ground := ShaderMaterial.new()
 	ground.shader = FLOOR

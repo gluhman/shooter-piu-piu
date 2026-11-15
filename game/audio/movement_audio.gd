@@ -5,31 +5,20 @@ const CONCRETE_VARIANTS := preload("res://game/audio/footsteps.gd").STEPS
 const REMOTE_HEARING_DISTANCE := 50.0
 const STEPS := {
 	"concrete": preload("res://assets/match_audio/step_concrete.wav"),
-	"metal": preload("res://assets/match_audio/step_metal.wav"),
 	"wood": preload("res://assets/match_audio/step_wood.wav"),
 }
 
-const STATION_STEPS := {
-	"station_steel": [
-		preload("res://game/maps/station/audio/steel_01.wav"),
-		preload("res://game/maps/station/audio/steel_02.wav"),
-		preload("res://game/maps/station/audio/steel_03.wav"),
-		preload("res://game/maps/station/audio/steel_04.wav"),
-		preload("res://game/maps/station/audio/steel_05.wav"),
-		preload("res://game/maps/station/audio/steel_06.wav"),
-	],
-	"station_stairs": [
-		preload("res://game/maps/station/audio/stairs_01.wav"),
-		preload("res://game/maps/station/audio/stairs_02.wav"),
-		preload("res://game/maps/station/audio/stairs_03.wav"),
-		preload("res://game/maps/station/audio/stairs_04.wav"),
-		preload("res://game/maps/station/audio/stairs_05.wav"),
-		preload("res://game/maps/station/audio/stairs_06.wav"),
-	],
-}
+const METAL_VARIANTS := [
+	preload("res://assets/match_audio/step_metal.wav"),
+	preload("res://assets/match_audio/step_metal_02.wav"),
+	preload("res://assets/match_audio/step_metal_03.wav"),
+	preload("res://assets/match_audio/step_metal_04.wav"),
+	preload("res://assets/match_audio/step_metal_05.wav"),
+	preload("res://assets/match_audio/step_metal_06.wav"),
+]
 
 static var _concrete_steps: AudioStreamRandomizer
-static var _station_steps: Dictionary[String, AudioStreamRandomizer] = {}
+static var _metal_steps: AudioStreamRandomizer
 
 var actor: CharacterBody3D
 var use_acoustics := false
@@ -49,12 +38,11 @@ func _ready() -> void:
 		_concrete_steps.add_stream(0, STEPS["concrete"])
 		for variant in CONCRETE_VARIANTS:
 			_concrete_steps.add_stream(_concrete_steps.streams_count, variant)
-		for surface: String in STATION_STEPS:
-			var steps := AudioStreamRandomizer.new()
-			steps.playback_mode = AudioStreamRandomizer.PLAYBACK_RANDOM_NO_REPEATS
-			for sample: AudioStream in STATION_STEPS[surface]:
-				steps.add_stream(steps.streams_count, sample)
-			_station_steps[surface] = steps
+		_metal_steps = AudioStreamRandomizer.new()
+		_metal_steps.playback_mode = AudioStreamRandomizer.PLAYBACK_RANDOM_NO_REPEATS
+		for sample: AudioStream in METAL_VARIANTS:
+			_metal_steps.add_stream(_metal_steps.streams_count, sample)
+
 	bus = &"Footsteps"
 	_map = actor.get_parent().get_node("Map")
 	_floor_ray.collision_mask = actor.collision_mask
@@ -159,10 +147,11 @@ func _play_step(level: float, pitch: float, rise: float = 0.0) -> void:
 	if surface == "concrete" and collider and _map.has_wood_deck_at(hit.position):
 		surface = "wood"
 	var sample: AudioStream = STEPS.get(surface, _concrete_steps) if surface != "concrete" else _concrete_steps
-	if _station_steps.has(surface):
-		sample = _station_steps[surface]
-		level -= 3.0
-		pitch *= 0.96
+	if surface in ["metal", "station_steel", "station_stairs"]:
+		sample = _metal_steps
+		if surface != "metal":
+			level -= 3.0
+			pitch *= 0.96
 	var varied_pitch := pitch * randf_range(0.91, 1.09)
 	if use_acoustics:
 		play_one_shot(sample, level, varied_pitch)

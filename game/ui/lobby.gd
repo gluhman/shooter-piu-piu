@@ -722,13 +722,16 @@ func _refresh_map_size_labels() -> void:
 	var office: bool = not random and _map.selected == game.MAP.OFFICE_ID
 	var forest_map: bool = not random and _map.selected == game.MAP.FOREST_RIDGE_ID
 	var forest := forest_map and not objective
+	var refinery: bool = not random and _map.selected == game.MAP.REFINERY_ID
 	if office:
 		_map_size.select(0)
+	elif refinery:
+		_map_size.select(game.MAP.REFINERY.SIZE)
 	elif training or forest:
 		_map_size.select(game.MAP.DEFAULT_SIZE)
 	elif village and _map_size.selected < game.MAP.VILLAGE_MIN_SIZE:
 		_map_size.select(game.MAP.VILLAGE_MIN_SIZE)
-	_map_size.disabled = training or office or forest or _screen == Screen.GUEST
+	_map_size.disabled = training or office or forest or refinery or _screen == Screen.GUEST
 	for index in _map_size.item_count:
 		var reason: String = game.OBJECTIVE_LAYOUT.reason(_mode.selected, _map.selected, index)
 		_map_size.set_item_disabled(index, reason != "" or village and index < game.MAP.VILLAGE_MIN_SIZE)
@@ -744,6 +747,9 @@ func _refresh_map_size_labels() -> void:
 			_map_size.set_item_text(index, "%s · %.1f × %.1f м" % [label, dimensions.x, dimensions.y])
 		elif training:
 			_map_size.set_item_text(index, "%s · учебный комплекс" % label)
+		elif refinery:
+			var width: float = game.MAP.REFINERY.WIDTH
+			_map_size.set_item_text(index, "%d × %d м" % [width, width])
 		elif forest_map:
 			var width: float = game.MAP.FOREST_RIDGE.WIDTH
 			var dimensions := "%d × %d м" % [width, width]

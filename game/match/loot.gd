@@ -185,7 +185,7 @@ func interact(actor: Node) -> void:
 	var works := _match.get_node("Fieldworks")
 	if works.is_mounted(actor) and works.interact(actor):
 		return
-	var ladders := _match.get_node_or_null("Map/WorkshopLadders")
+	var ladders := _match.get_node_or_null("Map/ArenaLadders")
 	if ladders and (actor.is_climbing_ladder() or actor.start_ladder_climb(ladders.route_in_view(actor))):
 		return
 	if _hover_door >= 0:
@@ -298,11 +298,11 @@ func _update_prompt() -> void:
 	_hover_door = -1
 	var prompt := ""
 	if actor and actor.accepts_gameplay_input() and not actor.is_climbing_ladder():
-		var ladders := _match.get_node_or_null("Map/WorkshopLadders")
+		var ladders := _match.get_node_or_null("Map/ArenaLadders")
 		if ladders:
 			var route: PackedVector3Array = ladders.route_in_view(actor)
 			if not route.is_empty():
-				var action := "подняться на крышу" if route[-1].y > actor.global_position.y else "спуститься по лестнице"
+				var action := "подняться по лестнице" if route[-1].y > actor.global_position.y else "спуститься по лестнице"
 				_hud.show_loot_prompt("%s — %s" % [GameSettings.binding_label(&"interact"), action])
 				return
 		var best := INF

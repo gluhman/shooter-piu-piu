@@ -18,7 +18,7 @@ func _run() -> void:
 		for arena in MAP.MAP_NAMES.size():
 			for size in MAP.SIZE_WIDTHS.size():
 				if not LAYOUT.supports(mode, arena, size):
-					if size != 0 and arena not in [MAP.OFFICE_ID, MAP.TEST_RANGE_ID]:
+					if size != 0 and arena not in [MAP.OFFICE_ID, MAP.TEST_RANGE_ID, MAP.REFINERY_ID]:
 						_check(false, "unexpected exclusion")
 					continue
 				await _test_layout(mode, arena, size)
@@ -33,6 +33,8 @@ func _test_layout(mode: int, arena: int, size: int) -> void:
 	root.add_child(map)
 	var authored: Node3D
 	var width: float = MAP.FOREST_RIDGE.WIDTH if arena == MAP.FOREST_RIDGE_ID else MAP.SIZE_WIDTHS[size]
+	if arena == MAP.REFINERY_ID:
+		width = MAP.REFINERY.WIDTH
 	if arena == MAP.BREAKWATER_ID:
 		authored = BREAKWATER.instantiate()
 		map.add_child(authored)
@@ -55,7 +57,8 @@ func _test_layout(mode: int, arena: int, size: int) -> void:
 	var nav := region.get_navigation_map()
 	for attempt in 40:
 		var spawn: Vector3 = layout.spawns[0][0]
-		if NavigationServer3D.map_get_closest_point_owner(nav, spawn) == region.get_rid():
+		if NavigationServer3D.map_get_iteration_id(nav) > 0 \
+				and NavigationServer3D.map_get_closest_point_owner(nav, spawn) == region.get_rid():
 			break
 		await create_timer(0.025).timeout
 	await physics_frame

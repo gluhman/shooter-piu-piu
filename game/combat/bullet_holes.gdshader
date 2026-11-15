@@ -13,6 +13,7 @@ uniform float metalness = 0.0;
 uniform float normal_strength = 1.0;
 uniform bool use_mesh_uv = false;
 uniform float roughness_factor = 1.0;
+uniform int roughness_channel = 0;
 uniform bool moving_cover = false;
 uniform mat4 mesh_to_cover;
 uniform int hole_count = 0;
@@ -72,7 +73,9 @@ void fragment() {
 	ALBEDO = mix(paint, edge_color, rim * 0.92) * (FRONT_FACING ? 1.0 : 0.24);
 	ALBEDO = mix(ALBEDO, paint * 0.37, dent * 0.84);
 	METALLIC = metalness * projected(metallic_texture, p, w).r;
-	ROUGHNESS = mix((use_mesh_uv ? texture(roughness_texture, UV).r : projected(roughness_texture, p, w).r) * roughness_factor, 0.8, rim);
+	vec4 roughness_sample = use_mesh_uv ? texture(roughness_texture, UV) : projected(roughness_texture, p, w);
+	float roughness = roughness_channel < 4 ? roughness_sample[roughness_channel] : dot(roughness_sample.rgb, vec3(0.333333));
+	ROUGHNESS = mix(roughness * roughness_factor, 0.8, rim);
 	AO = projected(ao_texture, p, w).r;
 	NORMAL_MAP = use_mesh_uv ? texture(normal_texture, UV * texture_scale.xy).rgb : projected(normal_texture, p, w).rgb;
 	NORMAL_MAP_DEPTH = normal_strength;

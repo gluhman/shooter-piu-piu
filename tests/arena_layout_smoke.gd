@@ -20,7 +20,7 @@ func _run() -> void:
 		var sizes := [0, 1, 2]
 		if id == MAP.VILLAGE_ID:
 			sizes = [1, 2]
-		elif id in [MAP.OFFICE_ID, MAP.TEST_RANGE_ID, MAP.FOREST_RIDGE_ID]:
+		elif id in [MAP.OFFICE_ID, MAP.TEST_RANGE_ID, MAP.FOREST_RIDGE_ID, MAP.REFINERY_ID]:
 			sizes = [2]
 		for size: int in sizes:
 			seed(43)
@@ -42,14 +42,14 @@ func _run() -> void:
 			_check(is_instance_valid(navigation) and navigation.navigation_mesh.get_polygon_count() > 0,
 				context + " has navigation")
 			_check(not map.minimap_outline(bounds).is_empty(), context + " has a minimap")
-			if id in [MAP.OUTPOST_ID, MAP.STATION_ID, MAP.FOREST_RIDGE_ID]:
+			if id in [MAP.OUTPOST_ID, MAP.STATION_ID, MAP.FOREST_RIDGE_ID, MAP.REFINERY_ID]:
 				var crates: Array = arena.get_node("Loot")._crates
 				var destinations := PackedVector3Array(map.respawn_points)
 				for crate: StaticBody3D in crates:
 					destinations.append(crate.position)
 				_check(crates.size() == 4 and _spawns_clear(map, map.respawn_points),
 					context + " has four crates and clear respawns")
-				if id == MAP.FOREST_RIDGE_ID:
+				if id in [MAP.FOREST_RIDGE_ID, MAP.REFINERY_ID]:
 					destinations.append_array(spawns)
 				if id == MAP.STATION_ID:
 					var half: float = arena.arena_width() * 0.5
@@ -72,6 +72,13 @@ func _run() -> void:
 				_check(hill > 0.8 and hill < 5.0 and minf(west_drain, east_drain) > -3.0
 					and maxf(west_drain, east_drain) < -0.65,
 					context + " has collision on the hill and in both ditches (%.2f, %.2f, %.2f m)" % [hill, west_drain, east_drain])
+			if id == MAP.REFINERY_ID:
+				var yard := _ground_height(map, Vector2(-18, 0))
+				var deck := _ground_height(map, Vector2.ZERO)
+				var hill := _ground_height(map, Vector2(24, 0))
+				_check(arena.arena_width() == MAP.REFINERY.WIDTH and absf(yard) < 0.03
+					and is_equal_approx(deck, MAP.REFINERY.DECK) and is_equal_approx(hill, MAP.REFINERY.DECK),
+					context + " has a fixed footprint and colliding yard, deck and hillside")
 			if id == MAP.FOREST_RIDGE_ID:
 				var forest: Node3D = map.get_node("ForestRidge")
 				_check(arena.arena_width() == 100.0 and forest.find_children("Spawn*", "Marker3D", false, false).size() == 4,

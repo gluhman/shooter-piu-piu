@@ -28,6 +28,8 @@ const DAYLIGHT_EXPOSURE := preload("res://game/maps/lighting/daylight_exposure.t
 const STATION_HDRI := "res://game/maps/station/art/qwantani_night_puresky_2k.hdr"
 const STATION_SKY := preload("res://game/maps/station/station_sky.gdshader")
 const STATION_EXPOSURE := preload("res://game/maps/station/station_exposure.tres")
+const REFINERY_HDRI := "res://game/maps/refinery/art/hilltop_construction_4k.hdr"
+const REFINERY_SKY := preload("res://game/maps/refinery/refinery_sky.gdshader")
 const FARPOST_HDRI := "res://game/maps/farpost/art/sky/kloofendal_overcast_puresky_2k.hdr"
 const OFFICE_ENVIRONMENT := preload("res://game/maps/lighting/office_environment.tres")
 const OFFICE_EXPOSURE := preload("res://game/maps/lighting/office_exposure.tres")
@@ -46,6 +48,7 @@ const ARENA_WEATHER := {
 	MAP.OUTPOST_ID: {"hour": 11.0, "wind": Vector2(35, 1.0)},
 	MAP.STATION_ID: {"hour": 16.0, "wind": Vector2(-45, 0.6)},
 	MAP.FOREST_RIDGE_ID: {"hour": 15.2, "wind": Vector2(-28, 0.7)},
+	MAP.REFINERY_ID: {"hour": 14.3, "wind": Vector2(36, 0.65)},
 }
 const MIN_RESPAWN_DISTANCE := 12.0
 const TRAINING_RESPAWN_DELAY := 0.75
@@ -186,7 +189,7 @@ func _apply_indirect_lighting(environment: Environment) -> void:
 		and DisplayServer.get_name() != "headless" and not Net.dedicated
 	# Closely spaced floors and roofs lose too much ambient fill with SDFGI.
 	environment.sdfgi_enabled = enabled and map_id not in [
-		MAP.OFFICE_ID, MAP.BREAKWATER_ID, MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.FOREST_RIDGE_ID, MAP.OUTPOST_ID, MAP.STATION_ID]
+		MAP.OFFICE_ID, MAP.BREAKWATER_ID, MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.FOREST_RIDGE_ID, MAP.OUTPOST_ID, MAP.STATION_ID, MAP.REFINERY_ID]
 	var probe := $Map.get_node_or_null("OfficeBounce") as VoxelGI
 	if is_instance_valid(_breakwater):
 		probe = _breakwater.get_node("HallBounce") as VoxelGI
@@ -301,10 +304,14 @@ func arena_width() -> float:
 		return _breakwater.get_arena_bounds().size.x
 	if map_id == MAP.FOREST_RIDGE_ID:
 		return MAP.FOREST_RIDGE.WIDTH
+	if map_id == MAP.REFINERY_ID:
+		return MAP.REFINERY.WIDTH
 	return MAP.SIZE_WIDTHS[map_size]
 
 
 func _selected_map_size(arena: int, size: int) -> int:
+	if arena == MAP.REFINERY_ID:
+		return MAP.REFINERY.SIZE
 	if objective_mode():
 		return clampi(size, 1, MAP.SIZE_WIDTHS.size() - 1)
 	if arena == MAP.OFFICE_ID:
@@ -1066,6 +1073,22 @@ func _configure_farpost_sky() -> void:
 	$WorldEnvironment.sun_energy = 0.74
 
 
+func _configure_refinery_sky() -> void:
+	var environment: Environment = $WorldEnvironment.environment
+	var material := ShaderMaterial.new()
+	material.shader = REFINERY_SKY
+	material.set_shader_parameter("hilltop", load(REFINERY_HDRI))
+	var sky := Sky.new()
+	sky.sky_material = material
+	environment.sky = sky
+	environment.fog_density = 0.0019
+	environment.fog_aerial_perspective = 0.38
+	environment.adjustment_contrast = 1.12
+	environment.adjustment_saturation = 1.12
+	environment.ambient_light_energy = 0.71
+	$WorldEnvironment.sun_energy = 1.10
+
+
 func _configure_station_sky() -> void:
 	var environment: Environment = $WorldEnvironment.environment
 	var panorama := ShaderMaterial.new()
@@ -1124,13 +1147,16 @@ func _build_arena(layout_seed: int) -> void:
 			$WorldEnvironment/MoonLight.hide()
 		var farpost_sky := map_id == MAP.OUTPOST_ID and DisplayServer.get_name() != "headless"
 		var station_sky := map_id == MAP.STATION_ID and DisplayServer.get_name() != "headless"
-		if farpost_sky or station_sky:
+		var refinery_sky := map_id == MAP.REFINERY_ID and DisplayServer.get_name() != "headless"
+		if farpost_sky or station_sky or refinery_sky:
 			$WorldEnvironment.environment = _base_environment.duplicate()
 		_grade_arena(world_environment)
 		if farpost_sky:
 			_configure_farpost_sky()
 		if station_sky:
 			_configure_station_sky()
+		if refinery_sky:
+			_configure_refinery_sky()
 		var supplies: Array[Transform3D] = $Map.build(map_id, layout_seed, arena_width(), play_mode, map_size)
 		if map_id == MAP.OFFICE_ID and GameSettings.supports_advanced_graphics() and not Net.dedicated:
 			var probe := VoxelGI.new()
@@ -1320,12 +1346,12 @@ func _reserve_bot_slots(count: int) -> void:
 
 
 func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
-	var forest := map_id == MAP.FOREST_RIDGE_ID
-	var forest_slots := PackedInt32Array()
-	if forest and not team_deathmatch:
+	var grouped_starts := map_id in [MAP.FOREST_RIDGE_ID, MAP.REFINERY_ID]
+	var free_slots := PackedInt32Array()
+	if grouped_starts and not team_deathmatch:
 		for slot in player_slots.size():
 			if player_slots[slot] == 0:
-				forest_slots.append(slot)
+				free_slots.append(slot)
 	if team_deathmatch:
 		count = _bot_slots.size()
 	for index in count:
@@ -1334,10 +1360,10 @@ func _spawn_bots(count: int, difficulty: int, token: int = -1) -> void:
 		if team_deathmatch and player_slots[_bot_slots[index]] != 0:
 			continue
 		var slot := _bot_slots[index] if team_deathmatch else 0
-		var team_start := team_deathmatch and (forest or map_id in [MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.OFFICE_ID])
+		var team_start := team_deathmatch and (grouped_starts or map_id in [MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.OFFICE_ID])
 		var spawn_index := slot if team_start else Net.MAX_PLAYERS + index
-		if forest and index < forest_slots.size():
-			spawn_index = forest_slots[index]
+		if grouped_starts and index < free_slots.size():
+			spawn_index = free_slots[index]
 		if objectives and _objective_pending.has(slot):
 			continue
 		var at: Vector3 = _objective_initial_spawn(slot) if objectives else $Map.initial_spawn(spawn_index)

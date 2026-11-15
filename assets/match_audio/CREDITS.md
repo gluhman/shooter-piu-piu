@@ -11,3 +11,5 @@
 Усиленный взрыв использует [запись Explosion #2](../arsenal/CREDITS.md) с добавленными низкочастотным ударом и затуханием.
 
 Фон Dust II использует [Looping Gentle Wind Ambience on an Open Desert Plain](https://freesound.org/people/dhallcomposer/sounds/697217/) от dhallcomposer, [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Стереозапись отфильтрована, зациклена с плавным стыком и сохранена в Ogg Vorbis.
+
+Шесть вариантов шагов по металлу взяты из предоставленной записи [Footsteps on Metal Floor — nate_asdfg](https://freesound.org/people/nate_asdfg/sounds/463811/) (CC0). [Версия записи на Pixabay](https://pixabay.com/sound-effects/household-footsteps-on-metal-floor-45788/). Шаги нарезаны по отдельности, сведены в моно и выровнены по уровню.

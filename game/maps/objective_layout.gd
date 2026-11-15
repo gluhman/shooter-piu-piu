@@ -2,6 +2,7 @@ extends RefCounted
 ## Objective footprints and covered deployment lanes, by arena variant.
 
 const PLACEMENTS := preload("res://game/maps/objective_placements.gd")
+const REFINERY := preload("res://game/maps/refinery/refinery_layout.gd")
 const STATION_SCENERY := preload("res://game/maps/station/station_scenery.gd")
 const WOODEN_CRATE := preload("res://assets/arena_props/village/wooden_crate_01.glb")
 const TOOL_CHEST := preload("res://game/maps/station/art/metal_tool_chest/metal_tool_chest_2k.gltf")
@@ -17,12 +18,14 @@ const TEAMS := [Color("#409df3"), Color("#f46861")]
 static func supports(mode: int, arena: int, size: int) -> bool:
 	if mode < HILL:
 		return true
-	return mode <= DEFUSE and size in [1, 2] and arena >= 0 and arena < 12 and arena not in [7, 8]
+	return mode <= DEFUSE and PLACEMENTS.MAPS.get("%d-%d" % [arena, size], {}).has(str(mode))
 
 
 static func reason(mode: int, arena: int, size: int) -> String:
 	if supports(mode, arena, size):
 		return ""
+	if arena == REFINERY.MAP_ID:
+		return "Для НПЗ доступен один размер арены."
 	if arena in [7, 8] or size == 0:
 		return "Недостаточно места для целей и командных маршрутов."
 	return "Для этого варианта нет проверенной расстановки целей."
@@ -75,7 +78,7 @@ static func _add_hill_cover(map: Node3D, arena: int, placements: Array) -> void:
 		match arena:
 			3, 4, 11:
 				body = _model_cover(map, WOODEN_CRATE, at, yaw, Vector3(1.58, 1.33, 0.97), "wood")
-			5, 10:
+			5, 10, REFINERY.MAP_ID:
 				body = _model_cover(map, TOOL_CHEST, at, yaw, Vector3(1.60, 1.31, 0.85), "metal")
 			_:
 				body = map._road_barrier(at, yaw, 1.8, 1.32)
