@@ -70,6 +70,7 @@ func _run() -> void:
 			_hill(obj, player, enemy, ally)
 		elif mode == LAYOUT.FLAG:
 			_flag(obj, player, enemy)
+			await _check_flag_while_hit(obj, player, enemy)
 		else:
 			await physics_frame
 			_defuse(obj, player, enemy)
@@ -176,6 +177,63 @@ func _flag(obj: Node3D, player: Node3D, enemy: Node3D) -> void:
 	obj.rules.flags[0].at = obj.centers[0] + Vector3.FORWARD * 5
 	obj.rules.step(obj, [])
 	_check(obj.rules.flags[0].state == FLAG.HOME, "expired dropped flag auto-returns")
+
+
+func _check_flag_while_hit(obj: Node3D, player: CharacterBody3D, enemy: CharacterBody3D) -> void:
+	var center: Vector3 = obj.centers[0] + Vector3.UP * 0.055
+	enemy.global_position = center
+	var has_lane := false
+	for index in 16:
+		var outward := Vector3.BACK.rotated(Vector3.UP, index * TAU / 16.0)
+		player.global_position = center + outward * 3.5
+		player.rotation.y = atan2(outward.x, outward.z)
+		if obj.can_see(player, enemy):
+			has_lane = true
+			break
+	_check(has_lane, "defender starts with a clear sightline to the flag carrier")
+	if not has_lane:
+		return
+	obj.rules.flags[0].state = FLAG.CARRIED
+	obj.rules.flags[0].carrier = enemy
+	obj.broadcast(true)
+	var flag: Node3D = obj.display._props[0]
+	obj.display._update_carried_props(obj.game)
+	_check(flag.visible, "enemy flag model is visible before the hit")
+
+	# A narrow obstacle blocks the spotting ray at torso height, leaving the flag above it exposed.
+	var midpoint: Vector3 = player.aim_center().lerp(enemy.aim_center(), 0.5)
+	var obstacle := StaticBody3D.new()
+	var collider := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(0.42, 0.22, 0.42)
+	collider.shape = shape
+	obstacle.add_child(collider)
+	obj.game.get_node("Map").add_child(obstacle)
+	obstacle.global_position = midpoint
+	await physics_frame
+	await physics_frame
+	_check(not obj.can_see(player, enemy), "low cover blocks the carrier spotting ray")
+
+	var health_before: float = enemy.health
+	var hit: Vector3 = enemy.hurtbox_center("chest")
+	var impact := {"point": hit, "velocity": player.global_position.direction_to(enemy.global_position), "source": "ak47"}
+	enemy.take_damage(18.0, player.score_id(), "chest", 1.0, impact)
+	obj.broadcast(true)
+	await process_frame
+	_check(enemy.health > 0.0 and enemy.health < health_before and obj.rules.flags[0].carrier == enemy,
+		"nonlethal hit leaves the enemy carrying the flag")
+	_check(flag.visible and flag.global_position.distance_to(enemy.objective_socket.global_position) < 0.9,
+		"enemy flag stays on the back after a hit even when the torso spotting ray is blocked")
+	_check(not obj.rules.view(-1).flags[0].mounted, "unassigned observers receive no carrier attachment")
+	_check(obj.state.flags[0].at == Vector3.INF and not obj.state.flags[0].allied_carrier,
+		"blocked sightline does not publish the enemy carrier location for HUD markers")
+	enemy.take_damage(1000.0, player.score_id())
+	obj.broadcast(true)
+	await process_frame
+	_check(obj.rules.flags[0].state == FLAG.DROPPED and flag.visible and flag.global_position.is_equal_approx(obj.rules.flags[0].at),
+		"lethal hit places the dropped flag on the ground")
+	obstacle.queue_free()
+	obj.rules._home(obj, 0)
 
 
 func _defuse(obj: Node3D, player: CharacterBody3D, enemy: CharacterBody3D) -> void:

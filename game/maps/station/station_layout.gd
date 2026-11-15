@@ -1,5 +1,6 @@
 extends RefCounted
 
+const SHOT_COLLISION := preload("res://game/combat/shot_collision.gd")
 const SCENERY := preload("station_scenery.gd")
 const DECK_HEIGHT := 3.8
 const TOP := DECK_HEIGHT * 2.0
@@ -28,8 +29,7 @@ func build(width: float) -> Array[Transform3D]:
 	_ramp_width = 2.20 if width <= 20.0 else 2.65
 	_root.name = "Station"
 	_map.add_child(_root)
-	if _visuals:
-		_scenery = SCENERY.new(_root, _half, _inner, DECK_HEIGHT, ROOF)
+	_scenery = SCENERY.new(_root, _half, _inner, DECK_HEIGHT, ROOF, _visuals)
 	_block(Vector3(0, -SLAB * 0.5, 0), Vector3(width, SLAB, width), "deck")
 	_build_shell()
 	for deck in [1, 2]:
@@ -92,8 +92,7 @@ func _build_stairs(side: float, base: float) -> void:
 	var collider := CollisionShape3D.new()
 	collider.shape = shape
 	body.add_child(collider)
-	if _visuals:
-		_scenery.stairs(low, high, _ramp_width, STAIRS_PER_FLIGHT)
+	_scenery.stairs(low, high, _ramp_width, STAIRS_PER_FLIGHT, SHOT_COLLISION.detail_for(body))
 	for edge in [-1.0, 1.0]:
 		var offset: Vector3 = Vector3.RIGHT * edge * (_ramp_width * 0.5 - 0.055)
 		_rail(low + offset, high + offset)
@@ -108,8 +107,8 @@ func _rail(start: Vector3, finish: Vector3) -> void:
 	body.basis = Basis.looking_at(finish - start)
 	_root.add_child(body)
 	_box_shape(body, Vector3.ZERO, Vector3(0.10, 0.96, start.distance_to(finish)))
-	if _visuals:
-		_scenery.railing(start, finish)
+	body.name = "Guardrail"
+	_scenery.railing(start, finish, SHOT_COLLISION.detail_for(body))
 
 
 func _build_rooms() -> void:
@@ -195,8 +194,6 @@ func _place_spawns_and_supplies() -> Array[Transform3D]:
 
 
 func _block(center: Vector3, size: Vector3, finish: String) -> void:
-	if _visuals:
-		_scenery.fixture(center, size, finish)
 	var body := StaticBody3D.new()
 	body.position = center
 	body.set_meta(&"impact_surface", "metal")
@@ -204,6 +201,10 @@ func _block(center: Vector3, size: Vector3, finish: String) -> void:
 		body.set_meta(&"footstep_surface", "station_steel")
 	_root.add_child(body)
 	_box_shape(body, Vector3.ZERO, size)
+	if finish in ["core", "tool", "power"]:
+		_scenery.fixture(center, size, finish, SHOT_COLLISION.detail_for(body))
+	elif _visuals:
+		_scenery.fixture(center, size, finish)
 
 
 func _box_shape(body: StaticBody3D, center: Vector3, size: Vector3) -> void:

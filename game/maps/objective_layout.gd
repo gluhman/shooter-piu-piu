@@ -130,7 +130,9 @@ static func _model_cover(map: Node3D, scene: PackedScene, at: Vector3, yaw: floa
 		bounds = bounds.merge(transformed) if bounds.has_volume() else transformed
 	model.scale = extent / bounds.size
 	model.position = -bounds.get_center() * model.scale
-	return map._add_box(at + Vector3.UP * extent.y * 0.5, extent, null, yaw, surface, null, model)
+	var body: StaticBody3D = map._add_box(at + Vector3.UP * extent.y * 0.5, extent, null, yaw, surface, null, model)
+	map.SHOT_COLLISION.use_model(body, model)
+	return body
 
 
 static func contains(feet: Vector3, center: Vector3, radius: float) -> bool:

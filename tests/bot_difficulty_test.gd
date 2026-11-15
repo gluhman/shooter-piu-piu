@@ -31,18 +31,25 @@ func _run() -> void:
 		if not is_equal_approx(bot._reaction_time(), reaction) or not is_equal_approx(bot._stabilization_time(), settling):
 			_fail("aim timings must decrease by 20 percent per level")
 			return
-		bot._aim_elapsed = 0.0
+		bot._aim_elapsed = -1.0
 		bot.rotation.y = PI * 0.5
+		if bot._track_aim(Vector3.FORWARD, 1.0 / 60.0) or not is_equal_approx(bot.rotation.y, PI * 0.5):
+			_fail("the acquisition tick must start the turn at zero elapsed time")
+			return
 		if bot._track_aim(Vector3.FORWARD, reaction * 0.5) or absf(bot.rotation.y) < 0.1:
 			_fail("aim snapped before the reaction time elapsed")
 			return
 		if bot._track_aim(Vector3.FORWARD, reaction * 0.5) or bot._aim_sway.length() > deg_to_rad(3.0):
 			_fail("aim did not sway within its radius at the end of the turn")
 			return
-		if not bot._track_aim(Vector3.FORWARD, settling + 0.001) or not bot._aim_sway.is_zero_approx() or absf(bot.rotation.y) > 0.001:
+		var sway: Vector2 = bot._aim_sway
+		if bot._track_aim(Vector3.FORWARD, settling * 0.5) or sway.is_equal_approx(bot._aim_sway) or bot._aim_sway.length() > deg_to_rad(1.5):
+			_fail("aim must keep swaying with a shrinking radius while settling")
+			return
+		if not bot._track_aim(Vector3.FORWARD, settling * 0.5 + 0.001) or not bot._aim_sway.is_zero_approx() or absf(bot.rotation.y) > 0.001:
 			_fail("aim did not settle onto the target")
 			return
-	bot._aim_elapsed = 0.0
+	bot._aim_elapsed = -1.0
 	var primary: String = bot.weapon_id
 	var sidearm: String = bot.weapon_in_slot("secondary")
 	if sidearm.is_empty():
@@ -67,6 +74,24 @@ func _run() -> void:
 	if absf(easy.dot(toward)) > 0.05 or elite.dot(toward) >= -0.4:
 		_fail("elite must retreat when wounded while easy keeps strafing")
 		return
+	# A respawn reuses the same player node. The previous aim must not carry over.
+	bot.equip("ak47")
+	bot.difficulty = 2
+	bot._shoot_wait = 0.0
+	bot._aim_elapsed = 1.0
+	bot._aim_target_revision = player._spawn_revision
+	player._apply_respawn("ak47", player.global_position, player._spawn_revision + 1)
+	await physics_frame
+	await physics_frame
+	var ammo: Vector2i = bot.gun.ammo_counts()
+	var step := 1.0 / Engine.physics_ticks_per_second
+	var earliest_shot := ceili(0.512 / step)
+	for tick in range(earliest_shot + 1):
+		bot._fight(player, profile, bot._difficulty_modifiers(), ammo, step, false)
+		var expected := ammo.x if tick < earliest_shot else ammo.x - 1
+		if bot.gun.ammo_counts().x != expected:
+			_fail("Hard bot fired before stabilization or failed to fire when settled (tick %d)" % tick)
+			return
 	print("BOT_DIFFICULTY_OK")
 	arena.queue_free()
 	await create_timer(0.25).timeout

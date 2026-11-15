@@ -1,6 +1,7 @@
 extends Node3D
 
 const ALERT_SOUND := preload("res://game/match/objectives/alert_sound.gd")
+const FLAG := preload("res://game/match/objectives/flag.gd")
 const LAYOUT := preload("res://game/maps/objective_layout.gd")
 const STEEL := preload("res://assets/arsenal/metal_plate_02_diff.jpg")
 const STEEL_NORMAL := preload("res://assets/arsenal/metal_plate_02_nor_gl.jpg")
@@ -88,9 +89,10 @@ func _update_carried_props(game: Node3D) -> void:
 	if _director.mode == LAYOUT.FLAG:
 		var flags: Array = _director.state.get("flags", [])
 		for index in flags.size():
-			if not flags[index].mounted:
+			var flag: Dictionary = flags[index]
+			if flag.state != FLAG.CARRIED:
 				continue
-			var actor: Node = game.combatant(flags[index].carrier)
+			var actor: Node = game.combatant(flag.carrier) if flag.mounted else null
 			if not is_instance_valid(actor) or not is_instance_valid(actor.objective_socket) or actor.health <= 0:
 				_props[index].hide()
 				continue
@@ -125,10 +127,13 @@ func update_state(state: Dictionary) -> void:
 			for index in _props.size():
 				var flag: Dictionary = state.flags[index]
 				_zones[index].show()
-				_props[index].visible = flag.at.is_finite() and not flag.mounted and flag.state != 1
-				if flag.at.is_finite() and not flag.mounted:
+				if flag.state == FLAG.CARRIED:
+					continue
+				_props[index].visible = flag.at.is_finite()
+				if flag.at.is_finite():
 					_props[index].transform = Transform3D(Basis.IDENTITY, flag.at)
 					_cloth[index].set_shader_parameter("flutter", 1.0)
+			_update_carried_props(_director.game)
 		LAYOUT.DEFUSE:
 			for index in _zones.size():
 				_zones[index].visible = index < state.sites

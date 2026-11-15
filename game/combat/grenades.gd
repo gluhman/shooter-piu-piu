@@ -263,7 +263,7 @@ func _throw(actor: Node, kind: String, released: bool, space: PhysicsDirectSpace
 	var camera := actor.get_node("Camera3D") as Camera3D
 	var shot_camera: Transform3D = actor.current_shot_transform(camera.global_transform)
 	var direction := -shot_camera.basis.z
-	var query := PhysicsRayQueryParameters3D.create(shot_camera.origin, shot_camera.origin + direction * 0.42, 1, [actor.get_rid()])
+	var query := PhysicsRayQueryParameters3D.create(shot_camera.origin, shot_camera.origin + direction * 0.42, Balance.WORLD_MASK, [actor.get_rid()])
 	query.hit_from_inside = true
 	var hit := space.intersect_ray(query)
 	var origin: Vector3 = query.to if hit.is_empty() else hit.position + hit.normal * 0.07

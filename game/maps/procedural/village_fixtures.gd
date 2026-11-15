@@ -12,6 +12,7 @@ class Door:
 	var shape: BoxShape3D
 	var center: Vector3
 	var opened := false
+	var swing := 0
 
 class WindowPane:
 	var sill: Transform3D
@@ -60,7 +61,7 @@ func add_door(portal: Transform3D, width: float, height: float, wood: Material, 
 			_box(door.leaf, Vector3(leaf_width - 0.13, 1.04, side * 0.068), Vector3(0.12, 0.17, 0.045), iron)
 			_box(door.leaf, Vector3(leaf_width - 0.16, 1.04, side * 0.104), Vector3(0.15, 0.043, 0.043), iron)
 	_doors.append(door)
-	_apply_door(door, false)
+	_apply_door(door, 0)
 	return door.leaf
 
 
@@ -107,9 +108,10 @@ func _hinge_transform(door: Door, angle: float) -> Transform3D:
 	return hinge
 
 
-func _apply_door(door: Door, opened: bool) -> void:
-	door.opened = opened
-	door.hinge.transform = _hinge_transform(door, PI * 0.5 if opened else 0.0)
+func _apply_door(door: Door, swing: int) -> void:
+	door.opened = swing != 0
+	door.swing = swing
+	door.hinge.transform = _hinge_transform(door, swing * PI * 0.5)
 
 
 func door_in_view(actor: Node3D) -> int:
@@ -118,7 +120,9 @@ func door_in_view(actor: Node3D) -> int:
 	var best := INF
 	for id in _doors.size():
 		var door := _doors[id]
-		var at := door.portal * Vector3(0.0, 1.10, -0.17)
+		var eye := door.portal.affine_inverse() * to_local(camera.origin)
+		var at := to_global(door.portal * Vector3(clampf(eye.x, -door.center.x * 0.72, door.center.x * 0.72),
+			clampf(eye.y, 0.38, door.shape.size.y - 0.20), -0.17))
 		var offset := at - camera.origin
 		var distance := offset.length()
 		if distance > DOOR_REACH or is_zero_approx(distance):
@@ -161,35 +165,122 @@ func _physics_process(_delta: float) -> void:
 			var actor: Node = _match.combatant(peer)
 			var id := _requests[peer]
 			if actor and actor.control_enabled and actor.health > 0.0 and id >= 0 and id == door_in_view(actor):
-				_toggle_door(id)
+				_toggle_door(id, actor)
 	_requests.clear()
 
 
-func _toggle_door(id: int) -> void:
+func _toggle_door(id: int, actor: Node3D) -> bool:
 	var door := _doors[id]
+	var side := (door.portal.affine_inverse() * to_local(actor.global_position)).z
+	var preferred := 1 if side >= -0.17 else -1
+	var options := [door.swing] if door.opened else [preferred, -preferred]
+	for swing: int in options:
+		if not _clear_swing(door, swing):
+			continue
+		_apply_door(door, 0 if door.opened else swing)
+		for peer in _match.match_peers():
+			net_fixture.rpc_id(peer, _match._map_revision, false, id, door.swing)
+		return true
+	return false
+
+
+func _clear_swing(door: Door, swing: int) -> bool:
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = door.shape
 	query.collision_mask = Balance.MOVEMENT_CAPSULE_MASK
-	# Test the swing as well as the final pose so a leaf cannot close through a player.
-	for step in 10:
-		var hinge := _hinge_transform(door, step * PI / 18.0)
+	var space := get_world_3d().direct_space_state
+	for step in range(0 if door.opened else 1, 10):
+		var hinge := _hinge_transform(door, swing * step * PI / 18.0)
 		query.transform = global_transform * hinge.translated_local(door.center)
-		if not get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty():
-			return
-	_apply_door(door, not door.opened)
-	for peer in _match.match_peers():
-		net_fixture.rpc_id(peer, _match._map_revision, false, id, door.opened)
+		if not space.intersect_shape(query, 1).is_empty():
+			return false
+	return true
 
 
-func open_door_on_path(from: Vector3, next: Vector3) -> void:
-	var direction := (next - from).slide(Vector3.UP).normalized()
-	var eye := from + Vector3.UP
-	var ray := PhysicsRayQueryParameters3D.create(eye, eye + direction * 1.15, Balance.WORLD_MASK)
-	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
-	if not hit.is_empty() and hit.collider.has_meta(&"village_door"):
+func open_door_on_path(actor: Node3D, direction: Vector3) -> Vector3:
+	var eye := actor.global_position + Vector3.UP * 0.95
+	var side := direction.cross(Vector3.UP)
+	var space := get_world_3d().direct_space_state
+	for offset in [0.0, -0.19, 0.19]:
+		var from: Vector3 = eye + side * offset
+		var ray := PhysicsRayQueryParameters3D.create(from, from + direction * 1.75, Balance.WORLD_MASK)
+		var hit := space.intersect_ray(ray)
+		if hit.is_empty() or not hit.collider.has_meta(&"village_door"):
+			continue
 		var id: int = hit.collider.get_meta(&"village_door")
-		if not _doors[id].opened:
-			_toggle_door(id)
+		var door := _doors[id]
+		if not door.opened and not _toggle_door(id, actor):
+			return to_global(door.portal * Vector3(0, 0, -0.17))
+		break
+	return Vector3.INF
+
+
+func bot_window_route(actor: Node3D, nav: RID, goal: Vector3, avoid: Vector3, excluded: int) -> Dictionary:
+	var origin := actor.global_position
+	var closest := INF
+	var result := {}
+	for id in _windows.size():
+		var window := _windows[id]
+		if window.height < actor.CROUCH_HEIGHT + 0.24:
+			continue
+		var sill := global_transform * window.sill
+		if id == excluded or origin.distance_squared_to(sill.origin) > 72.0:
+			continue
+		var local := sill.affine_inverse() * origin
+		var side := 1.0 if local.z >= 0.0 else -1.0
+		var entry := _window_feet(sill, side)
+		var exit := _window_feet(sill, -side)
+		if not entry.is_finite() or not exit.is_finite() or absf(entry.y - exit.y) > 0.60:
+			continue
+		var travel := _window_path_length(nav, origin, entry, avoid)
+		if travel > 8.0:
+			continue
+		var onward := _window_path_length(nav, exit, goal, avoid) if goal.is_finite() else 0.0
+		var score := travel + onward * 0.32
+		if score < closest:
+			closest = score
+			result = {"id": id, "entry": entry, "exit": exit, "direction": -sill.basis.z * side,
+				"jump": sqrt(2.0 * GRAVITY * (sill.origin.y - entry.y + 0.20))}
+	return result
+
+
+func _window_path_length(nav: RID, from: Vector3, to: Vector3, avoid: Vector3) -> float:
+	var path := NavigationServer3D.map_get_path(nav, from, to, true)
+	if path.is_empty() or path[0].distance_squared_to(from) > 0.80 or path[-1].distance_squared_to(to) > 0.65:
+		return INF
+	var length := 0.0
+	for index in range(1, path.size()):
+		var prev := path[index - 1]
+		var next := path[index]
+		if avoid.is_finite() and Geometry3D.get_closest_point_to_segment(avoid, prev, next).distance_squared_to(avoid) < 0.55:
+			# A bot already beside the jam can walk away from it.
+			if (prev - avoid).dot(next - prev) < 0.0:
+				return INF
+		length += prev.distance_to(next)
+	return length
+
+
+func _window_feet(sill: Transform3D, side: float) -> Vector3:
+	var point := sill * Vector3(0, 0, side * 0.82)
+	var ray := PhysicsRayQueryParameters3D.create(point - Vector3.UP * 0.35, point - Vector3.UP * 0.99, Balance.WORLD_MASK)
+	var ground := get_world_3d().direct_space_state.intersect_ray(ray)
+	return ground.position if not ground.is_empty() and ground.normal.y >= 0.7 else Vector3.INF
+
+
+func bot_break_window(id: int, actor: Node3D) -> bool:
+	var window := _windows[id]
+	if window.broken:
+		return true
+	var from: Vector3 = actor.aim_center()
+	var center := window.pane.global_position
+	if from.distance_squared_to(center) > 2.1 * 2.1:
+		return false
+	var query := PhysicsRayQueryParameters3D.create(from, center, Balance.SHOT_WORLD_MASK)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty() or hit.collider != window.pane:
+		return false
+	shatter(id, hit.position, hit.normal)
+	return window.broken
 
 
 func window_jump_speed(feet: Vector3, direction: Vector3, actor_height: float) -> float:
@@ -212,7 +303,7 @@ func shatter(id: int, at: Vector3, normal: Vector3) -> void:
 		return
 	_break_window(_windows[id])
 	for peer in _match.match_peers():
-		net_fixture.rpc_id(peer, _match._map_revision, true, id, true)
+		net_fixture.rpc_id(peer, _match._map_revision, true, id, 1)
 	_match.get_node("Ballistics").report_glass_shatter(at, normal)
 
 
@@ -250,7 +341,7 @@ func _break_window(window: WindowPane) -> void:
 func reset_round() -> void:
 	_requests.clear()
 	for door in _doors:
-		_apply_door(door, false)
+		_apply_door(door, 0)
 	for window in _windows:
 		window.broken = false
 		window.pane.collision_layer = Balance.WORLD_MASK
@@ -259,10 +350,10 @@ func reset_round() -> void:
 
 func send_state(peer: int) -> void:
 	for id in _doors.size():
-		net_fixture.rpc_id(peer, _match._map_revision, false, id, _doors[id].opened)
+		net_fixture.rpc_id(peer, _match._map_revision, false, id, _doors[id].swing)
 	for id in _windows.size():
 		if _windows[id].broken:
-			net_fixture.rpc_id(peer, _match._map_revision, true, id, true)
+			net_fixture.rpc_id(peer, _match._map_revision, true, id, 1)
 
 
 func set_door_collision(enabled: bool) -> void:
@@ -271,10 +362,10 @@ func set_door_collision(enabled: bool) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func net_fixture(revision: int, glass: bool, id: int, state: bool) -> void:
+func net_fixture(revision: int, glass: bool, id: int, state: int) -> void:
 	if revision != _match._map_revision or id < 0:
 		return
-	if glass and id < _windows.size() and state:
+	if glass and id < _windows.size() and state == 1:
 		_break_window(_windows[id])
-	elif not glass and id < _doors.size():
+	elif not glass and id < _doors.size() and absi(state) <= 1:
 		_apply_door(_doors[id], state)

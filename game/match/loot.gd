@@ -3,6 +3,7 @@ extends Node3D
 enum Kind { CRATE, WEAPON, AMMO, MEDKIT, BODY, ARMOR, GRENADE }
 
 const Balance := preload("res://game/combat/combat_balance.gd")
+const SHOT_COLLISION := preload("res://game/combat/shot_collision.gd")
 const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
 
 const CRATE_MODEL := preload("res://assets/arena_props/supply_crate.glb")
@@ -54,15 +55,25 @@ func build_crates(placements: Array[Transform3D], market_crate_count := 0) -> vo
 		collision.shape = shape
 		collision.position.y = shape.size.y * 0.5
 		crate.add_child(collision)
-		crate.set_meta(&"ballistic_size", shape.size)
-		crate.set_meta(&"ballistic_center", collision.position)
-		crate.set_meta(&"ballistic_resistance", 0.30)
 
 		var model := CRATE_MODEL.instantiate() as Node3D
 		model.scale = Vector3.ONE * CRATE_SCALE
 		model.rotation.y = PI * 0.5
 		crate.add_child(model)
 		var lid := model.find_child("old_military_crate_lid_a", true, false) as Node3D
+		var shell := SHOT_COLLISION.use_model(crate, model, lid)
+		shell.set_meta(&"ballistic_size", shape.size + Vector3.ONE * 0.06)
+		shell.set_meta(&"ballistic_center", collision.position)
+		shell.set_meta(&"ballistic_resistance", 0.30)
+		shell.set_meta(&"ballistic_mesh_exit", true)
+		var lid_body := AnimatableBody3D.new()
+		lid_body.sync_to_physics = false
+		lid_body.collision_layer = Balance.SHOT_GEOMETRY_MASK
+		lid_body.collision_mask = 0
+		lid_body.set_meta(&"impact_surface", "wood")
+		lid_body.set_meta(&"moving_surface", true)
+		lid.add_child(lid_body)
+		SHOT_COLLISION.add_meshes(lid_body, lid)
 		_crates.append(crate)
 		_lids.append(lid)
 		_open.append(false)
@@ -128,7 +139,7 @@ func drop_combatant(actor: Node, impact: Dictionary) -> void:
 	var ignored: Array[RID] = []
 	for combatant in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
 		ignored.append(combatant.get_rid())
-	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.25, at - Vector3.UP * 20.0, 1, ignored)
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.25, at - Vector3.UP * 20.0, Balance.WORLD_MASK, ignored)
 	var ground := get_world_3d().direct_space_state.intersect_ray(query)
 	if not ground.is_empty():
 		at.y = ground.position.y
@@ -160,7 +171,7 @@ func drop_combatant(actor: Node, impact: Dictionary) -> void:
 
 func _drop_offset(at: Vector3, offset: Vector3, ignored: Array[RID]) -> Vector3:
 	var from := at + Vector3.UP * 0.12
-	var query := PhysicsRayQueryParameters3D.create(from, from + offset, 1, ignored)
+	var query := PhysicsRayQueryParameters3D.create(from, from + offset, Balance.WORLD_MASK, ignored)
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	if hit.is_empty():
 		return at + offset
@@ -339,7 +350,7 @@ func _target_score(actor: Node, at: Vector3, crate: Node = null) -> float:
 
 
 func _line_clear(actor: Node, at: Vector3, crate: Node = null) -> bool:
-	var ray := PhysicsRayQueryParameters3D.create(actor.aim_center(), at, 1, [actor.get_rid()])
+	var ray := PhysicsRayQueryParameters3D.create(actor.aim_center(), at, Balance.WORLD_MASK, [actor.get_rid()])
 	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
 	return hit.is_empty() or hit.collider == crate
 

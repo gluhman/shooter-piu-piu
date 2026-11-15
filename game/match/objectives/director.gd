@@ -461,11 +461,7 @@ func broadcast(force := false) -> void:
 func snapshot(peer: int) -> Dictionary:
 	var slot: int = game.player_slots.find(peer)
 	var team := slot % 2 if slot >= 0 and not pending_slots.has(slot) else -1
-	var view: Dictionary
-	match mode:
-		LAYOUT.HILL: view = rules.view()
-		LAYOUT.FLAG: view = rules.view(team, peer, game.combatant(peer), self)
-		_: view = rules.view(team, peer)
+	var view: Dictionary = rules.view() if mode == LAYOUT.HILL else rules.view(team, peer)
 	var displayed_left := mini(left, _remaining_match_ticks())
 	var notice := _team_notice(team)
 	view.merge({"revision": revision, "left": displayed_left, "scores": scores, "target": target, "stats": statistics.duplicate(true),

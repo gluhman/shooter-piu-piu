@@ -1,6 +1,7 @@
 extends RefCounted
 
 const ART := "res://game/maps/station/art/"
+const SHOT_COLLISION := preload("res://game/combat/shot_collision.gd")
 const DECK_SHADER := preload("station_deck.gdshader")
 const HEIGHTFIELD := preload("../forest_ridge/art/gdt/terrain_heightfield.gd")
 const TERRAIN_MESH := preload("../forest_ridge/art/gdt/terrain_mesh_builder.gd")
@@ -17,6 +18,7 @@ const MODEL_PARTS := {
 }
 
 var _root: Node3D
+var _visuals: bool
 var _half: float
 var _inner: float
 var _rise: float
@@ -39,8 +41,11 @@ var _models: Dictionary = {}
 var _batches: Dictionary = {}
 
 
-func _init(root: Node3D, half_width: float, inner: float, rise: float, roof: float) -> void:
+func _init(root: Node3D, half_width: float, inner: float, rise: float, roof: float, visuals := true) -> void:
 	_root = root
+	_visuals = visuals
+	if not _visuals:
+		return
 	_half = half_width
 	_inner = inner
 	_rise = rise
@@ -62,12 +67,12 @@ func _init(root: Node3D, half_width: float, inner: float, rise: float, roof: flo
 	_panel.uv1_scale = Vector3.ONE * 0.62
 
 
-func fixture(center: Vector3, size: Vector3, kind: String) -> void:
+func fixture(center: Vector3, size: Vector3, kind: String, collision: StaticBody3D = null) -> void:
 	match kind:
 		"deck":
 			_box(center, size, _deck)
 		"core":
-			_core(center)
+			_core(center, collision)
 		"locker":
 			_locker(center, size)
 		"partition":
@@ -80,34 +85,38 @@ func fixture(center: Vector3, size: Vector3, kind: String) -> void:
 			var yaw := 0.0 if center.z > 0.0 else PI
 			if kind == "power":
 				yaw = -PI * 0.5 if center.x > 0.0 else PI * 0.5
-			_fit_model(kind, center - Vector3.UP * size.y * 0.5, size, yaw)
+			var model := _fit_model(kind, center - Vector3.UP * size.y * 0.5, size, yaw)
+			if collision:
+				SHOT_COLLISION.add_meshes(collision, model)
+			if not _visuals:
+				model.free()
 
 
-func stairs(low: Vector3, high: Vector3, width: float, count: int) -> void:
+func stairs(low: Vector3, high: Vector3, width: float, count: int, collision: StaticBody3D) -> void:
 	var run := absf(high.z - low.z) / count
 	var rise := (high.y - low.y) / count
 	var direction := signf(high.z - low.z)
 	for index in count:
 		var step := low.lerp(high, (index + 0.5) / count)
 		step.y = low.y + (index + 1) * rise
-		_box(step - Vector3.UP * (rise + 0.045) * 0.5, Vector3(width, rise + 0.045, run), _deck)
+		_box(step - Vector3.UP * (rise + 0.045) * 0.5, Vector3(width, rise + 0.045, run), _deck, Basis.IDENTITY, collision)
 		_box(step + Vector3(0, 0.020, -direction * (run * 0.5 - 0.027)),
-			Vector3(width - 0.13, 0.017, 0.051), _edge)
+			Vector3(width - 0.13, 0.017, 0.051), _edge, Basis.IDENTITY, collision)
 		if index % 4 == 0:
 			_box(step + Vector3(0, -0.077, -direction * (run * 0.5 + 0.006)),
-				Vector3(width * 0.64, 0.027, 0.023), _warm_light)
+				Vector3(width * 0.64, 0.027, 0.023), _warm_light, Basis.IDENTITY, collision)
 	var basis := Basis.looking_at(high - low)
-	_box(low.lerp(high, 0.5) - basis.y * 0.15, Vector3(width - 0.17, 0.19, low.distance_to(high)), _dark, basis)
+	_box(low.lerp(high, 0.5) - basis.y * 0.15, Vector3(width - 0.17, 0.19, low.distance_to(high)), _dark, basis, collision)
 
 
-func railing(start: Vector3, finish: Vector3) -> void:
+func railing(start: Vector3, finish: Vector3, collision: StaticBody3D) -> void:
 	for height in [0.11, 0.52, 0.93]:
 		_beam(start + Vector3.UP * height, finish + Vector3.UP * height, 0.064 if height > 0.9 else 0.033,
-			_amber if height > 0.9 else _edge)
+			_amber if height > 0.9 else _edge, collision)
 	var posts := maxi(1, ceili(start.distance_to(finish) / 1.48))
 	for index in posts + 1:
 		var at := start.lerp(finish, float(index) / posts)
-		_box(at + Vector3.UP * 0.46, Vector3(0.057, 0.92, 0.057), _edge)
+		_box(at + Vector3.UP * 0.46, Vector3(0.057, 0.92, 0.057), _edge, Basis.IDENTITY, collision)
 
 
 func finish(ramp_x: float, ramp_width: float) -> void:
@@ -264,24 +273,25 @@ func _lighting() -> void:
 				_light(Vector3(x, base + 3.18, z), AMBER, 4350.0, 9.0)
 
 
-func _core(center: Vector3) -> void:
-	_box(Vector3(0.0, 0.19, 0.0), Vector3(2.67, 0.38, 2.67), _dark)
-	_box(center, Vector3(2.48, 0.94, 2.48), _panel)
-	_box(Vector3(0, 1.15, 0), Vector3(2.58, 0.18, 2.58), _edge)
-	_box(Vector3(0, 1.25, 0), Vector3(1.62, 0.049, 1.62), _cyan_light)
-	_box(Vector3(0, 1.31, 0), Vector3(1.41, 0.074, 1.41), _dark)
-	_box(Vector3(0, 1.36, 0), Vector3(1.06, 0.035, 1.06), _screen)
+func _core(center: Vector3, collision: StaticBody3D) -> void:
+	_box(Vector3(0.0, 0.19, 0.0), Vector3(2.67, 0.38, 2.67), _dark, Basis.IDENTITY, collision)
+	_box(center, Vector3(2.48, 0.94, 2.48), _panel, Basis.IDENTITY, collision)
+	_box(Vector3(0, 1.15, 0), Vector3(2.58, 0.18, 2.58), _edge, Basis.IDENTITY, collision)
+	_box(Vector3(0, 1.25, 0), Vector3(1.62, 0.049, 1.62), _cyan_light, Basis.IDENTITY, collision)
+	_box(Vector3(0, 1.31, 0), Vector3(1.41, 0.074, 1.41), _dark, Basis.IDENTITY, collision)
+	_box(Vector3(0, 1.36, 0), Vector3(1.06, 0.035, 1.06), _screen, Basis.IDENTITY, collision)
 	for index in 5:
 		var length := [0.21, 0.48, 0.34, 0.59, 0.44]
 		_box(Vector3(-0.41 + length[index] * 0.5, 1.38, -0.34 + index * 0.14),
-			Vector3(length[index], 0.008, 0.026), _green_light)
+			Vector3(length[index], 0.008, 0.026), _green_light, Basis.IDENTITY, collision)
 	for wall in 4:
 		var basis := Basis(Vector3.UP, wall * PI * 0.5)
-		_box(basis * Vector3(0, 0.95, 1.25), Vector3(1.14, 0.054, 0.035), _cyan_light, basis)
-		_box(basis * Vector3(0, 0.62, 1.25), Vector3(1.77, 0.36, 0.04), _rubber, basis)
+		_box(basis * Vector3(0, 0.95, 1.25), Vector3(1.14, 0.054, 0.035), _cyan_light, basis, collision)
+		_box(basis * Vector3(0, 0.62, 1.25), Vector3(1.77, 0.36, 0.04), _rubber, basis, collision)
 		for slot in 11:
-			_box(basis * Vector3(-0.72 + slot * 0.144, 0.62, 1.28), Vector3(0.068, 0.29, 0.037), _cream, basis)
-		_label("TRANSFER", basis * Vector3(0, 0.84, 1.283), basis, 0.105, ICE)
+			_box(basis * Vector3(-0.72 + slot * 0.144, 0.62, 1.28), Vector3(0.068, 0.29, 0.037), _cream, basis, collision)
+		if _visuals:
+			_label("TRANSFER", basis * Vector3(0, 0.84, 1.283), basis, 0.105, ICE)
 
 
 func room(deck: int, side: float, corridor: float, room_x: float, room_end: float, door: float, door_half: float) -> void:
@@ -417,7 +427,7 @@ func _exterior() -> void:
 	_root.add_child(landscape)
 
 
-func _fit_model(kind: String, foot: Vector3, size: Vector3, yaw: float) -> void:
+func _fit_model(kind: String, foot: Vector3, size: Vector3, yaw: float) -> Node3D:
 	var asset: Array = MODEL_PARTS[kind]
 	var model_id: String = asset[0]
 	if not _models.has(kind):
@@ -439,6 +449,7 @@ func _fit_model(kind: String, foot: Vector3, size: Vector3, yaw: float) -> void:
 	direction.add_child(model)
 	pivot.add_child(direction)
 	_root.add_child(pivot)
+	return pivot
 
 
 func _bounds(node: Node3D, parent: Transform3D) -> AABB:
@@ -493,7 +504,13 @@ func _label(caption: String, at: Vector3, basis: Basis, character_height: float,
 	_root.add_child(label)
 
 
-func _box(at: Vector3, size: Vector3, material: Material, basis := Basis.IDENTITY) -> void:
+func _box(at: Vector3, size: Vector3, material: Material, basis := Basis.IDENTITY,
+		collision: StaticBody3D = null) -> void:
+	var placement := Transform3D(basis, at)
+	if collision:
+		SHOT_COLLISION.add_box(collision, size, _root.global_transform * placement)
+	if not _visuals:
+		return
 	if not _batches.has(material):
 		var surface := SurfaceTool.new()
 		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -501,13 +518,14 @@ func _box(at: Vector3, size: Vector3, material: Material, basis := Basis.IDENTIT
 		_batches[material] = surface
 	var box := BoxMesh.new()
 	box.size = size
-	_batches[material].append_from(box, 0, Transform3D(basis, at))
+	_batches[material].append_from(box, 0, placement)
 
 
-func _beam(start: Vector3, finish: Vector3, thickness: float, material: Material) -> void:
+func _beam(start: Vector3, finish: Vector3, thickness: float, material: Material,
+		collision: StaticBody3D = null) -> void:
 	var direction := finish - start
 	_box(start.lerp(finish, 0.5), Vector3(thickness, thickness, direction.length()),
-		material, Basis.looking_at(direction))
+		material, Basis.looking_at(direction), collision)
 
 
 func _flush_boxes() -> void:

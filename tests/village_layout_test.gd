@@ -228,6 +228,21 @@ func _check_fixtures(arena: Node3D) -> void:
 	_check("Interact opens and closes the door and updates its collision",
 		opened and clear and not door.opened and space.intersect_ray(ray).get("collider") == door.leaf)
 
+	for side in [-1, 1]:
+		var house = fixtures._doors[5]
+		actor.position = house.portal * Vector3(0, 0.07, -0.17 + side * 0.44)
+		actor.velocity = Vector3.ZERO
+		_face(actor, -house.portal.basis.z * side)
+		for frame in 8:
+			await physics_frame
+		_interact()
+		for frame in 8:
+			await physics_frame
+		_check("Player can open a house door from close range on side %d" % side,
+			house.opened and house.swing == side)
+		fixtures.reset_round()
+		await physics_frame
+
 	var window = fixtures._windows[2]
 	var sill: Transform3D = window.sill
 	var pane: StaticBody3D = window.pane

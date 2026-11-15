@@ -6,6 +6,8 @@ const BALANCE := preload("res://game/combat/combat_balance.gd")
 const REPLAN_SECONDS := [2.40, 1.55, 1.00, 0.65, 0.42]
 const COVER_SAMPLES := [6, 8, 10, 12, 16]
 const FLANK_SAMPLES := [0, 2, 4, 6, 8]
+const DEATH_ROUTE_SAMPLES := [6, 8, 12, 16, 24]
+const DEATH_RADIUS := 4.0
 const PEEK_DELAY := [0.0, 0.0, 2.7, 1.85, 1.25]
 const USE_COVER := ["hold", "screen", "escort", "wait_home"]
 
@@ -21,6 +23,18 @@ var _hold_left := 0.0
 var _peek := Vector3.INF
 var _peek_left := 0.0
 var _scan_time := 0.0
+var _death := Vector3.INF
+var _death_entry := Vector3.INF
+var _death_goal := Vector3.INF
+var _death_detour := Vector3.INF
+var _death_replan_left := 0.0
+var _death_bypassed := false
+var _advance_goal := Vector3.INF
+var _advance_eye := Vector3.INF
+var _advance_cover := Vector3.INF
+var _advance_retry := 0.0
+var _advance_hold := 0.0
+var _advance_escape := true
 
 
 func invalidate() -> void:
@@ -30,6 +44,221 @@ func invalidate() -> void:
 	cover = false
 	_hold_left = 0.0
 	_peek = Vector3.INF
+	_death_goal = Vector3.INF
+	_advance_goal = Vector3.INF
+	_advance_cover = Vector3.INF
+
+
+func remember_death(at: Vector3, approach: Vector3) -> void:
+	_death = at
+	_death_entry = at - approach * 3.3 if not approach.is_zero_approx() else Vector3.INF
+	_death_goal = Vector3.INF
+
+
+func clear_death() -> void:
+	_death = Vector3.INF
+	_death_goal = Vector3.INF
+
+
+func route_after_death(bot: Node3D, goal: Vector3, eye: Vector3, delta: float) -> Vector3:
+	if not _death.is_finite() or not goal.is_finite() or not bot._navigation_ready():
+		return goal
+	if not _death_goal.is_finite() or _death_goal.distance_squared_to(goal) > 4.0:
+		_death_goal = goal
+		_death_detour = Vector3.INF
+		_death_replan_left = 0.0
+		_death_bypassed = false
+	if _death_detour.is_finite() and _arrived(bot.global_position, _death_detour, 0.85):
+		_death_detour = Vector3.INF
+		_death_bypassed = true
+	_death_replan_left -= delta
+	if not _death_bypassed and not _death_detour.is_finite() and _death_replan_left <= 0.0:
+		var level: int = bot._difficulty_index()
+		_death_replan_left = REPLAN_SECONDS[level]
+		_death_detour = _choose_death_detour(bot, goal, eye, level)
+	return _death_detour if _death_detour.is_finite() else goal
+
+
+func _choose_death_detour(bot: Node3D, goal: Vector3, eye: Vector3, level: int) -> Vector3:
+	var nav: RID = bot._navigation.get_navigation_map()
+	var origin: Vector3 = bot.global_position
+	var direct := NavigationServer3D.map_get_path(nav, origin, goal, true)
+	var shortest := _path_length(direct, goal)
+	if shortest == INF or shortest < 2.0:
+		return Vector3.INF
+	var direct_risk := _death_risk(direct)
+	if direct_risk < 0.75:
+		return Vector3.INF
+	var space: PhysicsDirectSpaceState3D = bot.get_world_3d().direct_space_state
+	var best := shortest + direct_risk * 4.0
+	var result := Vector3.INF
+	var radial := _flat(origin - _death)
+	if radial.is_zero_approx():
+		radial = _flat(goal - _death)
+	var count: int = DEATH_ROUTE_SAMPLES[level]
+	for index in count:
+		var radius := DEATH_RADIUS + (0.9 if index % 2 == 0 else 3.0)
+		var angle := TAU * index / count + float(bot.slot % 4) * 0.11
+		var sample := _death + radial.rotated(Vector3.UP, angle) * radius
+		var point := NavigationServer3D.map_get_closest_point(nav, sample)
+		if not _candidate(point, sample, _death, 0.0, 1.6) or _arrived(origin, point, 1.85):
+			continue
+		var first := NavigationServer3D.map_get_path(nav, origin, point, true)
+		var second := NavigationServer3D.map_get_path(nav, point, goal, true)
+		var length := _path_length(first, point) + _path_length(second, goal)
+		if length > shortest * 1.5 + 9.0:
+			continue
+		var risk := _death_risk(first) + _death_risk(second)
+		if risk >= direct_risk - 0.5:
+			continue
+		var score := length + risk * 4.0
+		if level >= 2 and _near_cover(space, point, eye):
+			score -= 0.8 * level
+		if score < best:
+			best = score
+			result = point
+	return result
+
+
+func route_around_obstruction(bot: Node3D, goal: Vector3, blocked: Vector3) -> Vector3:
+	var nav: RID = bot._navigation.get_navigation_map()
+	var origin: Vector3 = bot.global_position
+	var direct := NavigationServer3D.map_get_path(nav, origin, goal, true)
+	var length := _path_length(direct, goal)
+	var risk := _point_risk(direct, blocked)
+	if length == INF or risk < 0.45:
+		return Vector3.INF
+	var best := length * 1.65 + 9.0
+	var alternate := Vector3.INF
+	var forward := _flat(goal - origin)
+	for index in 20:
+		var angle := (index % 10) * TAU / 10.0
+		var sample := blocked + forward.rotated(Vector3.UP, angle) * (4.0 if index < 10 else 8.0)
+		var point := NavigationServer3D.map_get_closest_point(nav, sample)
+		if not _candidate(point, sample, blocked, 0.0, 1.5) or _arrived(origin, point, 1.8):
+			continue
+		var first := NavigationServer3D.map_get_path(nav, origin, point, true)
+		var second := NavigationServer3D.map_get_path(nav, point, goal, true)
+		var travel := _path_length(first, point) + _path_length(second, goal)
+		if travel >= best or _point_risk(first, blocked) + _point_risk(second, blocked) > risk - 0.40:
+			continue
+		best = travel
+		alternate = point
+	return alternate
+
+
+func _point_risk(path: PackedVector3Array, point: Vector3) -> float:
+	var weight := Vector3(1.0, 3.0, 1.0)
+	var risk := 0.0
+	for index in range(1, path.size()):
+		risk += _length_inside(path[index - 1] * weight, path[index] * weight, point * weight, 1.5)
+	return risk
+
+
+func taking_fire() -> void:
+	_advance_retry = 0.0
+
+
+func advance_under_fire(bot: Node3D, goal: Vector3, eye: Vector3, pressured: bool,
+		assault: bool, delta: float) -> Vector3:
+	if not eye.is_finite() or not goal.is_finite() or not bot._navigation_ready():
+		_advance_goal = Vector3.INF
+		_advance_cover = Vector3.INF
+		return goal
+	var origin: Vector3 = bot.global_position
+	var level: int = bot._difficulty_index()
+	if not _advance_goal.is_finite() or _advance_goal.distance_squared_to(goal) > 4.0:
+		_advance_goal = goal
+		_advance_cover = Vector3.INF
+		_advance_retry = 0.0
+		_advance_escape = true
+	if _advance_eye.distance_squared_to(eye) > 12.25 and _advance_cover.is_finite():
+		var space: PhysicsDirectSpaceState3D = bot.get_world_3d().direct_space_state
+		if not _near_cover(space, _advance_cover, eye):
+			_advance_cover = Vector3.INF
+			_advance_retry = 0.0
+	_advance_retry -= delta
+	if _advance_cover.is_finite():
+		if not _arrived(origin, _advance_cover, 0.65):
+			return _advance_cover
+		_advance_hold -= delta
+		if _advance_hold > 0.0:
+			return _advance_cover
+		_advance_cover = Vector3.INF
+		_advance_retry = 0.0
+	if _advance_retry > 0.0 or _arrived(origin, goal, 1.9):
+		return goal
+	_advance_eye = eye
+	_advance_retry = REPLAN_SECONDS[level]
+	_advance_cover = _choose_advance_cover(bot, goal, eye, level, assault, pressured and _advance_escape)
+	if not _advance_cover.is_finite():
+		return goal
+	_advance_escape = false
+	_advance_hold = lerpf(0.78, 0.42, level / 4.0)
+	return _advance_cover
+
+
+func _choose_advance_cover(bot: Node3D, goal: Vector3, eye: Vector3, level: int, assault: bool,
+		allow_retreat: bool) -> Vector3:
+	var origin: Vector3 = bot.global_position
+	var nav: RID = bot._navigation.get_navigation_map()
+	var direct := NavigationServer3D.map_get_path(nav, origin, goal, true)
+	var remaining := _path_length(direct, goal)
+	if remaining == INF or remaining < 2.0:
+		return Vector3.INF
+	var space: PhysicsDirectSpaceState3D = bot.get_world_3d().direct_space_state
+	var toward := _flat(direct[1] - origin)
+	var count: int = COVER_SAMPLES[level]
+	var best := INF
+	var result := Vector3.INF
+	for radius in [2.6, 5.2]:
+		for index in count:
+			var sample := origin + toward.rotated(Vector3.UP, TAU * index / count) * float(radius)
+			var point := NavigationServer3D.map_get_closest_point(nav, sample)
+			if not _candidate(point, sample, origin, 0.0, 1.0) or _arrived(origin, point, 1.45):
+				continue
+			if not _near_cover(space, point, eye):
+				continue
+			var first := NavigationServer3D.map_get_path(nav, origin, point, true)
+			var travel := _path_length(first, point)
+			if travel > 7.5:
+				continue
+			var after := _path_length(NavigationServer3D.map_get_path(nav, point, goal, true), goal)
+			var progress := remaining - after
+			if progress < (-2.0 if allow_retreat else 0.9):
+				continue
+			var firing_angle := assault and _visible(space, point + Vector3.UP * 1.47, eye)
+			var score := (travel * 0.65 + _exposure(space, first, eye, level) * (1.3 + level * 0.27)
+				- progress * 0.85 - (2.1 if firing_angle else 0.0))
+			if score < best:
+				best = score
+				result = point
+	return result
+
+
+func _death_risk(path: PackedVector3Array) -> float:
+	var risk := 0.0
+	var height_weight := Vector3(1.0, 3.5, 1.0)
+	for index in range(1, path.size()):
+		var from := path[index - 1] * height_weight
+		var to := path[index] * height_weight
+		risk += _length_inside(from, to, _death * height_weight, DEATH_RADIUS)
+		if _death_entry.is_finite():
+			risk += _length_inside(from, to, _death_entry * height_weight, 2.3)
+	return risk
+
+
+func _length_inside(from: Vector3, to: Vector3, center: Vector3, radius: float) -> float:
+	var length := from.distance_to(to)
+	if length < 0.001:
+		return 0.0
+	var axis := (to - from) / length
+	var along := (center - from).dot(axis)
+	var half_chord_squared := radius * radius - (from + along * axis).distance_squared_to(center)
+	if half_chord_squared <= 0.0:
+		return 0.0
+	var half_chord := sqrt(half_chord_squared)
+	return maxf(0.0, minf(length, along + half_chord) - maxf(0.0, along - half_chord))
 
 
 func update(bot: Node3D, order: Dictionary, target: Node3D, delta: float) -> Dictionary:
@@ -168,7 +397,8 @@ func _choose_flank(bot: Node3D, order: Dictionary, eye: Vector3, level: int) -> 
 	if direct == INF:
 		return Vector3.INF
 	var flag_run := kind == "flank_steal"
-	var best := direct + level * 1.3 + _exposure(space, direct_path, eye, level) * 1.5
+	var weight := 1.25 + 0.48 * level
+	var best := direct + level * 1.3 + _exposure(space, direct_path, eye, level) * weight
 	if flag_run:
 		best += 14.0
 	var result := Vector3.INF
@@ -189,7 +419,6 @@ func _choose_flank(bot: Node3D, order: Dictionary, eye: Vector3, level: int) -> 
 		var length := _path_length(first, point) + _path_length(second, center)
 		if length > direct * 1.55 + 4.0:
 			continue
-		var weight := 1.25 + 0.48 * level
 		var risk := _exposure(space, first, eye, level) + _exposure(space, second, eye, level) * 0.65
 		var score := length + risk * weight - absf(angle) * level * 1.2
 		if _near_cover(space, point, eye):
@@ -255,12 +484,22 @@ func _near_cover(space: PhysicsDirectSpaceState3D, point: Vector3, eye: Vector3)
 		return false
 	var toward := from.direction_to(eye)
 	var stop := from + toward * minf(2.8, from.distance_to(eye))
-	var query := PhysicsRayQueryParameters3D.create(from, stop, BALANCE.WORLD_MASK)
-	return not space.intersect_ray(query).is_empty()
+	return not _visible(space, from, stop)
+
+
+func has_firing_angle(bot: Node3D, point: Vector3, eye: Vector3) -> bool:
+	return _visible(bot.get_world_3d().direct_space_state, point + Vector3.UP * 1.47, eye)
 
 
 func _visible(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3) -> bool:
-	return space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, BALANCE.WORLD_MASK)).is_empty()
+	var query := PhysicsRayQueryParameters3D.create(from, to, BALANCE.SHOT_WORLD_MASK)
+	var hit := space.intersect_ray(query)
+	while not hit.is_empty() and hit.collider.has_meta(&"village_glass"):
+		var ignored := query.exclude
+		ignored.append(hit.rid)
+		query.exclude = ignored
+		hit = space.intersect_ray(query)
+	return hit.is_empty()
 
 
 func _flat(offset: Vector3) -> Vector3:

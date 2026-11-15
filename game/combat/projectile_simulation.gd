@@ -252,7 +252,7 @@ func _step(id: int, projectile: Projectile, delta: float, space: PhysicsDirectSp
 
 	var launch_speed: float = ammo.speed
 	var energy_ratio := minf(1.0, next_velocity.length_squared() / (launch_speed * launch_speed))
-	var path := _redirect(projectile, hit, direction, energy_ratio * float(ammo.power), id)
+	var path := _redirect(projectile, hit, direction, energy_ratio * float(ammo.power), id, space)
 	if not path.is_empty():
 		_continue_flight(id, projectile, hit, direction, path, energy_ratio)
 		return
@@ -260,7 +260,8 @@ func _step(id: int, projectile: Projectile, delta: float, space: PhysicsDirectSp
 	_end_flight(id, projectile, true)
 
 
-func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3, energy: float, seed_value: int) -> Dictionary:
+func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3, energy: float, seed_value: int,
+		space: PhysicsDirectSpaceState3D) -> Dictionary:
 	var collider := hit.collider as Node3D
 	var normal: Vector3 = hit.normal
 	if collider == null or normal.is_zero_approx():
@@ -282,7 +283,16 @@ func _redirect(projectile: Projectile, hit: Dictionary, direction: Vector3, ener
 	var wood: bool = (material == "wood" and Balance.WEAPON_CLASSES[projectile.profile] != "shotgun" or laminate) and not projectile.penetrated_wood
 	if not steel and not wood:
 		return {}
-	var exit := _cover_exit(collider, hit.position, direction)
+	var at: Vector3 = hit.position
+	var exit := _cover_exit(collider, at, direction)
+	if collider.get_meta(&"ballistic_mesh_exit", false):
+		# Use the box only to start the reverse ray outside the crate.
+		var query := PhysicsRayQueryParameters3D.create(at + direction * (float(exit.distance) + COVER_CLEARANCE),
+			at + direction * 0.001, Balance.SHOT_GEOMETRY_MASK)
+		var shell := space.intersect_ray(query)
+		if shell.get("collider") != collider:
+			return {}
+		exit = {"distance": at.distance_to(shell.position), "normal": shell.normal}
 	var thickness: float = exit.distance
 	var resistance := thickness * float(collider.get_meta(&"ballistic_resistance", 1.0))
 	var capacity := energy * incidence * (0.20 if steel else 0.62)
@@ -463,7 +473,7 @@ func _combat_query(source: CharacterBody3D) -> PhysicsRayQueryParameters3D:
 
 func world_query() -> PhysicsRayQueryParameters3D:
 	var query := PhysicsRayQueryParameters3D.new()
-	query.collision_mask = Balance.WORLD_MASK
+	query.collision_mask = Balance.SHOT_WORLD_MASK
 	query.hit_from_inside = true
 	return query
 
@@ -513,7 +523,8 @@ func _impact(hit: Dictionary, direction: Vector3, shot: Dictionary, distance: fl
 		and collider.get_meta(&"ballistic_material", "") == "laminate"
 	if attached_mark:
 		_record_cover_hit(collider, at, normal, shot.profile, force, false)
-	_report_impact(at, normal, surface, shot.profile, shot.shooter, damaged, force, headshot, not attached_mark)
+	var leave_mark := not attached_mark and not (is_instance_valid(collider) and collider.has_meta(&"moving_surface"))
+	_report_impact(at, normal, surface, shot.profile, shot.shooter, damaged, force, headshot, leave_mark)
 
 
 func _report_impact(at: Vector3, normal: Vector3, surface: String, profile: String, shooter: int,

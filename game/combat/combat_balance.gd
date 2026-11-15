@@ -450,15 +450,19 @@ const DATA := {
 		"movement_capsules": 2,
 		"hurtboxes": 3,
 		"grenade_projectiles": 4,
+		"movement_proxies": 5,
+		"shot_geometry": 6,
 		"bullet_query_layer_bits": [
 			1,
-			3
+			3,
+			6
 		],
 		"bullets_query_areas": true,
 		"bullets_query_bodies": true,
 		"grenade_collision_layer_bits": [
 			1,
-			2
+			2,
+			5
 		]
 	},
 	"reload": {
@@ -681,7 +685,11 @@ const GRENADES: Dictionary = DATA.grenades
 const ACCURACY: Dictionary = DATA.accuracy
 const MELEE: Dictionary = DATA.damage.melee
 const NETWORK: Dictionary = DATA.network
-const WORLD_MASK := 1 << (int(DATA.collision_layers.world) - 1)
+const MOVEMENT_PROXY_MASK := 1 << (int(DATA.collision_layers.movement_proxies) - 1)
+const SHOT_GEOMETRY_MASK := 1 << (int(DATA.collision_layers.shot_geometry) - 1)
+const SOLID_WORLD_MASK := 1 << (int(DATA.collision_layers.world) - 1)
+const WORLD_MASK := SOLID_WORLD_MASK | MOVEMENT_PROXY_MASK
+const SHOT_WORLD_MASK := SOLID_WORLD_MASK | SHOT_GEOMETRY_MASK
 const MOVEMENT_CAPSULE_MASK := 1 << (int(DATA.collision_layers.movement_capsules) - 1)
 const HURTBOX_MASK := 1 << (int(DATA.collision_layers.hurtboxes) - 1)
 const WORLD_AND_CAPSULES := WORLD_MASK | MOVEMENT_CAPSULE_MASK

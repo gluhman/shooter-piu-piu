@@ -1,6 +1,7 @@
 extends Node3D
 
 const BALANCE := preload("res://game/combat/combat_balance.gd")
+const SHOT_COLLISION := preload("res://game/combat/shot_collision.gd")
 const OBJECTIVE_LAYOUT := preload("res://game/maps/objective_layout.gd")
 
 const BULLET_HOLE_SHADER := preload("res://game/combat/bullet_holes.gdshader")
@@ -310,7 +311,9 @@ func _road_barrier(at: Vector3, yaw: float, width: float, height := 0.96) -> Sta
 	var bounds := AABB(Vector3(-0.7722, -0.4168, -0.3179), Vector3(1.5445, 0.8336, 0.6358))
 	model.scale = size / bounds.size
 	model.position = -bounds.get_center() * model.scale
-	return _add_box(at + Vector3.UP * size.y * 0.5, size, null, yaw, "concrete", null, model)
+	var body := _add_box(at + Vector3.UP * size.y * 0.5, size, null, yaw, "concrete", null, model)
+	SHOT_COLLISION.use_model(body, model)
+	return body
 
 
 func _build_test_range(width: float) -> Array[Transform3D]:

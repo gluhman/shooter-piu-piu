@@ -63,7 +63,8 @@ var _waypoint := 0
 var _patrol_direction := 1
 var _vision_wait := 0.0
 var _hearing_wait := 0.0
-var _aim_elapsed := 0.0
+var _aim_elapsed := -1.0
+var _aim_target_revision := -1
 var _aim_start := Vector2.ZERO
 var _aim_sway := Vector2.ZERO
 var _aim_phase := Vector2.ZERO
@@ -87,6 +88,19 @@ var _recovery_direction := Vector3.ZERO
 var _navigation: NavigationAgent3D
 var _navigation_synced := false
 var _path_target := Vector3.INF
+var _failed_route := Vector3.INF
+var _blocked_door := Vector3.INF
+var _failed_route_left := 0.0
+var _reroute_target := Vector3.INF
+var _reroute_waypoint := Vector3.INF
+var _window_route := {}
+var _window_time := 0.0
+var _window_jumping := false
+var _window_jump_speed := 0.0
+var _failed_window := -1
+var _under_fire_left := 0.0
+var _pressure_eye := Vector3.INF
+var _pressure_actor: Node3D
 var _last_seen := Vector3.INF
 var _search_left := 0.0
 var _incoming_fire := Vector3.INF
@@ -103,6 +117,7 @@ var _peeked_from_cover := false
 var _cover_cooldown := 0.0
 var _training_pose_left := 0.0
 var _objective_tactics := OBJECTIVE_TACTICS.new()
+var _last_approach := Vector3.ZERO
 var _sight_ray := PhysicsRayQueryParameters3D.new()
 
 var _ground_ray := PhysicsRayQueryParameters3D.new()
@@ -116,7 +131,7 @@ func _ready() -> void:
 	add_to_group("bot")
 	_grenades.clear()
 	if _server_rules():
-		_sight_ray.collision_mask = Balance.WORLD_AND_CAPSULES
+		_sight_ray.collision_mask = Balance.SHOT_WORLD_MASK | Balance.MOVEMENT_CAPSULE_MASK
 		_sight_ray.exclude = [get_rid()]
 		_ground_ray.collision_mask = Balance.WORLD_MASK
 		_navigation = NavigationAgent3D.new()
@@ -142,13 +157,21 @@ func shot_motion() -> Vector3:
 
 func take_damage(amount: float, killer_id: int = 0, zone: String = "chest", head_multiplier: float = 0.0, impact: Dictionary = {}) -> void:
 	var previous_health := health
+	var previous_armor := armor
 	super.take_damage(amount, killer_id, zone, head_multiplier, impact)
-	if health <= 0 or health == previous_health:
+	if health <= 0 or (health == previous_health and armor == previous_armor):
 		return
 	var attacker: Node = get_parent().combatant(killer_id)
 	if is_instance_valid(attacker) and attacker != self:
 		_incoming_fire = attacker.aim_center() + Vector3.UP * 0.4
 		if attacker is Node3D and attacker.control_enabled and attacker.health > 0 and not get_parent().same_team(score_id(), attacker.score_id()):
+			_under_fire_left = 5.0
+			_pressure_eye = attacker.aim_center()
+			_pressure_actor = attacker
+			if _target != attacker and _has_sight(attacker):
+				_target = attacker
+				_aim_elapsed = -1.0
+			_objective_tactics.taking_fire()
 			_last_seen = attacker.global_position
 			_search_left = SEARCH_TIME
 			_flank_point = Vector3.INF
@@ -156,6 +179,17 @@ func take_damage(amount: float, killer_id: int = 0, zone: String = "chest", head
 			_cover_goal = Vector3.INF
 			_holding_cover = false
 		_cover_cooldown = minf(_cover_cooldown, 0.3)
+
+
+func _commit(killer_id: int, impact: Dictionary = {}) -> void:
+	if health <= 0.0 and not _dead and _server_rules() and killer_id != score_id():
+		_objective_tactics.remember_death(gameplay_feet_position(), _last_approach)
+	super._commit(killer_id, impact)
+
+
+func restart_round() -> void:
+	_objective_tactics.clear_death()
+	super.restart_round()
 
 
 func _respawn_delay() -> float:
@@ -185,6 +219,7 @@ func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
 
 func _reset_behavior() -> void:
 	_objective_tactics.invalidate()
+	_last_approach = Vector3.ZERO
 	_waypoint = 0
 	for index in patrol_route.size():
 		if global_position.distance_squared_to(patrol_route[index]) < global_position.distance_squared_to(patrol_route[_waypoint]):
@@ -199,7 +234,7 @@ func _reset_behavior() -> void:
 	var vision: Vector2 = modifiers.vision
 	_vision_wait = randf_range(0.0, vision.y)
 	_hearing_wait = float(absi(combatant_id) % 7) * HEARING_INTERVAL / 7.0
-	_aim_elapsed = 0.0
+	_aim_elapsed = -1.0
 	_aim_sway = Vector2.ZERO
 	_weapon_switch_left = 0.0
 	_strafe_side = -1.0 if randf() < 0.5 else 1.0
@@ -216,6 +251,16 @@ func _reset_behavior() -> void:
 	_recovery_goal = Vector3.INF
 	_recovery_direction = Vector3.ZERO
 	_path_target = Vector3.INF
+	_failed_route = Vector3.INF
+	_blocked_door = Vector3.INF
+	_failed_route_left = 0.0
+	_reroute_target = Vector3.INF
+	_window_route.clear()
+	_window_jump_speed = 0.0
+	_failed_window = -1
+	_under_fire_left = 0.0
+	_pressure_eye = Vector3.INF
+	_pressure_actor = null
 	_last_seen = Vector3.INF
 	_search_left = 0.0
 	_incoming_fire = Vector3.INF
@@ -250,7 +295,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	if is_climbing_ladder():
-		_aim_elapsed = 0.0
+		_aim_elapsed = -1.0
 		_progress_start = Vector3.INF
 		_climb_ladder(delta)
 		return
@@ -275,7 +320,7 @@ func _physics_process(delta: float) -> void:
 		var next_target := _visible_target(vision_range)
 		if next_target != _target:
 			_target = next_target
-			_aim_elapsed = 0.0
+			_aim_elapsed = -1.0
 			_shots_since_reposition = 0
 	var target := _target if flash_left < 0.2 and is_instance_valid(_target) and _target.control_enabled and _target.health > 0 else null
 	_weapon_switch_left = maxf(0.0, _weapon_switch_left - delta)
@@ -300,6 +345,8 @@ func _physics_process(delta: float) -> void:
 		_search_left = maxf(0.0, _search_left - delta)
 	var objectives: Node3D = get_parent().objectives
 	_recovery_left = maxf(0.0, _recovery_left - delta)
+	_failed_route_left = maxf(0.0, _failed_route_left - delta)
+	_under_fire_left = maxf(0.0, _under_fire_left - delta)
 	if not objectives:
 		_update_crowding(delta)
 		if _dispersal_left <= 0.0 and _recovery_left <= 0.0:
@@ -308,7 +355,11 @@ func _physics_process(delta: float) -> void:
 	aiming = false
 	var wish := Vector3.ZERO
 	var speed := BOT_SPEED * float(modifiers.speed)
-	if objectives and objectives.bot_action(self):
+	if not _window_route.is_empty():
+		wish = _cross_window(delta)
+		speed = WALK_SPEED * 0.77
+		_face(wish, delta)
+	elif objectives and objectives.bot_action(self):
 		_face(wish, delta)
 	elif _recovery_left > 0.0 or _dispersal_left > 0.0:
 		_update_crouch(false)
@@ -334,11 +385,11 @@ func _physics_process(delta: float) -> void:
 		else:
 			wish = _wander() if ammo == Vector2i.ZERO else _search(float(profile.preferred), float(modifiers.flank))
 			_face(wish, delta)
-	if crouched:
+	if crouched and _window_route.is_empty():
 		speed *= 0.65
 
 	if not aiming:
-		_aim_elapsed = 0.0
+		_aim_elapsed = -1.0
 		_aim_sway = Vector2.ZERO
 		_camera.rotation.x = move_toward(_camera.rotation.x, 0.0, delta * 2.5)
 	speed *= armor_movement_scale()
@@ -348,21 +399,37 @@ func _physics_process(delta: float) -> void:
 	velocity.x = horizontal.x
 	velocity.z = horizontal.y
 	if is_on_floor():
-		velocity.y = JUMP_VELOCITY if _recovery_left > 0.0 and not crouched and _can_jump_obstacle(wish) else 0.0
+		velocity.y = _window_jump_speed
+		if velocity.y == 0.0 and _recovery_left > 0.0 and not crouched and _can_jump_obstacle(wish):
+			velocity.y = JUMP_VELOCITY
+		_window_jump_speed = 0.0
 	else:
 		velocity.y -= float(Balance.MOVEMENT.gravity_m_s2) * delta
 	move_and_slide()
+	var travel := get_position_delta()
+	if Vector2(travel.x, travel.z).length_squared() > 0.0004:
+		_last_approach = _flat_direction(travel)
 	_track_movement_audio(delta, true)
-	_check_movement_progress(wish, delta)
+	if _window_route.is_empty():
+		_check_movement_progress(wish, delta)
 
 
 func _play_objective(objectives: Node3D, target: Node3D, profile: Dictionary, modifiers: Dictionary,
 		ammo: Vector2i, delta: float) -> Vector3:
 	var order: Dictionary = objectives.bot_order(self)
 	var movement: Dictionary = _objective_tactics.update(self, order, target, delta)
-	var at: Vector3 = movement.at
+	var base: Vector3 = _objective_tactics.route_after_death(self, movement.at, movement.watch, delta)
+	var pressured := _under_fire_left > 0.0
+	var offensive: bool = order.kind in ["assault", "steal", "flank_steal", "plant", "intercept", "screen"]
+	var eye := _pressure_eye if pressured else Vector3.INF
+	if target and (target == _pressure_actor if pressured else offensive):
+		eye = target.aim_center()
+	var at := _objective_tactics.advance_under_fire(self, base, eye, pressured, offensive, delta)
 	var wish := _follow_path(at) if at.is_finite() and global_position.distance_squared_to(at) > 0.20 else Vector3.ZERO
-	_update_crouch(movement.crouch and is_on_floor())
+	var sheltered := at != base and global_position.distance_squared_to(at) < 0.65 * 0.65
+	var firing_angle: bool = sheltered and offensive and target != null and ammo.x > 0 and not gun.is_reloading() \
+		and _objective_tactics.has_firing_angle(self, at, eye)
+	_update_crouch(((at == base and movement.crouch) or (sheltered and not firing_angle)) and is_on_floor())
 	if ammo.y > 0 and (ammo.x == 0 or crouched and ammo.x <= COVER_RESERVE[_difficulty_index()]):
 		gun.reload_bot()
 	if target and _has_sight(target):
@@ -370,7 +437,7 @@ func _play_objective(objectives: Node3D, target: Node3D, profile: Dictionary, mo
 	elif not wish.is_zero_approx():
 		_face(wish, delta)
 	else:
-		var watch: Vector3 = movement.watch
+		var watch: Vector3 = eye if eye.is_finite() else movement.watch
 		if watch.is_finite():
 			_face(watch - global_position, delta)
 	return wish
@@ -380,6 +447,9 @@ func _fight(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Ve
 	var to_target: Vector3 = target.aim_center() - _camera.global_position
 	var stabilized := false
 	if _has_sight(target):
+		if _aim_target_revision != target._spawn_revision:
+			_aim_target_revision = target._spawn_revision
+			_aim_elapsed = -1.0
 		stabilized = _track_aim(to_target, delta)
 	var direction := _flat_direction(to_target)
 	var distance: float = global_position.distance_to(target.global_position)
@@ -430,10 +500,13 @@ func _stabilization_time() -> float:
 
 func _track_aim(offset: Vector3, delta: float) -> bool:
 	aiming = true
-	if _aim_elapsed == 0.0:
+	if _aim_elapsed < 0.0:
 		_aim_start = Vector2(rotation.y, _camera.rotation.x)
 		_aim_phase = Vector2(randf_range(0.0, TAU), randf_range(0.0, TAU))
-	_aim_elapsed += delta
+		# The acquisition tick marks the start of the turn.
+		_aim_elapsed = 0.0
+	else:
+		_aim_elapsed += delta
 	var reaction := _reaction_time()
 	var settling := clampf((_aim_elapsed - reaction) / _stabilization_time(), 0.0, 1.0)
 	var sway := Vector2(sin(_aim_elapsed * 21.0 + _aim_phase.x), sin(_aim_elapsed * 27.0 + _aim_phase.y))
@@ -594,6 +667,14 @@ func _check_movement_progress(wish: Vector3, delta: float) -> void:
 	_progress_left = PROGRESS_INTERVAL
 	if Vector2(moved.x, moved.z).length_squared() >= 0.22 * 0.22:
 		return
+	if _recovery_left <= 0.0 and _path_target.is_finite():
+		var door_jammed := _blocked_door.is_finite()
+		_failed_route = _blocked_door if door_jammed else global_position + _flat_direction(wish) * 0.65
+		_failed_route_left = 12.0
+		_reroute_target = Vector3.INF
+		var can_route_around := _navigation_ready() and _reroute_around_failure(_path_target) != _path_target
+		if (door_jammed or not can_route_around) and _try_window(_path_target):
+			return
 	_strafe_side *= -1.0
 	var direction := _flat_direction(wish).rotated(Vector3.UP, _strafe_side * PI / 2.0)
 	_start_recovery(-_flat_direction(wish) if _recovery_left > 0.0 else direction)
@@ -601,6 +682,7 @@ func _check_movement_progress(wish: Vector3, delta: float) -> void:
 
 func _start_recovery(direction: Vector3) -> void:
 	_objective_tactics.invalidate()
+	_reroute_target = Vector3.INF
 	_recovery_direction = direction if not direction.is_zero_approx() else -global_basis.z
 	_clear_movement_goals()
 	if not patrol_route.is_empty():
@@ -610,7 +692,7 @@ func _start_recovery(direction: Vector3) -> void:
 
 
 func _recovery_motion() -> Vector3:
-	var direction := _follow_path(_recovery_goal)
+	var direction := _follow_path(_recovery_goal, false)
 	if not direction.is_zero_approx():
 		return direction
 	for angle in [0.0, 0.65, -0.65, 1.3, -1.3, PI]:
@@ -618,6 +700,53 @@ func _recovery_motion() -> Vector3:
 		if _has_ground_ahead(candidate) and not test_move(global_transform, candidate * 0.45):
 			return candidate
 	return _recovery_direction
+
+
+func _try_window(goal: Vector3) -> bool:
+	var fixtures := get_parent().get_node_or_null("Map/VillageFixtures")
+	if not fixtures or not _navigation_ready():
+		return false
+	_window_route = fixtures.bot_window_route(self, _navigation.get_navigation_map(), goal, _failed_route, _failed_window)
+	_window_time = 3.0
+	_window_jumping = false
+	return not _window_route.is_empty()
+
+
+func _cross_window(delta: float) -> Vector3:
+	_window_time -= delta
+	var direction: Vector3 = _window_route.direction
+	var offset: Vector3 = _window_route.entry - global_position
+	var across: Vector3 = global_position - _window_route.exit
+	if _window_jumping and across.dot(direction) >= -0.08:
+		_window_route.clear()
+		_window_jumping = false
+		_failed_window = -1
+		_path_target = Vector3.INF
+		_reroute_target = Vector3.INF
+		_progress_start = Vector3.INF
+		return direction
+	if _window_time <= 0.0:
+		_failed_window = _window_route.id
+		_window_route.clear()
+		_window_jumping = false
+		_start_recovery(-direction)
+		return Vector3.ZERO
+	if _window_jumping:
+		return direction
+	if Vector2(offset.x, offset.z).length_squared() > 0.16 * 0.16:
+		if offset.length_squared() < 0.75 and not test_move(global_transform, offset.slide(Vector3.UP)):
+			return _flat_direction(offset)
+		return _follow_path(_window_route.entry, false)
+	if not is_on_floor():
+		return Vector3.ZERO
+	var fixtures := get_parent().get_node_or_null("Map/VillageFixtures")
+	if not fixtures or not fixtures.bot_break_window(_window_route.id, self):
+		return Vector3.ZERO
+	_update_crouch(true)
+	_window_jumping = true
+	_window_time = 1.25
+	_window_jump_speed = _window_route.jump
+	return direction
 
 
 func _has_ground_ahead(direction: Vector3) -> bool:
@@ -830,7 +959,7 @@ func _cover_path_length(path: PackedVector3Array, threat: Vector2, safe_distance
 func _cover_query(threat: Vector3) -> PhysicsRayQueryParameters3D:
 	var query := PhysicsRayQueryParameters3D.new()
 	query.from = threat
-	query.collision_mask = Balance.WORLD_MASK
+	query.collision_mask = Balance.SHOT_WORLD_MASK
 	return query
 
 
@@ -909,14 +1038,19 @@ func _wander() -> Vector3:
 	return Vector3.ZERO
 
 
-func _follow_path(target: Vector3) -> Vector3:
+func _follow_path(target: Vector3, allow_reroute := true) -> Vector3:
 	if not target.is_finite() or not _navigation_ready():
 		return Vector3.ZERO
+	if allow_reroute and _failed_route_left > 0.0:
+		target = _reroute_around_failure(target)
 	if not _path_target.is_finite() or _path_target.distance_squared_to(target) > 0.36:
 		_path_target = target
 		_navigation.target_position = target
 	var next := _navigation.get_next_path_position()
 	if _navigation.is_navigation_finished():
+		var incomplete := global_position.distance_squared_to(target) > 1.8 and _navigation.get_final_position().distance_squared_to(target) > 1.8
+		if allow_reroute and incomplete and _window_route.is_empty():
+			_try_window(target)
 		return Vector3.ZERO
 	# A projected path can start well above a bot at the bottom of a ditch.
 	var direction := _flat_direction(next - global_position)
@@ -927,9 +1061,19 @@ func _follow_path(target: Vector3) -> Vector3:
 			next = path[index + 1]
 			direction = _flat_direction(next - global_position)
 	var fixtures := get_parent().get_node_or_null("Map/VillageFixtures")
-	if fixtures:
-		fixtures.open_door_on_path(global_position, next)
+	_blocked_door = Vector3.INF
+	if fixtures and not direction.is_zero_approx():
+		_blocked_door = fixtures.open_door_on_path(self, direction)
 	return direction
+
+
+func _reroute_around_failure(goal: Vector3) -> Vector3:
+	if not _reroute_target.is_finite() or _reroute_target.distance_squared_to(goal) > 4.0:
+		_reroute_target = goal
+		_reroute_waypoint = _objective_tactics.route_around_obstruction(self, goal, _failed_route)
+	if global_position.distance_squared_to(_reroute_waypoint) < 0.65:
+		_reroute_waypoint = Vector3.INF
+	return _reroute_waypoint if _reroute_waypoint.is_finite() else goal
 
 
 func _flat_direction(offset: Vector3) -> Vector3:

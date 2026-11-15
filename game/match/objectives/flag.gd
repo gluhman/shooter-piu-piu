@@ -104,27 +104,23 @@ func step(ctx, actors: Array) -> void:
 		ctx.finish("Овертайм")
 
 
-func view(team: int, peer := -1, observer: Node3D = null, ctx = null) -> Dictionary:
+func view(team: int, peer := -1) -> Dictionary:
 	var visible_flags: Array = []
 	for index in 2:
 		var flag := flags[index]
 		var at: Vector3 = Vector3.INF
 		var carrier_id := 0
-		var seen := false
+		var mounted: bool = flag.state == CARRIED and team >= 0
+		var allied := mounted and team == 1 - index
 		if flag.state == HOME or (flag.state == DROPPED and team == index):
 			at = flag.at
-		elif flag.state == CARRIED:
-			if team == 1 - index:
-				carrier_id = flag.carrier.score_id()
-				at = flag.carrier.global_position
-			elif team == index:
-				at = flag.revealed
-				if observer and ctx.eligible(observer, false) and ctx.can_see(observer, flag.carrier):
-					carrier_id = flag.carrier.score_id()
-					seen = true
+		elif mounted:
+			# The world model follows the replicated actor and is occluded by the scene.
+			# HUD markers still use the last spotted position for an opposing carrier.
+			carrier_id = flag.carrier.score_id()
+			at = flag.carrier.global_position if allied else flag.revealed
 		visible_flags.append({"state": flag.state, "at": at, "left": flag.left, "carrier": carrier_id,
-			"allied_carrier": flag.state == CARRIED and team == 1 - index,
-			"mounted": flag.state == CARRIED and (team == 1 - index or seen)})
+			"allied_carrier": allied, "mounted": mounted})
 	var local_ticks := 0
 	if team >= 0 and visible_flags[1 - team].allied_carrier and visible_flags[1 - team].carrier == peer:
 		local_ticks = capture_ticks[team]
