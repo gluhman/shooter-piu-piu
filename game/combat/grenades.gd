@@ -178,7 +178,7 @@ func _inside_smoke(cloud: Cloud, point: Vector3, radius: float) -> bool:
 
 
 func _physics_process(delta: float) -> void:
-	if _match.round_finished():
+	if _match.round_finished() or _match.objective_combat_frozen():
 		return
 	var authority := not Net.active or multiplayer.is_server()
 	var space := get_world_3d().direct_space_state
@@ -272,6 +272,7 @@ func _throw(actor: Node, kind: String, released: bool, space: PhysicsDirectSpace
 
 
 func _launch(kind: String, actor: Node, at: Vector3, velocity: Vector3, time: float, damage: int) -> void:
+	_match.objective_interrupt(actor)
 	var id := _next_id
 	_next_id += 1
 	var shooter: int = actor.score_id()

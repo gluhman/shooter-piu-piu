@@ -1,5 +1,7 @@
 extends "res://game/actors/player.gd"
 
+const OBJECTIVE_TACTICS := preload("res://game/actors/objective_tactics.gd")
+
 const BOT_SPEED := 3.3
 const BOT_ACCELERATION := 22.0
 const SEARCH_TIME := 6.0
@@ -100,6 +102,7 @@ var _peek_travel_left := 0.0
 var _peeked_from_cover := false
 var _cover_cooldown := 0.0
 var _training_pose_left := 0.0
+var _objective_tactics := OBJECTIVE_TACTICS.new()
 var _sight_ray := PhysicsRayQueryParameters3D.new()
 
 var _ground_ray := PhysicsRayQueryParameters3D.new()
@@ -181,6 +184,7 @@ func _apply_respawn(id: String, at: Vector3, revision: int) -> void:
 
 
 func _reset_behavior() -> void:
+	_objective_tactics.invalidate()
 	_waypoint = 0
 	for index in patrol_route.size():
 		if global_position.distance_squared_to(patrol_route[index]) < global_position.distance_squared_to(patrol_route[_waypoint]):
@@ -233,7 +237,7 @@ func _physics_process(delta: float) -> void:
 	if not _server_rules():
 		super._physics_process(delta)
 		return
-	if _dead or not control_enabled or get_parent().is_loading() or get_parent().round_finished():
+	if _dead or not control_enabled or get_parent().is_loading() or get_parent().round_finished() or get_parent().objective_combat_frozen():
 		return
 	if get_parent().is_training_range():
 		_training_pose_left -= delta
@@ -294,15 +298,19 @@ func _physics_process(delta: float) -> void:
 		_flank_point = Vector3.INF
 	else:
 		_search_left = maxf(0.0, _search_left - delta)
-	_update_crowding(delta)
+	var objectives: Node3D = get_parent().objectives
 	_recovery_left = maxf(0.0, _recovery_left - delta)
-	if _dispersal_left <= 0.0 and _recovery_left <= 0.0:
-		_try_take_cover(target, profile, modifiers, ammo)
+	if not objectives:
+		_update_crowding(delta)
+		if _dispersal_left <= 0.0 and _recovery_left <= 0.0:
+			_try_take_cover(target, profile, modifiers, ammo)
 
 	aiming = false
 	var wish := Vector3.ZERO
 	var speed := BOT_SPEED * float(modifiers.speed)
-	if _recovery_left > 0.0 or _dispersal_left > 0.0:
+	if objectives and objectives.bot_action(self):
+		_face(wish, delta)
+	elif _recovery_left > 0.0 or _dispersal_left > 0.0:
 		_update_crouch(false)
 		if ammo.x == 0 and ammo.y > 0:
 			gun.reload_bot()
@@ -310,6 +318,8 @@ func _physics_process(delta: float) -> void:
 		if wish.is_zero_approx() and _recovery_left <= 0.0:
 			_dispersal_left = 0.0
 		_face(wish, delta)
+	elif objectives:
+		wish = _play_objective(objectives, target, profile, modifiers, ammo, delta)
 	elif _return_to_cover.is_finite():
 		wish = _peek(target, profile, modifiers, ammo, delta)
 	elif _cover_goal.is_finite():
@@ -344,6 +354,26 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_track_movement_audio(delta, true)
 	_check_movement_progress(wish, delta)
+
+
+func _play_objective(objectives: Node3D, target: Node3D, profile: Dictionary, modifiers: Dictionary,
+		ammo: Vector2i, delta: float) -> Vector3:
+	var order: Dictionary = objectives.bot_order(self)
+	var movement: Dictionary = _objective_tactics.update(self, order, target, delta)
+	var at: Vector3 = movement.at
+	var wish := _follow_path(at) if at.is_finite() and global_position.distance_squared_to(at) > 0.20 else Vector3.ZERO
+	_update_crouch(movement.crouch and is_on_floor())
+	if ammo.y > 0 and (ammo.x == 0 or crouched and ammo.x <= COVER_RESERVE[_difficulty_index()]):
+		gun.reload_bot()
+	if target and _has_sight(target):
+		_fight(target, profile, modifiers, ammo, delta, false)
+	elif not wish.is_zero_approx():
+		_face(wish, delta)
+	else:
+		var watch: Vector3 = movement.watch
+		if watch.is_finite():
+			_face(watch - global_position, delta)
+	return wish
 
 
 func _fight(target: Node3D, profile: Dictionary, modifiers: Dictionary, ammo: Vector2i, delta: float, strafe: bool = true) -> Vector3:
@@ -570,11 +600,12 @@ func _check_movement_progress(wish: Vector3, delta: float) -> void:
 
 
 func _start_recovery(direction: Vector3) -> void:
+	_objective_tactics.invalidate()
 	_recovery_direction = direction if not direction.is_zero_approx() else -global_basis.z
 	_clear_movement_goals()
 	if not patrol_route.is_empty():
 		_waypoint = posmod(_waypoint + _patrol_direction, patrol_route.size())
-	_recovery_left = RECOVERY_TIME
+	_recovery_left = 0.9 if get_parent().objectives else RECOVERY_TIME
 	_recovery_goal = _reachable_offset(global_position, _recovery_direction, 4.0) if _navigation_ready() else Vector3.INF
 
 
@@ -608,6 +639,8 @@ func _can_jump_obstacle(wish: Vector3) -> bool:
 
 
 func _navigation_ready() -> bool:
+	if not is_instance_valid(_navigation) or not is_inside_tree():
+		return false
 	if not _navigation_synced:
 		var nav_map := _navigation.get_navigation_map()
 		_navigation_synced = NavigationServer3D.map_get_iteration_id(nav_map) != 0 and not NavigationServer3D.map_get_regions(nav_map).is_empty()

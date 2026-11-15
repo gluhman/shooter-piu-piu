@@ -171,6 +171,7 @@ func show_results(reason: String, rows: Array) -> void:
 			map_picker = OptionButton.new()
 			for map_name: String in _match.MAP_NAMES:
 				map_picker.add_item(map_name)
+				map_picker.set_item_disabled(map_picker.item_count - 1, not _match.objective_arena_allowed(map_picker.item_count - 1))
 			map_picker.select(_match.map_id)
 			UI.row(_panel, "Следующая карта", map_picker)
 		var actions := HBoxContainer.new()

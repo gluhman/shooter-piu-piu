@@ -1,8 +1,12 @@
 extends Node3D
 
+const BALANCE := preload("res://game/combat/combat_balance.gd")
+const OBJECTIVE_LAYOUT := preload("res://game/maps/objective_layout.gd")
+
 const BULLET_HOLE_SHADER := preload("res://game/combat/bullet_holes.gdshader")
 const STACK_CONTAINER_SCENE := "res://assets/arena_props/oxygen/stacked_containers.glb"
 const HOLES_PER_PANEL := 32
+const OBJECTIVE_MAP_SEED := 31562
 
 class PerforatedCover:
 	var body: StaticBody3D
@@ -89,6 +93,7 @@ var _wood_floors: Array[Rect2] = []
 var _initial_spawns := PackedVector3Array()
 var respawn_points := PackedVector3Array()
 var market_supply_count := 0
+var _objective_reservations: Array[Rect2] = []
 var _patrol: Array[Vector3] = []
 var _half_extent := 35.0
 var _district_origin := Vector3.ZERO
@@ -153,10 +158,14 @@ func _load_textures() -> void:
 	_wood_mat = _world_mat("planks", Color(0.9, 0.84, 0.74), 0.0, 0.7, 1.0, true)
 
 
-func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
+func build(map_id: int, layout_seed: int, width: float, objective := 0, size := 0) -> Array[Transform3D]:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = layout_seed
+	# Objective anchors are authored against a fixed arrangement of movable arena props.
+	rng.seed = OBJECTIVE_MAP_SEED if objective >= OBJECTIVE_LAYOUT.HILL else layout_seed
 	_half_extent = width * 0.5
+	_objective_reservations.clear()
+	if objective >= OBJECTIVE_LAYOUT.HILL and map_id < VILLAGE_ID:
+		_objective_reservations = OBJECTIVE_LAYOUT.reserved_areas(objective, map_id, size)
 	if map_id == FOREST_RIDGE_ID:
 		_half_extent = FOREST_RIDGE.HALF
 		return FOREST_RIDGE.new(self).build()
@@ -170,7 +179,7 @@ func build(map_id: int, layout_seed: int, width: float) -> Array[Transform3D]:
 		return WORKSHOP.new(self).build(width)
 	if map_id == DUST2_ID:
 		var dust2 := DUST2.new(self)
-		var supplies := dust2.build(width)
+		var supplies := dust2.build(width, objective >= OBJECTIVE_LAYOUT.HILL)
 		_patrol = dust2.patrol_route()
 		return supplies
 	if map_id == TEST_RANGE_ID:
@@ -293,15 +302,15 @@ func _build_yard_routes(map_id: int, width: float) -> void:
 			break
 
 
-func _road_barrier(at: Vector3, yaw: float, width: float) -> void:
+func _road_barrier(at: Vector3, yaw: float, width: float, height := 0.96) -> StaticBody3D:
 	var scene := load(ROAD_BARRIER) as PackedScene
 	var model := scene.instantiate() as Node3D
 	# The imported barrier is centered at the origin, including its root translation.
-	var size := Vector3(width, 0.96, 0.78)
+	var size := Vector3(width, height, 0.78)
 	var bounds := AABB(Vector3(-0.7722, -0.4168, -0.3179), Vector3(1.5445, 0.8336, 0.6358))
 	model.scale = size / bounds.size
 	model.position = -bounds.get_center() * model.scale
-	_add_box(at + Vector3.UP * size.y * 0.5, size, null, yaw, "concrete", null, model)
+	return _add_box(at + Vector3.UP * size.y * 0.5, size, null, yaw, "concrete", null, model)
 
 
 func _build_test_range(width: float) -> Array[Transform3D]:
@@ -626,6 +635,13 @@ func _is_clear(area: Rect2, limit: float, spawn_clearance: float) -> bool:
 	return true
 
 
+func _reserved_for_objectives(area: Rect2) -> bool:
+	for reservation in _objective_reservations:
+		if reservation.intersects(area):
+			return true
+	return false
+
+
 func _scatter_passages(rng: RandomNumberGenerator) -> void:
 	var count := 0
 	var target := 6 if _half_extent == 35.0 else 3
@@ -637,7 +653,7 @@ func _scatter_passages(rng: RandomNumberGenerator) -> void:
 		if across:
 			size = Vector2(size.y, size.x)
 		var area := _footprint(center, size)
-		if not _is_clear(area, _half_extent - 3.0, 0.9):
+		if not _is_clear(area, _half_extent - 3.0, 0.9) or _reserved_for_objectives(area):
 			continue
 		_occupied.append(area)
 		_add_passage(count, Vector3(center.x, 0, center.y), 90.0 if across else 0.0,
@@ -702,7 +718,7 @@ func _scatter_crates(rng: RandomNumberGenerator) -> Array[Transform3D]:
 		var quarter_turn := rng.randi_range(0, 3)
 		var size := Vector2(2.28, 2.88) if quarter_turn % 2 == 0 else Vector2(2.88, 2.28)
 		var area := _footprint(center, size)
-		if not _is_clear(area, _half_extent - 0.15, 0.85):
+		if not _is_clear(area, _half_extent - 0.15, 0.85) or _reserved_for_objectives(area):
 			continue
 		var cover := 0
 		for sample in 12:
@@ -786,7 +802,7 @@ func _scatter_foliage(rng: RandomNumberGenerator) -> void:
 				2: center = Vector2(lerpf(obstacle.position.x, obstacle.end.x, along), obstacle.position.y - 0.59)
 				3: center = Vector2(lerpf(obstacle.position.x, obstacle.end.x, along), obstacle.end.y + 0.59)
 		var area := _footprint(center, Vector2.ONE * 0.9)
-		if not _is_clear(area, half - 0.15, 0.65):
+		if not _is_clear(area, half - 0.15, 0.65) or _reserved_for_objectives(area):
 			continue
 		_occupied.append(area)
 		if shrub_clusters < 12 and (grass.is_empty() or rng.randf() < 0.35):
@@ -1012,3 +1028,39 @@ func _tex(material: String, kind: String) -> Texture2D:
 	if not _textures.has(path):
 		_textures[path] = load(path) as Texture2D
 	return _textures[path]
+
+
+func objective_layout(mode: int, arena: int, size: int) -> Dictionary:
+	return OBJECTIVE_LAYOUT.create(self, mode, arena, size)
+
+
+static func navigation_mesh(map_id: int, width: float, authored: Node3D = null) -> NavigationMesh:
+	var mesh := NavigationMesh.new()
+	mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+	mesh.geometry_collision_mask = BALANCE.WORLD_MASK
+	var village := map_id == VILLAGE_ID
+	var forest := map_id == FOREST_RIDGE_ID
+	var farpost := map_id == OUTPOST_ID
+	var station := map_id == STATION_ID
+	mesh.cell_size = 0.30 if forest or farpost else (0.25 if village else 0.20)
+	mesh.cell_height = 0.1
+	mesh.agent_radius = 0.60 if forest or farpost else (0.50 if village else 0.40)
+	mesh.agent_height = 1.8
+	mesh.agent_max_climb = 0.3 if village or forest or farpost or station else 0.1
+	mesh.filter_walkable_low_height_spans = true
+	if is_instance_valid(authored):
+		var bounds: Rect2 = authored.get_arena_bounds()
+		mesh.filter_baking_aabb = AABB(Vector3(bounds.position.x, -0.5, bounds.position.y),
+			Vector3(bounds.size.x, 4.5, bounds.size.y))
+	elif forest:
+		mesh.filter_baking_aabb = FOREST_RIDGE.TERRAIN_BAKE_BOUNDS
+	elif station:
+		mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -0.6, -width * 0.5),
+			Vector3(width, STATION.ROOF + 0.4, width))
+	elif farpost or map_id == DUST2_ID:
+		mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, -3.0, -width * 0.5), Vector3(width, 7.5, width))
+	else:
+		var bake_bottom := -1.3 if village else -0.5
+		var bake_height := 7.1 if village else 2.8
+		mesh.filter_baking_aabb = AABB(Vector3(-width * 0.5, bake_bottom, -width * 0.5), Vector3(width, bake_height, width))
+	return mesh

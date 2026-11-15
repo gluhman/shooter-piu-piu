@@ -387,6 +387,7 @@ func _try_fire() -> void:
 		_cooldown = float(_stats.cooldown)
 		_knife_swing_left = KNIFE_SWING_TIME
 		if _player._server_rules():
+			_match.objective_interrupt(_player)
 			_player.cancel_spawn_protection()
 			_pending_knife = -_camera.global_basis.z.normalized()
 			_knife_windup = Balance.MELEE.windup_s
@@ -461,6 +462,7 @@ func _shoot() -> void:
 	var works: Node = _player.fieldworks()
 	_view.global_transform = aligned if works and works.is_mounted(_player) else aligned.interpolate_with(_view.global_transform, aim_blend())
 	if _player._server_rules():
+		_match.objective_interrupt(_player)
 		_player.cancel_spawn_protection()
 		_launch_sighted(barrel, camera, target)
 		_send_shot_visual(_weapon_id, barrel)
@@ -598,6 +600,7 @@ func fire_bot(target: Vector3, aim_error: float) -> bool:
 	cancel_reload()
 	_mag -= 1
 	_cooldown = float(_stats.cooldown)
+	_match.objective_interrupt(_player)
 	_player.cancel_spawn_protection()
 	_apply_view(0.0)
 	var barrel := _muzzle.global_transform
@@ -653,7 +656,7 @@ func _launch_projectiles(barrel: Transform3D, aim: Basis, spread: float, eye: Ve
 
 @rpc("authority", "reliable")
 func net_fire(weapon_name: String, pose: PackedFloat32Array, shot_time: float) -> void:
-	if _match.round_finished() or not multiplayer.is_server() or not _match.match_peers().has(multiplayer.get_remote_sender_id()):
+	if _match.round_finished() or _match.objective_combat_frozen() or not multiplayer.is_server() or not _match.match_peers().has(multiplayer.get_remote_sender_id()):
 		return
 	if weapon_name != _weapon_id or _muzzle == null or not _match.apply_client_pose(_player, pose):
 		return
@@ -664,6 +667,7 @@ func net_fire(weapon_name: String, pose: PackedFloat32Array, shot_time: float) -
 		_send_ammo(sequence)
 		return
 	_cooldown = float(_stats.cooldown)
+	_match.objective_interrupt(_player)
 	_player.cancel_spawn_protection()
 	var shot_camera: Transform3D = _player.shot_camera_transform()
 	var shot_barrel := Transform3D.IDENTITY

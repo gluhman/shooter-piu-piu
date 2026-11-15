@@ -443,6 +443,8 @@ func _take_amount(actor: Node, drop: Dictionary, manual: bool) -> int:
 
 
 func _can_take(actor: Node, drop: Dictionary, manual := false) -> bool:
+	if _match.objective_combat_frozen():
+		return false
 	match drop.kind:
 		Kind.WEAPON:
 			if not _match.allows_weapon(drop.weapon):

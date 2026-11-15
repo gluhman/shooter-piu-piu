@@ -31,9 +31,9 @@ func _process(delta: float) -> void:
 		_broadcast()
 
 
-func request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1) -> void:
+func request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1, mode := -1) -> void:
 	_typed_password = password.strip_edges()
-	net_request_create.rpc_id(1, _typed_password, weapons, arena, limits, difficulty, bot_count, size, teams, random_map, blue_bots)
+	net_request_create.rpc_id(1, _typed_password, weapons, arena, limits, difficulty, bot_count, size, teams, random_map, blue_bots, mode)
 
 
 func request_join(room_id: int, password: String) -> void:
@@ -42,7 +42,7 @@ func request_join(room_id: int, password: String) -> void:
 
 
 @rpc("any_peer", "reliable")
-func net_request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1) -> void:
+func net_request_create(password: String, weapons: int, arena: int, limits: Vector2i, difficulty: int, bot_count: int, size: int, teams: bool = false, random_map := false, blue_bots := -1, mode := -1) -> void:
 	if not Net.directory or not multiplayer.is_server():
 		return
 	var sender := multiplayer.get_remote_sender_id()
@@ -78,6 +78,7 @@ func net_request_create(password: String, weapons: int, arena: int, limits: Vect
 	cfg.set_value("room", "teams", teams)
 	cfg.set_value("room", "random_map", random_map)
 	cfg.set_value("room", "blue_bots", clampi(blue_bots, -1, 10))
+	cfg.set_value("room", "mode", clampi(mode, -1, 4))
 	if cfg.save(room_path) != OK:
 		_starting_ports.erase(port)
 		_reply(sender, false, 0, "", "Не удалось создать комнату.")
@@ -204,7 +205,7 @@ func _clean_rules(weapons: int, arena: int, limits: Vector2i, difficulty: int, b
 	return {
 		"weapons": clampi(weapons, 0, 2),
 		"arena": clampi(arena, 0, map.MAP_NAMES.size() - 1),
-		"time": clampi(limits.x, 0, 8),
+		"time": clampi(limits.x, 0, 5),
 		"kills": clampi(limits.y, 0, 8),
 		"difficulty": clampi(difficulty, 0, 4),
 		"bots": clampi(bot_count, 0, 10),

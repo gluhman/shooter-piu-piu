@@ -47,7 +47,7 @@ func _run() -> void:
 	var fired: bool = bot.gun.fire_bot(bot.global_position + Vector3(0, 1.4, -30), 0.0)
 	if not _check(fired and minimap._shots.has(bot.score_id()), "a real enemy shot reveals a marker"):
 		return
-	var shot: Vector3 = minimap._shots[bot.score_id()]
+	var shot: Vector4 = minimap._shots[bot.score_id()]
 	bot.position.x += 3.0
 	await process_frame
 	if not _check(minimap._shots.get(bot.score_id()) == shot, "a marker stays at the shot position"):

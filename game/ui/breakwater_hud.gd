@@ -62,6 +62,10 @@ func _draw() -> void:
 	if data.is_empty():
 		return
 	draw_set_transform(view_origin(), 0.0, Vector2.ONE * view_scale())
+	if bool(_data("spectating", false)):
+		_txt(_data("clock", ""), 961, 102, 21, C_WHITE, HORIZONTAL_ALIGNMENT_CENTER, 150)
+		_draw_objectives()
+		return
 	if scoreboard_visible:
 		draw_set_transform(Vector2.ZERO)
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.016, 0.027, 0.037, 0.72))
@@ -72,6 +76,7 @@ func _draw() -> void:
 	_draw_network()
 	_draw_killfeed()
 	_draw_status()
+	_draw_objectives()
 	if bool(_data("alive", false)):
 		_draw_minimap_frame()
 		_draw_team_scores()
@@ -286,6 +291,11 @@ func _draw_scoreboard() -> void:
 		_txt("ИГРОК",439,yy+76,15,C_MUTED)
 		for j in range(2):
 			_txt(["УБИЙСТВА","СМЕРТИ"][j],1038+j*138,yy+76,14,C_MUTED)
+		var objective_columns: Array = _data("objective_columns", [])
+		for j in objective_columns.size():
+			_txt(objective_columns[j], 780 + j * 125, yy+76, 14, C_MUTED)
+		if str(_data("mode", "")) == "objective":
+			_txt("ПИНГ", 1320, yy+76, 14, C_MUTED)
 		var matching: Array = []
 		for row in rows:
 			if row.get("team", "") == team:
@@ -295,9 +305,16 @@ func _draw_scoreboard() -> void:
 			var row_y := yy+108+i*34
 			if bool(p.get("self", false)):
 				_rect(429, row_y - 22, 1059, 31, Color(1, 1, 1, 0.095))
-			_txt(str(p.get("name","?")),440,row_y,17,C_YELLOW if bool(p.get("self",false)) else C_WHITE,HORIZONTAL_ALIGNMENT_LEFT,560)
+			_txt(str(p.get("name","?")),440,row_y,17,C_YELLOW if bool(p.get("self",false)) else C_WHITE,HORIZONTAL_ALIGNMENT_LEFT,330 if not objective_columns.is_empty() else 560)
 			for j in range(2):
 				_txt(str(p.get(["kills","deaths"][j],0)),1044+j*138,row_y,18,C_WHITE)
+
+			for j in objective_columns.size():
+				if objective_columns[j] != "":
+					_txt(p.get("objective", Vector2i.ZERO)[j], 786 + j * 125, row_y, 18, C_WHITE)
+			if not objective_columns.is_empty() and p.get("ping", -1) >= 0:
+				_txt(p.ping, 1322, row_y, 18, C_WHITE)
+
 
 func _draw_scoreboard_ffa(raw_rows: Array) -> void:
 	# Free-for-all has one ranking table (up to 10 participants), not two teams.
@@ -327,3 +344,29 @@ func _draw_scoreboard_ffa(raw_rows: Array) -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, column_width - 250)
 		_txt(player.get("kills", 0), x + column_width - 140, y, 19, C_WHITE)
 		_txt(player.get("deaths", 0), x + column_width - 74, y, 19, C_WHITE)
+
+
+
+func _draw_objectives() -> void:
+	var objective: Dictionary = _data("objective", {})
+	if objective.is_empty():
+		return
+	_rect(605, 113, 710, 64, C_BG)
+	_txt("%d   ·   %s   ·   %d" % [_data("team_blue_score", 0), objective.title, _data("team_red_score", 0)],
+		960, 139, 22, C_YELLOW, HORIZONTAL_ALIGNMENT_CENTER, 686)
+	_txt(objective.detail, 960, 164, 18, C_WHITE, HORIZONTAL_ALIGNMENT_CENTER, 682)
+	if objective.progress > 0.0:
+		_rect(605, 176, 710 * objective.progress, 4, C_YELLOW)
+	var objective_notice := str(_data("objective_notice", ""))
+	if not objective_notice.is_empty():
+		_rect(628, 455, 664, 48, Color(0.035, 0.063, 0.080, 0.91))
+		_rect(628, 455, 4, 48, C_YELLOW)
+		_txt(objective_notice, 960, 487, 24, C_YELLOW, HORIZONTAL_ALIGNMENT_CENTER, 632)
+	var position: Vector3 = _data("actor_position", Vector3.ZERO)
+	var heading := float(_data("heading_deg", 0.0))
+	for marker in _data("objective_markers", []):
+		var delta: Vector3 = marker.at - position
+		var bearing := rad_to_deg(atan2(delta.x, -delta.z))
+		var offset := wrapf(bearing - heading, -180.0, 180.0)
+		if absf(offset) <= 65.0:
+			_txt(marker.label, 960 + offset * 3.1, 75, 14, C_YELLOW, HORIZONTAL_ALIGNMENT_CENTER, 36)

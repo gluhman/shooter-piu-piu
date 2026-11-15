@@ -61,14 +61,14 @@ func _init(map: Node3D) -> void:
 	_map = map
 
 
-func build(width: float) -> Array[Transform3D]:
+func build(width: float, objective := false) -> Array[Transform3D]:
 	_stone = _map._world_mat("dust2/sandstone", Color(1.0, 0.96, 0.89), 0.0, 0.34, 0.76, false)
 	_ground = _map._world_mat("dust2/sand", Color(0.95, 1.0, 1.0), 0.0, 0.38, 0.52, false)
 	_trim = _map._world_mat("concrete", Color(0.93, 0.81, 0.62), 0.0, 0.75, 0.6, false)
 	_shade = _map._world_mat("concrete", Color(0.65, 0.55, 0.41), 0.0, 0.7, 0.8, false)
 	_wood = _map._world_mat("planks", Color(0.64, 0.49, 0.32), 0.0, 0.86, 0.85, true)
 	if width < 70.0:
-		var compact_supplies := _build_compact(width)
+		var compact_supplies := _build_compact(width, objective)
 		_batch_shell()
 		return compact_supplies
 	_add_sectors()
@@ -95,7 +95,7 @@ func build(width: float) -> Array[Transform3D]:
 	return supplies
 
 
-func _build_compact(width: float) -> Array[Transform3D]:
+func _build_compact(width: float, objective: bool) -> Array[Transform3D]:
 	var half := width * 0.5
 	var sector := Sector.new(-half, -half, half, half, 0.0, 0.0)
 	_sectors.append(sector)
@@ -113,7 +113,8 @@ func _build_compact(width: float) -> Array[Transform3D]:
 			_map._occupied.append(Rect2(Vector2(x, z) - Vector2(block.x, block.z) * 0.5,
 				Vector2(block.x, block.z)))
 		var site := Vector2(x, -width * 0.33)
-		_sign(site, "A" if side > 0.0 else "B")
+		if not objective:
+			_sign(site, "A" if side > 0.0 else "B")
 		var cover := site + Vector2(side * 2.0, 1.5)
 		var cover_size := Vector3(1.6, 1.45, 1.1)
 		_crate(cover, cover_size)

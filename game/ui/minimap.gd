@@ -8,6 +8,8 @@ const REFRESH_INTERVAL := 1.0 / 30.0
 const MAP_INSET := 7.0
 const SHOT_COLOR := Color("#ff7d72")
 
+var objective_markers: Array[Dictionary] = []
+
 var _layout := Control.new()
 var _markers := Control.new()
 var _map: Node3D
@@ -135,6 +137,12 @@ func _draw_markers() -> void:
 		var color := Color(SHOT_COLOR, opacity)
 		_markers.draw_circle(point, 6.0, color, false, 1.0, true)
 		_markers.draw_circle(point, 2.7, color, true, -1.0, true)
+	for marker in objective_markers:
+		var target := _map.to_local(marker.at)
+		var objective_point := _project(Vector2(target.x, target.z))
+		_markers.draw_circle(objective_point, 5.5, Color("#19222c"))
+		_markers.draw_string(ThemeDB.fallback_font, objective_point + Vector2(-3.25, 3.2), marker.label,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("#ffc76b"))
 	var at := _map.to_local(_player.global_position)
 	var edge := _layout.size - Vector2.ONE * 7.0
 	var point := _project(Vector2(at.x, at.z)).clamp(Vector2.ONE * 7.0, edge)

@@ -134,7 +134,7 @@ func _process(delta: float) -> void:
 		_loot_notice_left -= delta
 		if _loot_notice_left <= 0.0:
 			_loot_notice.hide()
-	if is_instance_valid(_player) and _modern:
+	if (is_instance_valid(_player) or get_parent().objectives) and _modern:
 		_modern.damage_left = maxf(0.0, _modern.damage_left - delta)
 		_modern.kill_left = maxf(0.0, _modern.kill_left - delta)
 		_hud_update_left -= delta
@@ -215,6 +215,7 @@ func reset_round() -> void:
 	_modern.damage_left = 0.0
 	_modern.kill_left = 0.0
 	_minimap.clear_shots()
+	_minimap.objective_markers.clear()
 	_round_scores.clear()
 	_death.hide()
 	_loot_notice.hide()
@@ -259,7 +260,7 @@ func _score_row(id: int, title: String, local: bool) -> Array:
 	var score := _score_for(id)
 	var actor: Node = get_parent().combatant(id)
 	var team: int = actor.team_id() if is_instance_valid(actor) and get_parent().team_deathmatch else -1
-	return [title, score.x, score.y, _kill_death_ratio(score), get_parent().ping_for(id), local, team]
+	return [title, score.x, score.y, _kill_death_ratio(score), get_parent().ping_for(id), local, team, id]
 
 
 func _sort_score_rows(first: Array, second: Array) -> bool:
@@ -347,9 +348,13 @@ func set_modern_scoreboard(visible: bool) -> void:
 func _refresh_modern() -> void:
 	var game := get_parent()
 	var menu_open: bool = $Lobby.visible or $MatchMenu.visible or $WeaponSelect.visible
-	_modern.visible = is_instance_valid(_player) and not menu_open and not game.round_finished()
+	var waiting: bool = game.objectives != null and not is_instance_valid(_player) and game.has_started() and not game.is_loading()
+	_modern.visible = (is_instance_valid(_player) or waiting) and not menu_open and not game.round_finished()
 	_minimap.modulate.a = 1.0 if _modern.visible and not _modern.scoreboard_visible else 0.0
 	if not _modern.visible:
+		return
+	if waiting:
+		_refresh_waiting_objective(game)
 		return
 	var scale_factor: float = _modern.view_scale()
 	_minimap.position = _modern.view_origin() + Vector2(62, 65) * scale_factor
@@ -361,8 +366,8 @@ func _refresh_modern() -> void:
 			live_count += 1
 	if _modern.scoreboard_visible:
 		for row in score_rows():
-			roster.append({"name": row[0], "kills": row[1], "deaths": row[2], "self": row[3],
-				"team": "blue" if row[4] == 0 else "red"})
+			roster.append({"name": row[0], "kills": row[1], "deaths": row[2], "self": row[5], "ping": row[4],
+				"team": "blue" if row[6] == 0 else "red", "id": row[7]})
 	var score := _score_for(Net.local_id())
 	var team_score: Vector2i = game._team_score
 	while not _feed.is_empty() and _feed.back().expires <= Time.get_ticks_msec():
@@ -385,7 +390,7 @@ func _refresh_modern() -> void:
 		"health": ceili(_player.health), "max_health": _player.MAX_HEALTH,
 		"armor": ceili(_player.armor) if _player.health > 0.0 else 0, "max_armor": _player.armor_capacity(),
 		"map_name": game.MAP_NAMES[game.map_id], "heading_deg": fposmod(-rad_to_deg(_player.rotation.y), 360.0),
-		"mode": "tdm" if game.team_deathmatch else "ffa", "local_team": _player.team_id(),
+		"mode": "objective" if game.objectives else ("tdm" if game.team_deathmatch else "ffa"), "local_team": _player.team_id(),
 		"team_blue_score": team_score.x, "team_red_score": team_score.y,
 		"kills": score.x, "deaths": score.y, "clock": _hud_clock, "score_limit": _hud_limit,
 		"alive_players": live_count, "ping": ping, "network": "NET" if Net.internet else ("LAN" if Net.active else "SOLO"),
@@ -394,6 +399,35 @@ func _refresh_modern() -> void:
 		"weapon_icon": WEAPON_ICONS.get(_player.weapon_id, "rifle"),
 		"medkit_hint": _medkit_hint.text if _health_notice.visible and _medkit_hint.visible else "",
 	}
+	if game.objectives:
+		var state: Dictionary = game.objectives.state
+		var seconds: int = game.objectives.clock_seconds()
+		data.clock = "%02d:%02d" % [floori(seconds / 60.0), seconds % 60]
+		data.score_limit = game.objectives.target
+		data.objective = _objective_hud(game, state)
+		data.objective_notice = state.get("notice", "")
+		data.objective_columns = {2: ["КОНТРОЛЬ", ""], 3: ["ЗАХВАТЫ", "ВОЗВРАТЫ"], 4: ["УСТАНОВКИ", "СНЯТИЯ"]}[game.play_mode]
+		for row in roster:
+			row.objective = state.get("stats", {}).get(row.id, Vector2i.ZERO)
+		var objective_markers: Array[Dictionary] = []
+		for index in game.objectives.centers.size():
+			if game.play_mode == 2 and index not in [state.get("active"), state.get("next")]:
+				continue
+			if game.play_mode == 4 and index >= int(state.get("sites", 0)):
+				continue
+			var marker := str(index + 1) if game.play_mode == 2 else ["A", "B"][index] as String
+			if game.play_mode == 3:
+				marker = ["С", "К"][index]
+			objective_markers.append({"at": game.objectives.centers[index], "label": marker})
+		if game.play_mode == 3:
+			for flag in state.get("flags", []):
+				if flag.state != 0 and flag.at.is_finite():
+					objective_markers.append({"at": flag.at, "label": "Ф"})
+		if game.play_mode == 4 and state.get("planted", Vector3.INF).is_finite() and state.get("phase") == 2:
+			objective_markers.append({"at": state.planted, "label": "◆"})
+		data.objective_markers = objective_markers
+		_minimap.objective_markers = objective_markers
+		data.actor_position = _player.global_position
 	if $Ammo.visible:
 		data.merge($Ammo.hud_values())
 	_modern.data = data
@@ -574,3 +608,85 @@ func _build_loot_label(offset: float, color: Color) -> Label:
 	label.hide()
 	add_child(label)
 	return label
+
+
+
+func _objective_hud(game: Node, state: Dictionary) -> Dictionary:
+	if state.is_empty():
+		return {}
+	var label: String = game.OBJECTIVE_LAYOUT.NAMES[game.play_mode]
+	var detail := ""
+	var progress := 0.0
+	var team: int = _player.team_id()
+	match game.play_mode:
+		2:
+			var occupancy: int = state.occupancy
+			detail = "Гора %d · %s" % [state.active + 1, { -2: "Оспаривается", -1: "Свободна", 0: "Синие", 1: "Красные"}[occupancy]]
+			if state.next >= 0:
+				detail += " · Следующая %d" % (state.next + 1)
+			if state.absence > 0:
+				detail += " · %.1f с до конца" % ((180 - state.absence) / 60.0)
+		3:
+			var flags: Array = state.flags
+			var flag_labels: Array[String] = []
+			for flag in flags:
+				var caption := ["Дома", "Унесён", "На земле"][int(flag.state)] as String
+				if flag.state == 2:
+					caption += " %d с" % ceili(flag.left / 60.0)
+				if flag.allied_carrier:
+					var ally: Node = game.combatant(flag.carrier)
+					if ally:
+						caption = "У %s" % (game.player_label(ally.slot) if ally.score_id() > 0 else "бота %d" % (1 - ally.score_id()))
+				flag_labels.append(caption)
+			detail = "Синие · %s    Красные · %s" % [flag_labels[0], flag_labels[1]]
+			var carrying: bool = flags[1 - team].allied_carrier and flags[1 - team].carrier == Net.local_id()
+			if carrying:
+				if state.capture > 0:
+					var remaining: float = (float(state.capture_total) - state.capture) / 60.0
+					detail = "У ВАС ФЛАГ  ·  Захват через %.1f с" % remaining
+					progress = float(state.capture) / state.capture_total
+				elif flags[team].state != 0:
+					detail = "У ВАС ФЛАГ  ·  Верните свой флаг"
+				else:
+					detail = "У ВАС ФЛАГ  ·  Доставьте его в свою зону"
+		4:
+			var role := "Атака" if team == state.attack else "Защита"
+			label = "Раунд %d · %s · %d–%d в живых" % [state.round, role, state.living.x, state.living.y]
+			match int(state.phase):
+				0: detail = "Подготовка"
+				1: detail = "Точка A" if state.sites < 2 else "Точки A и B"
+				2: detail = "Заряд установлен · " + ["A", "B"][state.site]
+				3: detail = state.reason
+			if state.carrying and state.carrier == Net.local_id():
+				detail = "ЗАРЯД В РЮКЗАКЕ · На точке удерживайте [%s]" % GameSettings.binding_label(&"interact")
+			elif state.drop.is_finite():
+				detail += " · Подберите заряд"
+			var action: int = game.objectives.local_action(_player)
+			if action >= 0:
+				var verb := "обезвредить" if action == 2 else "установить"
+				detail = "Удерживайте [%s], чтобы %s" % [GameSettings.binding_label(&"interact"), verb]
+				if action != 2:
+					detail = "ЗАРЯД У ВАС · " + detail
+			progress = state.hold
+			if _player.health <= 0:
+				detail += " · Наблюдение [%s]" % GameSettings.binding_label(&"interact")
+	if state.overtime:
+		label += " · Овертайм"
+	if state.grace > 0:
+		detail = "Ждём команду · %d с" % state.grace
+	return {"title": label, "detail": detail, "progress": progress}
+
+
+
+func _refresh_waiting_objective(game: Node) -> void:
+	var state: Dictionary = game.objectives.state
+	if state.is_empty():
+		return
+	var seconds: int = game.objectives.clock_seconds()
+	var round_hint := "Вступление в следующем раунде" if game.play_mode == 4 else "Вступление со следующей волной"
+	_modern.data = {
+		"spectating": true, "clock": "%02d:%02d" % [floori(seconds / 60.0), seconds % 60],
+		"team_blue_score": state.scores.x, "team_red_score": state.scores.y,
+		"objective_notice": state.get("notice", ""), "objective": {"title": game.OBJECTIVE_LAYOUT.NAMES[game.play_mode], "detail": round_hint, "progress": 0.0}
+	}
+	_modern.queue_redraw()

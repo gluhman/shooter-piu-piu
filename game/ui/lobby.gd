@@ -46,6 +46,10 @@ var _map: OptionButton
 var _map_size: OptionButton
 var _weapons: OptionButton
 var _mode: OptionButton
+var _objective_limits: Label
+var _objective_rules: Label
+var _hill_order: OptionButton
+var _autofill: CheckBox
 var _time_limit: OptionButton
 var _kill_limit: OptionButton
 var _difficulty: OptionButton
@@ -294,13 +298,16 @@ func refresh_room() -> void:
 		_random_map.set_pressed_no_signal(game.random_map_each_match)
 		_map_size.select(game.lobby_map_size)
 		_weapons.select(game.weapon_set)
-		_mode.select(int(game.team_deathmatch))
+		_mode.select(game.play_mode if game.objective_mode() else int(game.team_deathmatch))
 		_time_limit.select(game.time_option)
 		_kill_limit.select(game.kill_option)
+		_hill_order.select(game.objective_hill_first + 1)
 		_difficulty.select(game.bot_difficulty)
 		_lan_bots.select(game.lan_bot_count)
+	_autofill.set_pressed_no_signal(game.blue_bot_count < 0 or not game.objective_mode())
 	_refresh_map_size_labels()
 	_refresh_team_board(_lan_bots.selected, game.blue_bot_count)
+	_refresh_objective_limits()
 	var local := Net.local_id()
 	var connected_count: int = Net.MAX_PLAYERS - game.player_slots.count(0)
 	_roster_title.text = "Игроки  %d / %d" % [connected_count, Net.MAX_PLAYERS]
@@ -483,25 +490,50 @@ func _show_room(screen: Screen) -> void:
 	_random_map.toggled.connect(func(_enabled: bool) -> void: _refresh_map_size_labels())
 	UI.row(rules, "Размер карты", _map_size)
 	_map.item_selected.connect(func(_index: int) -> void: _refresh_map_size_labels())
-	_refresh_map_size_labels()
 	UI.row(rules, "Набор оружия", _weapons)
-	_mode = _options(["Каждый за себя", "Командный бой 5 на 5"], int(game.team_deathmatch))
+	_mode = _options(game.OBJECTIVE_LAYOUT.NAMES, game.play_mode if game.objective_mode() else int(game.team_deathmatch))
 	UI.row(rules, "Режим", _mode)
 	_time_limit = _limit_options(game.TIME_LIMITS, game.time_option, 60, "%d мин")
 	_kill_limit = _limit_options(game.KILL_LIMITS, game.kill_option, 1, "%d")
 	UI.row(rules, "Время матча", _time_limit)
 	UI.row(rules, "Лимит убийств", _kill_limit)
+	_hill_order = _options(["По жеребьёвке", "Сначала гора 1", "Сначала гора 2", "Сначала гора 3"], game.objective_hill_first + 1)
+	_hill_order.disabled = _screen == Screen.GUEST
+	_hill_order.item_selected.connect(_on_rules_changed)
+	UI.row(rules, "Порядок гор", _hill_order)
+	_objective_rules = UI.label(rules, "", 14, UI.MUTED)
+	_objective_rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_objective_rules.custom_minimum_size.x = 340.0
+	_objective_rules.hide()
+	_objective_limits = Label.new()
+	_objective_limits.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_objective_limits.hide()
+	rules.add_child(_objective_limits)
+	_autofill = CheckBox.new()
+	_autofill.text = "Заполнять команды ботами"
+	_autofill.button_pressed = game.blue_bot_count < 0 or not game.objective_mode()
+	_autofill.disabled = _screen == Screen.GUEST
+	rules.add_child(_autofill)
+	_autofill.toggled.connect(func(_enabled: bool) -> void:
+		_refresh_objective_limits()
+		if _screen == Screen.HOST:
+			_on_rules_changed(0))
+	_refresh_map_size_labels()
 	_difficulty = _options(game.DIFFICULTY_NAMES, game.bot_difficulty)
 	UI.row(opponents, "Сложность", _difficulty)
 	_team_board = TEAM_BOARD.new()
 	body.add_child(_team_board)
 	_team_board.player_moved.connect(_move_team_player)
 	_team_board.bot_counts_changed.connect(func() -> void:
+		_refresh_objective_limits()
 		if _screen == Screen.HOST:
 			_on_rules_changed(0))
 	_mode.item_selected.connect(func(_value: int) -> void:
-		var blue: int = _team_board.bot_counts().x
-		_refresh_team_board(_ffa_bot_count(), blue if _team_board.visible else -1))
+		if _mode.selected >= game.OBJECTIVE_LAYOUT.HILL:
+			_map_size.select(1)
+		_refresh_map_size_labels()
+		var bots: Vector2i = _team_board.bot_counts()
+		_refresh_team_board(bots.x + bots.y if _team_board.visible else _ffa_bot_count(), bots.x if _team_board.visible else -1))
 
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_END
@@ -526,8 +558,8 @@ func _show_room(screen: Screen) -> void:
 			_team_board.apply_bot_inputs()
 			var bots := _bot_settings()
 			game.start_solo(bots.x, _difficulty.selected, _weapons.selected, _map.selected,
-				Vector2i(_time_limit.selected, _kill_limit.selected), _map_size.selected,
-				_mode.selected == 1, _random_map.button_pressed, bots.y)
+				_selected_limits(), _map_size.selected,
+				_mode.selected > 0, _random_map.button_pressed, bots.y, _mode.selected)
 		, &"PrimaryButton")
 		_first_action.grab_focus()
 		UI.reveal(_panel)
@@ -656,12 +688,40 @@ func _save_display_name() -> void:
 
 func _refresh_map_size_labels() -> void:
 	var game := _match()
+	var objective: bool = _mode.selected >= game.OBJECTIVE_LAYOUT.HILL
+	_random_map.get_parent().visible = not objective
+	if objective:
+		_random_map.set_pressed_no_signal(false)
+	var first := -1
+	for arena in _map.item_count:
+		var available := false
+		for size in _map_size.item_count:
+			available = available or game.OBJECTIVE_LAYOUT.supports(_mode.selected, arena, size)
+		_map.set_item_disabled(arena, not available)
+		_map.set_item_tooltip(arena, "" if available else game.OBJECTIVE_LAYOUT.reason(_mode.selected, arena, 1))
+		if available and first == -1:
+			first = arena
+	if _map.is_item_disabled(_map.selected):
+		_map.select(first)
+	if objective and not game.OBJECTIVE_LAYOUT.supports(_mode.selected, _map.selected, _map_size.selected):
+		for size in _map_size.item_count:
+			if game.OBJECTIVE_LAYOUT.supports(_mode.selected, _map.selected, size):
+				_map_size.select(size)
+				break
+	_time_limit.get_parent().visible = not objective
+	_kill_limit.get_parent().visible = not objective
+	_hill_order.get_parent().visible = _mode.selected == 2
+	_autofill.visible = objective
+	_objective_limits.visible = objective
+	_objective_rules.visible = objective
+	_refresh_objective_limits()
 	var random: bool = _random_map.button_pressed
 	_map.disabled = random or _screen == Screen.GUEST
 	var training: bool = not random and _map.selected == game.MAP.TEST_RANGE_ID
 	var village: bool = not random and _map.selected == game.MAP.VILLAGE_ID
 	var office: bool = not random and _map.selected == game.MAP.OFFICE_ID
-	var forest: bool = not random and _map.selected == game.MAP.FOREST_RIDGE_ID
+	var forest_map: bool = not random and _map.selected == game.MAP.FOREST_RIDGE_ID
+	var forest := forest_map and not objective
 	if office:
 		_map_size.select(0)
 	elif training or forest:
@@ -670,7 +730,9 @@ func _refresh_map_size_labels() -> void:
 		_map_size.select(game.MAP.VILLAGE_MIN_SIZE)
 	_map_size.disabled = training or office or forest or _screen == Screen.GUEST
 	for index in _map_size.item_count:
-		_map_size.set_item_disabled(index, village and index < game.MAP.VILLAGE_MIN_SIZE)
+		var reason: String = game.OBJECTIVE_LAYOUT.reason(_mode.selected, _map.selected, index)
+		_map_size.set_item_disabled(index, reason != "" or village and index < game.MAP.VILLAGE_MIN_SIZE)
+		_map_size.set_item_tooltip(index, reason)
 		var label: String = game.MAP.SIZE_NAMES[index]
 		if random:
 			_map_size.set_item_text(index, label)
@@ -682,9 +744,10 @@ func _refresh_map_size_labels() -> void:
 			_map_size.set_item_text(index, "%s · %.1f × %.1f м" % [label, dimensions.x, dimensions.y])
 		elif training:
 			_map_size.set_item_text(index, "%s · учебный комплекс" % label)
-		elif forest:
+		elif forest_map:
 			var width: float = game.MAP.FOREST_RIDGE.WIDTH
-			_map_size.set_item_text(index, "%d × %d м" % [width, width])
+			var dimensions := "%d × %d м" % [width, width]
+			_map_size.set_item_text(index, "%s · %s" % [label, dimensions] if objective else dimensions)
 		else:
 			var width: float = game.MAP.SIZE_WIDTHS[index]
 			_map_size.set_item_text(index, "%s · %d × %d м" % [label, width, width])
@@ -700,14 +763,14 @@ func _ffa_bot_count() -> int:
 
 
 func _bot_settings() -> Vector2i:
-	if _mode.selected != 1:
+	if _mode.selected == 0:
 		return Vector2i(_ffa_bot_count(), -1)
 	var counts: Vector2i = _team_board.bot_counts()
-	return Vector2i(counts.x + counts.y, counts.x)
+	return Vector2i(counts.x + counts.y, -1 if _mode.selected >= _match().OBJECTIVE_LAYOUT.HILL and _autofill.button_pressed else counts.x)
 
 
 func _refresh_team_board(total: int, blue: int) -> void:
-	var teams := _mode.selected == 1
+	var teams := _mode.selected > 0
 	_team_board.visible = teams
 	_ffa_bots_row.visible = not teams
 	if is_instance_valid(_roster_card):
@@ -725,6 +788,7 @@ func _refresh_team_board(total: int, blue: int) -> void:
 				title = "Вы" if _screen == Screen.SOLO else title + " (вы)"
 			players.append({"peer": peer, "team": slot % 2, "name": title})
 	_team_board.configure(players, total, blue, _screen in [Screen.SOLO, Screen.HOST, Screen.SETUP])
+	_refresh_objective_limits()
 
 
 func _move_team_player(peer: int, team: int, swap: int) -> void:
@@ -737,8 +801,8 @@ func _move_team_player(peer: int, team: int, swap: int) -> void:
 func _on_rules_changed(_index: int) -> void:
 	var bots := _bot_settings()
 	_match().update_host_rules(_weapons.selected, _map.selected,
-		Vector2i(_time_limit.selected, _kill_limit.selected), _difficulty.selected, bots.x, _map_size.selected,
-		_mode.selected == 1, _random_map.button_pressed, bots.y)
+		_selected_limits(), _difficulty.selected, bots.x, _map_size.selected,
+		_mode.selected > 0, _random_map.button_pressed, bots.y, _mode.selected)
 
 
 func _on_solo() -> void:
@@ -754,25 +818,25 @@ func _create_directory_room() -> void:
 		return
 	var weapons := _weapons.selected
 	var arena := _map.selected
-	var limits := Vector2i(_time_limit.selected, _kill_limit.selected)
+	var limits := _selected_limits()
 	var difficulty := _difficulty.selected
 	_team_board.apply_bot_inputs()
 	var bots := _bot_settings()
 	var size := _map_size.selected
-	var teams := _mode.selected == 1
+	var teams := _mode.selected > 0
 	var random_map := _random_map.button_pressed
 	var blue_bots := bots.y
 	_save_display_name()
 	show_internet_wait("Создаём комнату…")
-	RoomDirectory.request_create(password, weapons, arena, limits, difficulty, bots.x, size, teams, random_map, blue_bots)
+	RoomDirectory.request_create(password, weapons, arena, limits, difficulty, bots.x, size, teams, random_map, blue_bots, _mode.selected)
 
 
 func _create_internet_room() -> void:
 	_save_display_name()
 	_team_board.apply_bot_inputs()
 	var bots := _bot_settings()
-	_match().create_internet_room(_weapons.selected, _map.selected, Vector2i(_time_limit.selected, _kill_limit.selected),
-		_difficulty.selected, bots.x, _map_size.selected, _mode.selected == 1, _random_map.button_pressed, bots.y)
+	_match().create_internet_room(_weapons.selected, _map.selected, _selected_limits(),
+		_difficulty.selected, bots.x, _map_size.selected, _mode.selected > 0, _random_map.button_pressed, bots.y, _mode.selected)
 
 
 func _on_internet() -> void:
@@ -860,3 +924,44 @@ func _quit_game() -> void:
 
 func _match() -> Node:
 	return get_parent().get_parent()
+
+
+
+func _refresh_objective_limits() -> void:
+	if not is_instance_valid(_team_board) or not is_instance_valid(_objective_limits) or _mode.selected < 2:
+		return
+	var game := _match()
+	var seats := Vector2i.ZERO
+	for slot in game.player_slots.size():
+		if game.player_slots[slot] > 0:
+			seats[slot % 2] += 1
+	var humans := seats
+	var bots: Vector2i = _team_board.bot_counts()
+	seats.x = mini(seats.x + bots.x, 5)
+	seats.y = mini(seats.y + bots.y, 5)
+	var count := maxi(seats.x, seats.y)
+	if _autofill.button_pressed:
+		count = clampi(maxi(maxi(humans.x, humans.y), ceili((humans.x + humans.y + bots.x + bots.y) / 2.0)), 1, 5)
+		seats = Vector2i(count, count)
+	var preset := clampi(count - 1, 0, 3)
+	_hill_order.disabled = preset == 0 or _screen == Screen.GUEST
+	var detail := ""
+	match _mode.selected:
+		2:
+			detail = "%d очков · %d мин" % [[90, 110, 140, 160][preset], 5 + preset]
+			_objective_rules.text = "Удерживайте окрашенную зону. Команда получает 1 очко в секунду, пока в зоне нет соперников. " + ("Гора остаётся на месте." if preset == 0 else "Гора меняется каждые 45 секунд.")
+		3:
+			detail = "%d захвата · %d мин" % [[2, 3, 3, 3][preset], 5 + preset]
+			_objective_rules.text = "Подберите флаг соперника касанием. Останьтесь в своей зоне 2 секунды, пока ваш флаг дома. Коснитесь упавшего флага своей команды, чтобы вернуть его."
+		4:
+			detail = "До 5 побед · %s · %d с на раунд" % ["Точка A" if preset < 2 else "Точки A и B", [50, 55, 65, 75][preset]]
+			_objective_rules.text = "Одна жизнь на раунд. Атака устанавливает заряд за 3 с, защита снимает его за 5 с. Удерживайте [%s]. После четырёх раундов команды меняются сторонами." % GameSettings.binding_label(&"interact")
+	var mismatch := " · Неравные команды" if seats.x != seats.y else ""
+	_objective_limits.text = "%d × %d · %s%s" % [seats.x, seats.y, detail, mismatch]
+
+
+
+func _selected_limits() -> Vector2i:
+	if _mode.selected >= 2:
+		return Vector2i(_hill_order.selected, 0)
+	return Vector2i(_time_limit.selected, _kill_limit.selected)

@@ -169,7 +169,7 @@ func pose_shovel(actor: Node3D) -> void:
 
 
 func _usable(actor: Node3D) -> bool:
-	return is_instance_valid(actor) and actor.control_enabled and not _arena.round_finished() and not actor.is_climbing_ladder()
+	return is_instance_valid(actor) and actor.control_enabled and not _arena.round_finished() and not _arena.objective_combat_frozen() and not actor.is_climbing_ladder()
 
 
 func _view(actor: Node3D) -> Transform3D:
@@ -232,7 +232,7 @@ func _build_site(actor: Node3D) -> Dictionary:
 		elif body is StaticBody3D and not body.is_in_group("supply_crate") 				and body.get_meta(&"impact_surface", "concrete") in ["concrete", "brick", "metal"]:
 			var flat := Vector3(signf(face.x), 0, 0) if absf(face.x) > absf(face.z) else Vector3(0, 0, signf(face.z))
 			site = {"kind": "bag", "at": ground, "face": flat}
-	if site.is_empty():
+	if site.is_empty() or (_arena.objectives and _arena.objectives.build_blocked(site.at)):
 		return {}
 	site.started = at
 	if _footprint(site).grow(0.28).has_point(_xz(at)) or not _clear_site(site):

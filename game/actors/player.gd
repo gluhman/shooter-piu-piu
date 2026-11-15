@@ -102,8 +102,10 @@ var _ladder_step := 0
 
 var _respawn_timer: SceneTreeTimer
 var _hurt_lock := 0.0
+var _objective_held := false
 var _avatar: Node3D
 var _skeleton: Skeleton3D
+var objective_socket: Node3D
 var _pose: OperatorPose
 var _hit_reaction: HitReaction
 var _hurtboxes: Hurtboxes
@@ -161,7 +163,7 @@ func _server_rules() -> bool:
 
 
 func take_damage(amount: float, killer_id: int = 0, zone: String = "chest", head_multiplier: float = 0.0, impact: Dictionary = {}) -> void:
-	if not _server_rules() or get_parent().round_finished() or _dead or not control_enabled or amount <= 0.0:
+	if not _server_rules() or get_parent().round_finished() or get_parent().objective_combat_frozen() or _dead or not control_enabled or amount <= 0.0:
 		return
 	if not get_parent().allows_damage(killer_id, score_id()):
 		return
@@ -412,7 +414,7 @@ func _accept_respawn_loadout(primary: String, sidearm: String, grenade: String, 
 	if not _valid_loadout(primary, sidearm, grenade) or not _respawn_selection.is_empty():
 		return
 	_respawn_selection = PackedStringArray([primary, sidearm, grenade])
-	if _respawn_ready:
+	if _respawn_ready and not get_parent().objectives:
 		_request_respawn.call_deferred()
 
 
@@ -923,11 +925,14 @@ func _commit(killer_id: int, impact: Dictionary = {}) -> void:
 		body_impact["drift"] = drift
 		get_parent().get_node("Loot").drop_combatant(self, body_impact)
 		get_parent().announce(killer_id, score_id())
-		_respawn_timer = get_tree().create_timer(_respawn_delay(), false, true)
-		_respawn_timer.timeout.connect(_request_respawn)
+		if get_parent().objectives:
+			get_parent().objectives.departed(self, false)
+		else:
+			_respawn_timer = get_tree().create_timer(_respawn_delay(), false, true)
+			_respawn_timer.timeout.connect(_request_respawn)
 	_clear_inventory()
 	inventory_changed.emit()
-	if _is_local() and _requires_respawn_selection():
+	if _is_local() and _requires_respawn_selection() and get_parent().play_mode != get_parent().OBJECTIVE_LAYOUT.DEFUSE:
 		get_parent().get_node("HUD/WeaponSelect").show_respawn_selection.call_deferred()
 
 
@@ -965,8 +970,9 @@ func _request_respawn() -> void:
 		return
 	var at: Vector3 = get_parent().choose_respawn(self, _last_spawn_position)
 	if not at.is_finite():
-		_respawn_timer = get_tree().create_timer(0.25, false, true)
-		_respawn_timer.timeout.connect(_request_respawn)
+		if not get_parent().objectives:
+			_respawn_timer = get_tree().create_timer(0.25, false, true)
+			_respawn_timer.timeout.connect(_request_respawn)
 		return
 	var loadout := _respawn_selection.duplicate()
 	if loadout.size() == 3:
@@ -1169,7 +1175,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"interact"):
-		get_parent().get_node("Loot").interact(self)
+		_objective_held = get_parent().objective_interact(self, true)
+		if not _objective_held:
+			get_parent().get_node("Loot").interact(self)
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -1198,7 +1206,7 @@ func _ensure_selected_grenade() -> void:
 
 
 func accepts_gameplay_input() -> bool:
-	return control_enabled and GameSettings.game_window_focused() and not get_parent().input_blocked()
+	return control_enabled and GameSettings.game_window_focused() and not get_parent().input_blocked() and not get_parent().objective_combat_frozen()
 
 
 func has_support_tools() -> bool:
@@ -1210,6 +1218,9 @@ func fieldworks() -> Node:
 
 
 func _physics_process(delta: float) -> void:
+	if _is_local() and _objective_held and (not Input.is_action_pressed(&"interact") or not accepts_gameplay_input()):
+		_objective_held = false
+		get_parent().objective_interact(self, false)
 	if _dead or get_parent().round_finished():
 		return
 	if not _is_local():
@@ -1443,6 +1454,25 @@ func _build_operator() -> void:
 			var mesh := _avatar.find_child(mesh_name, true, false) as MeshInstance3D
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		eyes.hide()
+	if get_parent().objectives and not Net.dedicated:
+		_build_objective_socket()
+
+
+func _build_objective_socket() -> void:
+	var spine := _skeleton.find_bone(&"mixamorig_Spine2_04")
+	if spine < 0:
+		return
+	var rest := _skeleton.global_transform * _skeleton.get_bone_global_rest(spine)
+	var mount := BoneAttachment3D.new()
+	mount.name = "ObjectiveBackMount"
+	mount.bone_idx = spine
+	_skeleton.add_child(mount)
+	objective_socket = Node3D.new()
+	objective_socket.name = "ObjectiveSocket"
+	mount.add_child(objective_socket)
+	objective_socket.transform = rest.affine_inverse() * global_transform * Transform3D(Basis.IDENTITY, Vector3(0, 1.23, 0.24))
+	if get_parent().play_mode == get_parent().OBJECTIVE_LAYOUT.DEFUSE:
+		preload("res://game/match/objectives/backpack.gd").attach(objective_socket, FIRST_PERSON_BODY_LAYER if _is_local() else 1)
 
 
 func set_first_person_body_visible(visible_body: bool) -> void:
