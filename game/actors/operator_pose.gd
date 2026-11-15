@@ -46,12 +46,22 @@ const WALK_DIRECTIONS := ["forward", "forward_right", "right", "backward_right",
 const DIRECTION_STEP := TAU / 8.0
 const TOE_CLEARANCE := 0.04
 const CROUCH_TOE_OUT := 0.26
+const CROUCH_HIP_HEIGHT := 0.604
+const JOG_HIP_HEIGHT := 0.763
+const SPRINT_HIP_HEIGHT := 0.885
+const HIP_HEIGHT_BLEND := 0.014
+const ADS_SPINE_OFFSET := Vector3(0.0, -0.060, -0.015)
+const ADS_TORSO_PITCH := -0.27
+const ADS_NECK_PITCH := -0.16
+const ADS_HEAD_PITCH := -0.08
 const FIREARM_FINGER_CURL := [0.18, -0.13, 0.36, 0.42, 0.44]
 const KNIFE_FINGER_CURL := [0.30, 0.72, 0.83, 0.88, 0.95]
 
 var actor: Node3D
 var right_wrist: Marker3D
 var left_wrist: Marker3D
+var right_palm: Marker3D
+var left_palm: Marker3D
 var knife_grip := false
 var planar_velocity := Vector3.ZERO
 var grounded := true
@@ -79,17 +89,23 @@ var _locomotion: AnimationPlayer
 var _directional_gaits := false
 var _travel_sector := 0
 var _was_grounded := true
-var _fall_speed := 0.0
 var _transition_left := 0.0
 var _stride_yaw := 0.0
 var _stride_weight := 0.0
 var _crouch_weight := 0.0
 var _torso_angles := Vector3.ZERO
+var _hip_floor := CROUCH_HIP_HEIGHT
+var _hip_lift := 0.0
+var _hips := -1
+var _neck := -1
 var _head := -1
 var _spine := -1
 var _right_reach: Vector2
 var _left_reach: Vector2
+var _right_palm_offset: Vector3
+var _left_palm_offset: Vector3
 var aim_pitch := 0.0
+var ads_weight := 0.0
 
 
 func _ready() -> void:
@@ -108,6 +124,10 @@ func _ready() -> void:
 	_floor_ray.collision_mask = Balance.WORLD_MASK
 	_right_fingers = _finger_chains(skeleton, "Right")
 	_left_fingers = _finger_chains(skeleton, "Left")
+	_right_palm_offset = skeleton.get_bone_rest(_right_fingers[2][0]).origin * 0.62
+	_left_palm_offset = skeleton.get_bone_rest(_left_fingers[2][0]).origin * 0.62
+	_hips = skeleton.find_bone(&"mixamorig_Hips_01")
+	_neck = skeleton.find_bone(&"mixamorig_Neck_05")
 	_head = skeleton.find_bone(&"mixamorig_Head_06")
 	_spine = skeleton.find_bone(&"mixamorig_Spine_02")
 	_right_reach = _arm_reach(skeleton, _right_arm)
@@ -127,13 +147,14 @@ func _ready() -> void:
 
 func reset_locomotion() -> void:
 	_was_grounded = true
-	_fall_speed = 0.0
 	_transition_left = 0.0
 	_stride_yaw = 0.0
 	_stride_weight = 0.0
 	_travel_sector = 0
 	_crouch_weight = 0.0
 	_torso_angles = Vector3.ZERO
+	_hip_floor = CROUCH_HIP_HEIGHT
+	_hip_lift = 0.0
 	_foot_contact.fill(false)
 	_foot_height.fill(0.0)
 	_locomotion.stop()
@@ -152,18 +173,12 @@ func update_locomotion(delta: float, crouched: bool, vertical_speed: float) -> v
 	var moving_speed := 0.20 if was_moving else 0.38
 	_transition_left = maxf(0.0, _transition_left - delta)
 	if not grounded:
-		_fall_speed = maxf(_fall_speed, -vertical_speed)
 		if _was_grounded and vertical_speed > 1.0:
 			_transition_left = 0.20
 			clip = &"jump_start"
 		else:
 			clip = &"jump_start" if current == &"jump_start" and _transition_left > 0.0 else &"jump_air"
 		rate = 4.0 if clip == &"jump_start" else 1.0
-	elif (not _was_grounded and maxf(_fall_speed, -vertical_speed) > 1.1) or (current == &"jump_land" and _transition_left > 0.0):
-		if current != &"jump_land":
-			_transition_left = 0.30
-		clip = &"jump_land"
-		rate = 3.0
 	elif crouched:
 		clip = &"crouch_walk" if speed > moving_speed else &"crouch_idle"
 		rate = clampf(speed / 1.65, 0.55, 1.65) if clip == &"crouch_walk" else 1.0
@@ -200,27 +215,41 @@ func update_locomotion(delta: float, crouched: bool, vertical_speed: float) -> v
 		clampf(-travel.x * 0.030, -0.16, 0.16))
 	lean.x -= 0.08 if crouched else 0.0
 	_torso_angles = _torso_angles.lerp(lean, 1.0 - exp(-delta * 9.0))
-	if grounded:
-		_fall_speed = 0.0
 	_was_grounded = grounded
 	if current != clip:
 		var phase := 0.0
 		if moving and was_moving:
 			phase = _locomotion.current_animation_position / _locomotion.current_animation_length
-		var blend_time := 0.08 if clip in [&"jump_start", &"jump_land"] else 0.15
+		var blend_time := 0.08 if clip == &"jump_start" else 0.15
 		_locomotion.play(clip, blend_time)
 		if phase > 0.0:
 			_locomotion.seek(phase * _locomotion.get_animation(clip).length)
 	_locomotion.speed_scale = rate
 	_locomotion.advance(delta)
+	var hip_floor := CROUCH_HIP_HEIGHT
+	if clip == &"sprint":
+		hip_floor = SPRINT_HIP_HEIGHT
+	elif clip == &"jog" or clip.begins_with("directions/jog_"):
+		hip_floor = JOG_HIP_HEIGHT
+	_hip_floor = move_toward(_hip_floor, hip_floor, delta * 2.4)
+	var skeleton := get_skeleton()
+	var hip_height := actor.to_local(skeleton.to_global(skeleton.get_bone_global_pose(_hips).origin)).y
+	var clearance := hip_height - _hip_floor
+	_hip_lift = maxf(0.0, -clearance)
+	if absf(clearance) < HIP_HEIGHT_BLEND:
+		# Round the transition into the height limit so the stride keeps its rhythm.
+		_hip_lift = pow(HIP_HEIGHT_BLEND - clearance, 2.0) / (4.0 * HIP_HEIGHT_BLEND)
+	if not grounded:
+		_hip_lift = 0.0
 
 
 func weapon_carry_anchor() -> Vector3:
 	return _animated_shoulder(_right_arm).lerp(_animated_shoulder(_left_arm), 0.5)
 
 
-func weapon_stock_anchor() -> Vector3:
-	return _animated_shoulder(_right_arm) + actor.global_basis * Vector3(-0.045, 0.06, -0.095)
+func weapon_palm_offset(right: bool) -> Vector3:
+	var offset := _right_palm_offset if right else _left_palm_offset
+	return offset * get_skeleton().global_basis.get_scale().abs()
 
 
 func weapon_reach_correction(two_handed: bool) -> Vector3:
@@ -255,14 +284,40 @@ func clamp_support_hand(point: Vector3) -> Vector3:
 func _animated_shoulder(chain: PackedInt32Array) -> Vector3:
 	var skeleton := get_skeleton()
 	var shoulder := skeleton.get_bone_global_pose(chain[0]).origin
+	return skeleton.to_global(_spine_adjustment(skeleton) * shoulder) + Vector3.UP * _hip_lift
+
+
+func aim_eye_position() -> Vector3:
+	var skeleton := get_skeleton()
+	var spine_adjustment := _spine_adjustment(skeleton)
+	var neck := spine_adjustment * skeleton.get_bone_global_pose(_neck)
+	var head := skeleton.get_bone_global_pose(_head)
+	var neck_turn := Basis(_aim_axis(skeleton), ADS_NECK_PITCH * ads_weight)
+	head.origin = neck.origin + neck_turn * (spine_adjustment * head.origin - neck.origin)
+	head.basis = _aim_head_basis(skeleton, head.basis)
+	return skeleton.to_global(head * eye_in_head) + Vector3.UP * _hip_lift
+
+
+func _spine_adjustment(skeleton: Skeleton3D) -> Transform3D:
 	var spine := skeleton.get_bone_global_pose(_spine).origin
-	return skeleton.to_global(spine + _torso_rotation(skeleton) * (shoulder - spine))
+	var turn := _torso_rotation(skeleton)
+	var offset := skeleton.global_basis.inverse() * (actor.global_basis * ADS_SPINE_OFFSET * ads_weight)
+	return Transform3D(turn, spine - turn * spine + offset)
+
+
+func _aim_axis(skeleton: Skeleton3D) -> Vector3:
+	return (skeleton.global_basis.inverse() * actor.global_basis.x).normalized()
+
+
+func _aim_head_basis(skeleton: Skeleton3D, basis: Basis) -> Basis:
+	var roll_axis := (skeleton.global_basis.inverse() * actor.global_basis.z).normalized()
+	return Basis(roll_axis, -lean * 0.16) * Basis(_aim_axis(skeleton), aim_pitch + ADS_HEAD_PITCH * ads_weight) * basis
 
 
 func _torso_rotation(skeleton: Skeleton3D) -> Basis:
 	var axes := (skeleton.global_basis.inverse() * actor.global_basis).orthonormalized()
 	var angles := _torso_angles
-	angles.x += aim_pitch * 0.25 - shovel_lean.x
+	angles.x += aim_pitch * 0.25 - shovel_lean.x + ADS_TORSO_PITCH * ads_weight
 	if mounted_grip:
 		angles.x += 0.24 + maxf(0.0, aim_pitch) * 0.40
 	angles.y += shovel_lean.y - shoulder_brace * 0.55
@@ -294,20 +349,24 @@ func _process_modification_with_delta(delta: float) -> void:
 	var world_to_rig := rig_transform.affine_inverse()
 	var rig_to_actor := actor_transform.affine_inverse() * rig_transform
 	var actor_to_rig := world_to_rig * actor_transform
+	var rig_lift := world_to_rig.basis * (Vector3.UP * _hip_lift)
+	if _hip_lift > 0.0:
+		var hips := skeleton.get_bone_global_pose(_hips)
+		hips.origin += rig_lift
+		skeleton.set_bone_global_pose(_hips, hips)
 	if not mounted_grip:
 		for index in _legs.size():
-			_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig)
+			_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig, rig_lift)
 
 	var head_basis := skeleton.get_bone_global_pose(_head).basis
-	var spine := skeleton.get_bone_global_pose(_spine)
-	spine.basis = _torso_rotation(skeleton) * spine.basis
-	skeleton.set_bone_global_pose(_spine, spine)
-	if _head >= 0:
-		var head := skeleton.get_bone_global_pose(_head)
-		var head_axis := actor_to_rig.basis.x
-		var roll_axis := actor_to_rig.basis.z.normalized()
-		head.basis = Basis(roll_axis, -lean * 0.16) * Basis(head_axis.normalized(), aim_pitch) * head_basis
-		skeleton.set_bone_global_pose(_head, head)
+	skeleton.set_bone_global_pose(_spine, _spine_adjustment(skeleton) * skeleton.get_bone_global_pose(_spine))
+	if ads_weight > 0.0:
+		var neck := skeleton.get_bone_global_pose(_neck)
+		neck.basis = Basis(_aim_axis(skeleton), ADS_NECK_PITCH * ads_weight) * neck.basis
+		skeleton.set_bone_global_pose(_neck, neck)
+	var head := skeleton.get_bone_global_pose(_head)
+	head.basis = _aim_head_basis(skeleton, head_basis)
+	skeleton.set_bone_global_pose(_head, head)
 
 	if mounted_grip and _head >= 0:
 		# Swing the entire operator around the tripod with the eye at the sight.
@@ -317,11 +376,11 @@ func _process_modification_with_delta(delta: float) -> void:
 		rig_to_actor = actor_transform.affine_inverse() * skeleton.global_transform
 		actor_to_rig = world_to_rig * actor_transform
 		for index in _legs.size():
-			_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig)
+			_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig, rig_lift)
 
 	if is_instance_valid(right_wrist) and is_instance_valid(left_wrist):
-		_pose_arm(skeleton, _right_arm, right_wrist, 1.0, actor_to_rig.basis, world_to_rig)
-		_pose_arm(skeleton, _left_arm, left_wrist, -1.0, actor_to_rig.basis, world_to_rig)
+		_pose_arm(skeleton, _right_arm, right_wrist, right_palm, _right_palm_offset, 1.0, actor_to_rig.basis, world_to_rig)
+		_pose_arm(skeleton, _left_arm, left_wrist, left_palm, _left_palm_offset, -1.0, actor_to_rig.basis, world_to_rig)
 		_pose_fingers(skeleton, _right_fingers, KNIFE_FINGER_CURL if knife_grip or shovel_grip else FIREARM_FINGER_CURL)
 		var fingers := float(left_wrist.get_meta(&"grip_curl", 0.0))
 		_pose_fingers(skeleton, _left_fingers, KNIFE_FINGER_CURL if shovel_grip else [
@@ -334,11 +393,11 @@ func _process_modification_with_delta(delta: float) -> void:
 
 
 func _pose_leg(skeleton: Skeleton3D, index: int, delta: float, rig_to_actor: Transform3D,
-		actor_to_rig: Transform3D, world_to_rig: Transform3D) -> void:
+		actor_to_rig: Transform3D, world_to_rig: Transform3D, rig_lift: Vector3) -> void:
 	var chain := _legs[index]
 	var ankle := skeleton.get_bone_global_pose(chain[2])
 	var toe := skeleton.get_bone_global_pose(chain[3]).origin
-	var foot := rig_to_actor * ankle.origin
+	var foot := rig_to_actor * (ankle.origin - rig_lift)
 	var toe_offset := rig_to_actor.basis * (toe - ankle.origin)
 	var animated_sole := foot.y + minf(toe_offset.y, -0.08)
 	var sole_height := animated_sole
@@ -434,11 +493,14 @@ func _pose_fingers(skeleton: Skeleton3D, chains: Array[PackedInt32Array], curls:
 			axis = (rotation.inverse() * axis).normalized()
 
 
-func _pose_arm(skeleton: Skeleton3D, chain: PackedInt32Array, wrist: Marker3D, side: float,
+func _pose_arm(skeleton: Skeleton3D, chain: PackedInt32Array, wrist: Marker3D, palm: Marker3D, palm_offset: Vector3, side: float,
 		actor_to_rig: Basis, world_to_rig: Transform3D) -> void:
 	var shoulder := skeleton.get_bone_global_pose(chain[0]).origin
 	var pole := shoulder + actor_to_rig * Vector3(side * 0.13, -0.34, 0.16)
 	var goal := world_to_rig * wrist.global_transform
+	if is_instance_valid(palm):
+		goal = world_to_rig * palm.global_transform
+		goal.origin -= goal.basis.orthonormalized() * palm_offset
 	goal.basis = goal.basis.orthonormalized()
 	_solve(skeleton, chain, goal, pole, true)
 

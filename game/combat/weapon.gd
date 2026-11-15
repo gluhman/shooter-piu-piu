@@ -21,6 +21,8 @@ const SHELL_INTERVAL: float = Balance.DATA.weapons.shotgun.reload_shell_s
 const SHELL_FINISH: float = Balance.DATA.weapons.shotgun.reload_end_s
 const SHELL_IN_HAND := Vector3(-0.024, 0.126, 0.052)
 const HIP_FOV := 110.0
+const READY_DROP := 0.12
+const RUN_CARRY_HEIGHT := -0.16
 const KNIFE_SWING_TIME := 0.48
 const KNIFE_GRIP_IN_WRIST := Vector3(-0.010, 0.094, 0.020)
 # Physical sight alignment uses the aperture center and the top of the front post.
@@ -160,13 +162,14 @@ var _aim_amount := 0.0
 var _run_carry := 0.0
 var _switch_left := 0.0
 var _aim_pose: Transform3D
-var _stock_contact := Vector3.ZERO
 var _aim_depth_limit := 0.0
 var _scope_view := false
 var _reload_units := 0
 var _shells_inserted := 0
 var _right_wrist: Marker3D
 var _left_wrist: Marker3D
+var _right_palm: Marker3D
+var _left_palm: Marker3D
 var _support_rest: Vector3
 var _support_basis: Basis
 var _magazine: Node3D
@@ -228,6 +231,7 @@ func equip(weapon_id: String, magazine: int = -1, reserve: int = -1, switching: 
 	_mag = int(_stats.mag) if magazine < 0 else mini(magazine, int(_stats.mag))
 	_reserve = int(_stats.reserve) if reserve < 0 else mini(reserve, _player.ammo_capacity(weapon_id))
 	_aim_amount = 0.0
+	_player.set_aim_posture(0.0)
 	_knife_swing_left = 0.0
 	_pending_knife = Vector3.ZERO
 	_knife_windup = 0.0
@@ -912,6 +916,14 @@ func aim_blend() -> float:
 
 func update_pose(delta: float) -> void:
 	if _active and not _match.round_finished():
+		var works: Node = _player.fieldworks()
+		var can_aim: bool = _weapon_id != "knife" and not (works and (works.is_mounted(_player) or works.is_building(_player)))
+		if can_aim:
+			var wants_aim: bool = _player.aiming and _player.control_enabled and not _reloading and not _player.sprinting and not _player.sliding
+			var ads_time := float(_stats.get("balance", {}).get("ads_s", _handling.get("aim_seconds", 0.16)))
+			ads_time += _player.armor_ads_delay()
+			_aim_amount = move_toward(_aim_amount, float(wants_aim), delta / ads_time)
+		_player.set_aim_posture(aim_blend() if can_aim else 0.0)
 		_apply_view(delta)
 
 
@@ -925,7 +937,7 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 		works.pose_shovel(_player)
 		return
 	var mounted: bool = works and works.is_mounted(_player)
-	_player.set_weapon_grips(_right_wrist, _left_wrist, _weapon_id == "knife", mounted)
+	_player.set_weapon_grips(_right_wrist, _left_wrist, _weapon_id == "knife", mounted, _right_palm, _left_palm)
 	if not _tripod_legs.is_empty():
 		_pose_tripod(mounted)
 	if mounted:
@@ -940,10 +952,6 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	if _weapon_id == "knife":
 		_apply_knife_view()
 		return
-	var wants_aim: bool = _player.aiming and _player.control_enabled and not _reloading and not _player.sprinting and not _player.sliding
-	var ads_time := float(_stats.get("balance", {}).get("ads_s", _handling.get("aim_seconds", 0.16)))
-	ads_time += _player.armor_ads_delay()
-	_aim_amount = move_toward(_aim_amount, float(wants_aim), delta / ads_time)
 	var blend := aim_blend()
 	if _player._is_local():
 		_camera.fov = lerpf(HIP_FOV, float(_stats["aim_fov"]), blend)
@@ -964,14 +972,14 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	var handling_offset := _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose
 	var handling_rotation := Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose,
 		0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
-	var hip_position := pitch * (_rest_pos + bob + handling_offset)
+	var hip_position := pitch * (_rest_pos + Vector3.DOWN * READY_DROP + bob + handling_offset)
 	var hip_basis := pitch * handling_rotation
 	var run_carry := smoothstep(0.0, 1.0, _run_carry)
 	if run_carry > 0.0:
 		# Follow the lowered torso through the run cycle and limit how far the weapon follows head pitch.
 		var carry_pitch := -0.31 + clampf(_camera.rotation.x, -0.22, 0.22) * 0.5
 		var carry_rotation := Basis.from_euler(Vector3(carry_pitch, 0.14, -0.10))
-		var carry_offset := Vector3(_rest_pos.x + 0.025, -0.10, _rest_pos.z - 0.09)
+		var carry_offset := Vector3(_rest_pos.x + 0.025, RUN_CARRY_HEIGHT, _rest_pos.z - 0.09)
 		if _loads_one_round():
 			carry_offset.z -= 0.10 * reload_pose
 		var body_basis: Basis = _player.global_basis
@@ -980,27 +988,17 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 		hip_position = hip_position.lerp(_camera.to_local(carry_origin), run_carry)
 		hip_basis = hip_basis.slerp(carry_basis.orthonormalized(), run_carry)
 	var bot: bool = _player.is_in_group("bot")
-	var aimed_position := _aim_pose.origin
-	if bot:
-		if _weapon_id in STOCKED_WEAPONS:
-			# Center the stock on the bot's shoulder instead of aligning the sights with its camera.
-			_player.set_shoulder_brace(lerpf(0.85, 1.0, blend))
-			if blend > 0.0:
-				aimed_position = _camera.to_local(_player.weapon_stock_anchor()) - _aim_pose.basis * _stock_contact
-		elif blend > 0.0:
-			var hands := Vector3(0.035, 0.06, -0.39)
-			var chest: Vector3 = _player.weapon_carry_anchor()
-			aimed_position = _camera.to_local(chest + _camera.global_basis * hands)
-	_view.position = hip_position.lerp(aimed_position + Vector3.BACK * _kick_pos.z, blend)
+	if bot and _weapon_id in STOCKED_WEAPONS:
+		_player.set_shoulder_brace(0.85 * (1.0 - blend))
+	_view.position = hip_position.lerp(_aim_pose.origin + Vector3.BACK * _kick_pos.z, blend)
 	_view.basis = hip_basis.orthonormalized().slerp(_aim_pose.basis, blend)
 	if _switch_left > 0.0:
 		var switch_pose := _switch_left / 0.22
 		_view.position += Vector3(0.06 * switch_pose, -0.28 * switch_pose, 0.12 * switch_pose)
 		_view.basis = _view.basis * Basis.from_euler(Vector3(0.16 * switch_pose, 0.0, -0.24 * switch_pose))
-	if bot or blend < 1.0:
-		var reach_weight := 1.0 if bot else 1.0 - blend
-		_view.global_position += _player.weapon_reach_correction(not _reloading) * reach_weight
-	if not bot and blend > 0.0:
+	if blend < 1.0:
+		_view.global_position += _player.weapon_reach_correction(not _reloading) * (1.0 - blend)
+	if blend > 0.0:
 		var axis := _camera.global_basis.z
 		var depth: float = _player.weapon_reach_along(axis)
 		_view.global_position += axis * minf(depth, _aim_depth_limit) * blend
@@ -1134,7 +1132,9 @@ func _build_viewmodel(weapon_id: String) -> void:
 	_left_wrist.basis = _support_basis
 	if marked_model:
 		_left_wrist.set_meta(&"grip_curl", 0.21 if weapon_id in ["breacher", "compact"] else 0.12)
-	_player.set_weapon_grips(_right_wrist, _left_wrist, weapon_id == "knife")
+	_right_palm = _palm_target(_right_wrist, &"TriggerPalm", true) if weapon_id != "knife" else null
+	_left_palm = _palm_target(_left_wrist, &"SupportPalm", false) if weapon_id != "knife" else null
+	_player.set_weapon_grips(_right_wrist, _left_wrist, weapon_id == "knife", false, _right_palm, _left_palm)
 
 	_muzzle = _marker(_muzzle_point(model, weapon_id))
 	_muzzle.name = "Muzzle"
@@ -1144,11 +1144,6 @@ func _build_viewmodel(weapon_id: String) -> void:
 	elif weapon_id == "shotgun":
 		bore = Vector3.LEFT
 	_muzzle.basis = Basis.looking_at((model.basis * bore).normalized())
-	if _player.is_in_group("bot") and weapon_id in STOCKED_WEAPONS:
-		var bounds := _view_bounds(model, _view)
-		var rearward := _muzzle.basis.z
-		var bore_at_stock := _muzzle.position + rearward * ((bounds.end.z - _muzzle.position.z) / rearward.z)
-		_stock_contact = Vector3(bore_at_stock.x, lerpf(_right_wrist.position.y, bore_at_stock.y, 0.5), bounds.end.z)
 	_tripod_legs.clear()
 	if weapon_id == "m249":
 		_add_tripod(model)
@@ -1630,6 +1625,14 @@ func _marker(at: Vector3) -> Marker3D:
 	marker.position = at
 	_view.add_child(marker)
 	return marker
+
+
+func _palm_target(wrist: Marker3D, marker_name: StringName, right: bool) -> Marker3D:
+	var palm := Marker3D.new()
+	palm.name = marker_name
+	palm.position = _player.weapon_palm_offset(right)
+	wrist.add_child(palm)
+	return palm
 
 
 func confirm_projectile_hit(headshot: bool = false) -> void:

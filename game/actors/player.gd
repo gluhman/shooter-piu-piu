@@ -11,7 +11,7 @@ const GROUND_BRAKING := 46.0
 const AIR_ACCELERATION := 24.0
 const STANDING_HEIGHT := 1.7
 const CROUCH_HEIGHT := 1.22
-const CROUCH_DROP := STANDING_HEIGHT - CROUCH_HEIGHT
+const CROUCH_VIEW_DROP := 0.36
 const JUMP_VELOCITY: float = Balance.MOVEMENT.jump_vertical_speed_m_s
 const MOUSE_SENS := 0.0022
 const MAX_HEALTH: int = Balance.PLAYER.max_health
@@ -738,9 +738,12 @@ func rewound_hit(from: Vector3, to: Vector3, time: float) -> Dictionary:
 	return _hurtboxes.rewound_ray(from, to, time)
 
 
-func set_weapon_grips(right: Marker3D, left: Marker3D, knife: bool, mounted := false) -> void:
+func set_weapon_grips(right: Marker3D, left: Marker3D, knife: bool, mounted := false,
+		right_contact: Marker3D = null, left_contact: Marker3D = null) -> void:
 	_pose.right_wrist = right
 	_pose.left_wrist = left
+	_pose.right_palm = right_contact
+	_pose.left_palm = left_contact
 	_pose.knife_grip = knife
 	_pose.mounted_grip = mounted
 	_pose.shoulder_brace = 0.0
@@ -762,8 +765,15 @@ func weapon_carry_anchor() -> Vector3:
 	return _pose.weapon_carry_anchor()
 
 
-func weapon_stock_anchor() -> Vector3:
-	return _pose.weapon_stock_anchor()
+func weapon_palm_offset(right: bool) -> Vector3:
+	return _pose.weapon_palm_offset(right)
+
+
+func set_aim_posture(weight: float) -> void:
+	if is_equal_approx(_pose.ads_weight, weight):
+		return
+	_pose.ads_weight = weight
+	_update_view_pose()
 
 
 func set_shoulder_brace(weight: float) -> void:
@@ -1509,8 +1519,10 @@ func _update_operator(delta: float) -> void:
 func _update_view_pose() -> void:
 	_pose.aim_pitch = clampf(_camera.rotation.x, -0.78, 0.78)
 	var crouch_weight := smoothstep(0.0, 1.0, _crouch_blend)
-	var stance := Vector3(0.0, -CROUCH_DROP, 0.05) * crouch_weight
+	var stance := Vector3(0.0, -CROUCH_VIEW_DROP, 0.05) * crouch_weight
 	var eye := _neutral_eye(_camera.rotation.x, crouch_weight)
+	if _pose.ads_weight > 0.0:
+		eye = eye.lerp(to_local(_pose.aim_eye_position()), _pose.ads_weight)
 	_view_lean = _limit_lean(_lean_amount, to_global(eye), global_basis.x) if _is_local() else _lean_amount
 	var lean_offset := Vector3.RIGHT * (_view_lean * LEAN_DISTANCE)
 	_pose.lean = _view_lean
@@ -1540,7 +1552,7 @@ func align_mounted_operator(eye: Vector3) -> void:
 
 func _neutral_eye(pitch: float, crouch_weight: float) -> Vector3:
 	var eye_offset := (_eye_rest - _head_pivot).rotated(Vector3.RIGHT, clampf(pitch, -0.78, 0.78))
-	return _head_pivot + eye_offset + Vector3(0.0, -CROUCH_DROP, 0.05) * crouch_weight
+	return _head_pivot + eye_offset + Vector3(0.0, -CROUCH_VIEW_DROP, 0.05) * crouch_weight
 
 
 func _ensure_overhead() -> void:

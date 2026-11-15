@@ -859,7 +859,7 @@ func _plan_peek(threat: Vector3) -> void:
 			var offset: Vector3 = direction * distance
 			if test_move(global_transform, offset):
 				continue
-			query.to = _camera.global_position + offset + Vector3.UP * CROUCH_DROP
+			query.to = _camera.global_position + offset + Vector3.UP * CROUCH_VIEW_DROP
 			if space.intersect_ray(query).is_empty():
 				_return_to_cover = global_position
 				_peek_goal = global_position + offset
