@@ -153,6 +153,9 @@ func clear() -> void:
 
 
 func warm_rendering(ammo: Dictionary) -> void:
+	if RenderingServer.get_current_rendering_method() != "gl_compatibility":
+		await _warm_hidden_effects(ammo)
+		return
 	var camera := get_viewport().get_camera_3d()
 	if not camera:
 		return
@@ -171,9 +174,47 @@ func warm_rendering(ammo: Dictionary) -> void:
 	_frag_burst(at, true, 0.0)
 	grenade_burst(at, false, 5.0, true)
 	grenade_burst(at, true, 5.0, false)
-	await RenderingServer.frame_post_draw
+	await get_tree().process_frame
 	await get_tree().process_frame
 	clear()
+
+
+func _warm_hidden_effects(ammo: Dictionary) -> void:
+	var samples := Node3D.new()
+	samples.hide()
+	add_child(samples)
+	for mesh: Mesh in [_flash_mesh, _impact_mark_mesh(false), _impact_mark_mesh(true)]:
+		var instance := MeshInstance3D.new()
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		instance.mesh = mesh
+		samples.add_child(instance)
+	for kind: String in ["smoke", "chip", "spark", "glass"]:
+		var particles := CPUParticles3D.new()
+		particles.emitting = false
+		particles.amount = 1
+		particles.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		particles.particle_flag_align_y = kind in ["chip", "spark"]
+		particles.mesh = _particle_mesh(kind, 0.0)
+		samples.add_child(particles)
+	var fragment := FRAG_EXPLOSION.instantiate() as PyroluxExplosion3D
+	fragment.autoplay = false
+	samples.add_child(fragment)
+	var explosion := GRENADE_EXPLOSION.instantiate() as GPUParticles3D
+	explosion.emitting = false
+	samples.add_child(explosion)
+	var streaks: Array[Tracer] = []
+	var colors: Dictionary[Color, bool] = {}
+	for profile in ammo.values():
+		if profile.trail > 0 and not colors.has(profile.color):
+			colors[profile.color] = true
+			streaks.append(tracer(profile))
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if is_instance_valid(samples):
+		samples.queue_free()
+	for streak in streaks:
+		if is_instance_valid(streak):
+			streak.queue_free()
 
 
 func muzzle(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio: bool) -> void:
@@ -536,19 +577,22 @@ func _mark(at: Vector3, normal: Vector3, surface: String, size: float) -> void:
 		add_child(mark)
 	else:
 		mark = _marks.pop_front()
-	var metal := surface == "metal"
+	mark.mesh = _impact_mark_mesh(surface == "metal")
+	var up := Vector3.RIGHT if absf(normal.dot(Vector3.UP)) > 0.96 else Vector3.UP
+	mark.global_transform = Transform3D(Basis.looking_at(-normal, up), at + normal * 0.006)
+	mark.rotate_object_local(Vector3.FORWARD, randf() * TAU)
+	mark.scale = Vector3.ONE * size * randf_range(0.85, 1.16)
+	_marks.append(mark)
+
+
+func _impact_mark_mesh(metal: bool) -> QuadMesh:
 	if not _mark_meshes.has(metal):
 		var mesh := QuadMesh.new()
 		var material := _sprite(_pit, Color(0.88, 0.93, 0.96) if metal else Color(0.95, 0.85, 0.70))
 		material.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
 		mesh.material = material
 		_mark_meshes[metal] = mesh
-	mark.mesh = _mark_meshes[metal]
-	var up := Vector3.RIGHT if absf(normal.dot(Vector3.UP)) > 0.96 else Vector3.UP
-	mark.global_transform = Transform3D(Basis.looking_at(-normal, up), at + normal * 0.006)
-	mark.rotate_object_local(Vector3.FORWARD, randf() * TAU)
-	mark.scale = Vector3.ONE * size * randf_range(0.85, 1.16)
-	_marks.append(mark)
+	return _mark_meshes[metal]
 
 
 func _sprite(texture: Texture2D, tint: Color, use_particle_color: bool = false) -> StandardMaterial3D:

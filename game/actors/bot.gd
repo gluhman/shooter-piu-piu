@@ -556,13 +556,18 @@ func _update_crowding(delta: float) -> void:
 	_dispersal_left = maxf(0.0, _dispersal_left - delta)
 	if _dispersal_left > 0.0 or not _navigation_ready():
 		return
-	var neighbors: Array[Node3D] = []
+	var bots := get_tree().get_nodes_in_group("bot")
+	var check_crowd := _crowd_left <= delta
 	var has_neighbor := false
-	for bot in get_tree().get_nodes_in_group("bot"):
+	var neighbors: Array[Node3D] = []
+	for bot in bots:
 		if bot == self or bot.get_parent() != get_parent() or not bot.control_enabled or bot.health <= 0.0 or bot._dispersal_left > 0.0 or bot.is_climbing_ladder():
 			continue
-		neighbors.append(bot)
+		if check_crowd:
+			neighbors.append(bot)
 		has_neighbor = has_neighbor or global_position.distance_squared_to(bot.global_position) <= CROWD_RADIUS * CROWD_RADIUS
+		if has_neighbor and not check_crowd:
+			break
 	if not has_neighbor:
 		_crowd_left = CROWD_TIME
 		return

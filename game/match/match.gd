@@ -125,6 +125,7 @@ var _spawn_retry_left := 0.0
 
 
 var _round_overview: Node3D
+var _render_warmup_profile: Array = []
 
 
 func _ready() -> void:
@@ -965,8 +966,6 @@ func _loading_stage(message: String) -> void:
 	else:
 		$HUD/Lobby.set_loading_stage(message)
 	await get_tree().process_frame
-	if not Net.dedicated and DisplayServer.get_name() != "headless":
-		await RenderingServer.frame_post_draw
 	await get_tree().process_frame
 
 
@@ -978,6 +977,8 @@ func _load_arena(layout_seed: int, bot_count: int, difficulty: int, token: int =
 	if token >= 0 and not _load_current(token):
 		return
 	await _loading_stage("Собираем карту…")
+	if token >= 0 and not _load_current(token):
+		return
 	_build_arena(layout_seed)
 	await _loading_stage("Подгружаем оружие и звуки…")
 	if token >= 0 and not _load_current(token):
@@ -1003,16 +1004,13 @@ func _finish_loading() -> void:
 		if not _reloading:
 			_reset_clock()
 		return
-	var warmup := WEAPON_SCRIPT.render_warmup(WEAPON_SETS[weapon_set])
-	add_child(warmup)
-	var props: Node3D = $Loot.warm_rendering()
+	var token := _load_token
 	await _loading_stage("Готовим первый кадр…")
-	if DisplayServer.get_name() != "headless":
-		await $Ballistics.warm_effects()
-		await $Grenades.warm_smoke()
-	warmup.queue_free()
-	props.queue_free()
-	if _reloading:
+	if _reloading or token != _load_token:
+		return
+	if DisplayServer.get_name() != "headless" and RenderingServer.render_loop_enabled:
+		await _warm_match_rendering(token)
+	if _reloading or token != _load_token:
 		return
 	_loading = false
 	GameSettings.set_match_audio_enabled(true)
@@ -1024,6 +1022,24 @@ func _finish_loading() -> void:
 		_play_ambience()
 		if combatant(Net.local_id()):
 			$HUD/WeaponSelect.show_select()
+
+
+func _warm_match_rendering(token: int) -> void:
+	var profile := [map_id, weapon_set, GameSettings.shadows, GameSettings.shadow_cascades,
+		GameSettings.antialiasing, GameSettings.upscaling, GameSettings.ambient_occlusion,
+		GameSettings.indirect_lighting, GameSettings.effects_detail]
+	if profile == _render_warmup_profile or not get_viewport().get_camera_3d():
+		return
+	var weapons := WEAPON_SCRIPT.render_warmup(WEAPON_SETS[weapon_set])
+	add_child(weapons)
+	var props: Node3D = $Loot.warm_rendering()
+	await $Ballistics.warm_effects()
+	if not _reloading and token == _load_token:
+		await $Grenades.warm_smoke()
+	weapons.queue_free()
+	props.queue_free()
+	if not _reloading and token == _load_token:
+		_render_warmup_profile = profile
 
 
 func _play_ambience() -> void:

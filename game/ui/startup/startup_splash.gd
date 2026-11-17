@@ -3,13 +3,6 @@ extends CanvasLayer
 const UI := preload("res://game/ui/menu_ui.gd")
 const GAME_SCENE := "res://game/match/arena.tscn"
 const FADE_TIME := 0.24
-const WARMUP_ASSETS := [
-	"res://assets/operator/operator.glb",
-	"res://assets/animations/operator_locomotion.res",
-	"res://assets/arena_props/grass.glb",
-	"res://assets/arena_props/shrubs.glb",
-	"res://assets/weapon_audio/first_person/ak47.wav",
-]
 
 @onready var _video: VideoStreamPlayer = $Backdrop/VideoFrame/Video
 
@@ -25,34 +18,22 @@ func _ready() -> void:
 	var material := icon.material as ShaderMaterial
 	var tree := get_tree()
 	await tree.process_frame
-	await RenderingServer.frame_post_draw
 
 	_video.finished.connect(_video.hide)
 	_video.play()
 	var scan := create_tween()
 	scan.tween_method(func(position: float) -> void:
 		material.set_shader_parameter(&"scan_position", position), -0.2, 1.2, 1.05)
-	var pending: Array[String] = []
-	var warmed: Array[Resource] = []
-	for path: String in WARMUP_ASSETS:
-		if ResourceLoader.load_threaded_request(path) == OK:
-			pending.append(path)
-	while _video.is_playing() or not pending.is_empty():
-		for index in range(pending.size() - 1, -1, -1):
-			var path := pending[index]
-			if ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
-				continue
-			var resource := ResourceLoader.load_threaded_get(path)
-			if resource:
-				warmed.append(resource)
-			pending.remove_at(index)
+	if ResourceLoader.load_threaded_request(GAME_SCENE, "PackedScene") != OK:
+		_startup_failed()
+		return
+	while _video.is_playing() or ResourceLoader.load_threaded_get_status(GAME_SCENE) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 		await tree.process_frame
 
-	var scene := load(GAME_SCENE) as PackedScene
+	var scene := ResourceLoader.load_threaded_get(GAME_SCENE) as PackedScene
 	if scene == null:
 		_startup_failed()
 		return
-	await RenderingServer.frame_post_draw
 	var fade := create_tween()
 	fade.tween_property($Backdrop, "modulate:a", 0.0, FADE_TIME).set_trans(Tween.TRANS_CUBIC)
 	await fade.finished

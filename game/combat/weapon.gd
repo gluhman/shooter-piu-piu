@@ -1043,7 +1043,7 @@ func _build_viewmodel(weapon_id: String) -> void:
 	_view = Node3D.new()
 	_view.name = "HeldWeapon"
 	add_child(_view)
-	var model := _make_model(weapon_id)
+	var model := _make_model(weapon_id, _player._is_local())
 	_model = model
 	_view.add_child(model)
 	for animation_player in model.find_children("*", "AnimationPlayer", true, false):
@@ -1508,7 +1508,7 @@ static func render_warmup(weapons: Array) -> Node3D:
 	return warmup
 
 
-static func _make_model(weapon_id: String) -> Node3D:
+static func _make_model(weapon_id: String, studio_reflections := true) -> Node3D:
 	if weapon_id == "knife":
 		return _make_knife_model()
 	if weapon_id == "ak47":
@@ -1516,7 +1516,7 @@ static func _make_model(weapon_id: String) -> Node3D:
 	if weapon_id == "deagle":
 		return DEAGLE_MODEL.instantiate() as Node3D
 	if COLLIMATOR_MOUNTS.has(weapon_id):
-		var model := Classic.make_model(weapon_id) if weapon_id == "m14" else Expanded.make_model(weapon_id)
+		var model := Classic.make_model(weapon_id) if weapon_id == "m14" else Expanded.make_model(weapon_id, studio_reflections)
 		var optic := Collimator.new()
 		optic.position = COLLIMATOR_MOUNTS[weapon_id]
 		if weapon_id == "m14":
@@ -1526,7 +1526,7 @@ static func _make_model(weapon_id: String) -> Node3D:
 	if Classic.MODELS.has(weapon_id):
 		return Classic.make_model(weapon_id)
 	if Expanded.MODELS.has(weapon_id):
-		return Expanded.make_model(weapon_id)
+		return Expanded.make_model(weapon_id, studio_reflections)
 	if ARSENAL.MODELS.has(weapon_id):
 		return ARSENAL.make_model(weapon_id)
 	var holder := Node3D.new()
@@ -1574,7 +1574,7 @@ static func _scale_longest_axis(model: Node3D, root: Node3D, length: float) -> v
 
 
 static func add_pickup_model(parent: Node3D, id: String) -> void:
-	var model := _make_model(id)
+	var model := _make_model(id, false)
 	parent.add_child(model)
 	if id == "shotgun":
 		_apply_shotgun_material(model)

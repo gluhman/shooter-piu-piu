@@ -425,6 +425,19 @@ func net_smoke(at: Vector3, left: float, age: float) -> void:
 
 
 func warm_smoke() -> void:
+	if RenderingServer.get_current_rendering_method() != "gl_compatibility":
+		var sample := MeshInstance3D.new()
+		sample.hide()
+		sample.mesh = _puff
+		sample.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var material := ShaderMaterial.new()
+		material.shader = SMOKE_SHADER
+		sample.material_override = material
+		add_child(sample)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		sample.queue_free()
+		return
 	var camera := get_viewport().get_camera_3d()
 	if not camera:
 		return
@@ -432,7 +445,7 @@ func warm_smoke() -> void:
 	var cloud := _make_smoke(at, SMOKE_TIME, 1.8)
 	await get_tree().physics_frame
 	_probe_smoke(cloud, get_world_3d().direct_space_state)
-	await RenderingServer.frame_post_draw
+	await get_tree().process_frame
 	await get_tree().process_frame
 	cloud.node.queue_free()
 
