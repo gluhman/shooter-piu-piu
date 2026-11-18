@@ -3,22 +3,21 @@ extends Node3D
 const Balance := preload("res://game/combat/combat_balance.gd")
 const LAYER := Balance.HURTBOX_MASK
 const HISTORY_SECONDS: float = Balance.NETWORK.hitbox_history_s
-const PREFIX := "mixamorig_"
 # Segments follow the rendered rig. Trimming the ends keeps adjacent zones from overlapping at joints.
 const SEGMENTS := [
-	["head", "Head_06", "HeadTop_End_07", 0.105, 0.36, 0.80],
-	["neck", "Neck_05", "Head_06", 0.065, 0.08, 0.78],
-	["chest", "Spine1_03", "Neck_05", 0.125, 0.09, 0.94],
-	["abdomen", "Spine_02", "Spine1_03", 0.108, 0.0, 1.0],
-	["pelvis", "Hips_01", "Spine_02", 0.112, 0.0, 0.90],
-	["upper_arm", "RightArm_09", "RightForeArm_010", 0.069, 0.12, 0.92],
-	["forearm_hand", "RightForeArm_010", "RightHand_011", 0.051, 0.08, 1.25],
-	["upper_arm", "LeftArm_033", "LeftForeArm_034", 0.069, 0.12, 0.92],
-	["forearm_hand", "LeftForeArm_034", "LeftHand_035", 0.051, 0.08, 1.25],
-	["thigh", "RightUpLeg_057", "RightLeg_058", 0.091, 0.13, 0.92],
-	["calf_foot", "RightLeg_058", "RightFoot_059", 0.070, 0.07, 1.10],
-	["thigh", "LeftUpLeg_063", "LeftLeg_064", 0.091, 0.13, 0.92],
-	["calf_foot", "LeftLeg_064", "LeftFoot_065", 0.070, 0.07, 1.10],
+	["head", "head", "head_leaf", 0.105, 0.70, 2.85],
+	["neck", "neck_01", "head", 0.065, 0.08, 0.78],
+	["chest", "spine_02", "neck_01", 0.125, 0.09, 0.94],
+	["abdomen", "spine_01", "spine_02", 0.108, 0.0, 1.0],
+	["pelvis", "pelvis", "spine_01", 0.112, 0.0, 0.90],
+	["upper_arm", "upperarm_r", "lowerarm_r", 0.069, 0.12, 0.92],
+	["forearm_hand", "lowerarm_r", "hand_r", 0.051, 0.08, 1.25],
+	["upper_arm", "upperarm_l", "lowerarm_l", 0.069, 0.12, 0.92],
+	["forearm_hand", "lowerarm_l", "hand_l", 0.051, 0.08, 1.25],
+	["thigh", "thigh_r", "calf_r", 0.091, 0.13, 0.92],
+	["calf_foot", "calf_r", "foot_r", 0.070, 0.07, 1.10],
+	["thigh", "thigh_l", "calf_l", 0.091, 0.13, 0.92],
+	["calf_foot", "calf_l", "foot_l", 0.070, 0.07, 1.10],
 ]
 
 var _skeleton: Skeleton3D
@@ -65,8 +64,8 @@ func setup(skeleton: Skeleton3D, operator_pose: SkeletonModifier3D) -> void:
 				collision.shape = capsule
 		area.add_child(collision)
 		add_child(area)
-		_starts.append(skeleton.find_bone(PREFIX + segment[1]))
-		_ends.append(skeleton.find_bone(PREFIX + segment[2]))
+		_starts.append(skeleton.find_bone(segment[1]))
+		_ends.append(skeleton.find_bone(segment[2]))
 		_areas.append(area)
 		_shapes.append(collision.shape)
 		_centers[segment[0]] = area

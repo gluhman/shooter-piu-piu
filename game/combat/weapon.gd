@@ -24,7 +24,7 @@ const HIP_FOV := 110.0
 const READY_DROP := 0.12
 const RUN_CARRY_HEIGHT := -0.16
 const KNIFE_SWING_TIME := 0.48
-const KNIFE_GRIP_IN_WRIST := Vector3(-0.010, 0.094, 0.020)
+const KNIFE_GRIP_IN_WRIST := Vector3(-0.020, 0.108, 0.031)
 # Physical sight alignment uses the aperture center and the top of the front post.
 const IRON_SIGHT_OFFSETS := {
 	"breacher": Vector2(0.005, 0.002),
@@ -972,7 +972,8 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	var handling_offset := _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose
 	var handling_rotation := Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose,
 		0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
-	var hip_position := pitch * (_rest_pos + Vector3.DOWN * READY_DROP + bob + handling_offset)
+	var crouch_ready := Vector3.UP * 0.10 * smoothstep(0.0, 1.0, _player._crouch_blend)
+	var hip_position := pitch * (_rest_pos + Vector3.DOWN * READY_DROP + crouch_ready + bob + handling_offset)
 	var hip_basis := pitch * handling_rotation
 	var run_carry := smoothstep(0.0, 1.0, _run_carry)
 	if run_carry > 0.0:
@@ -1029,9 +1030,9 @@ func _apply_knife_view() -> void:
 	var draw := smoothstep(0.0, contact * 0.5, progress) * (1.0 - smoothstep(contact * 0.5, contact, progress))
 	var thrust := smoothstep(contact * 0.5, contact, progress) * (1.0 - smoothstep(contact, 1.0, progress))
 	_view.position = _rest_pos + Vector3(0.035, -0.025, 0.10) * draw + Vector3(-0.15, 0.09, -0.26) * thrust
-	_view.rotation = Vector3(0.25, -0.58, -0.37) + Vector3(-0.22, -0.24, 0.15) * draw + Vector3(-0.20, 0.56, 0.25) * thrust
+	_view.rotation = Vector3(0.08, 0.10, -0.05) + Vector3(-0.12, -0.24, 0.15) * draw + Vector3(-0.12, -0.70, 0.20) * thrust
 	_view.global_position += _player.weapon_reach_correction(false)
-	var left_rest := _camera.to_global(Vector3(-0.22 - thrust * 0.05, -0.30 - thrust * 0.05, -0.31 + draw * 0.04))
+	var left_rest := _camera.to_global(Vector3(-0.24 - thrust * 0.05, -0.32 - thrust * 0.05, -0.34 + draw * 0.04))
 	_left_wrist.position = _view.to_local(_player.clamp_support_hand(left_rest))
 	_left_wrist.basis = _view.global_basis.inverse() * _camera.global_basis * _support_basis
 
@@ -1059,11 +1060,11 @@ func _build_viewmodel(weapon_id: String) -> void:
 	var pose_id := "marked" if marked_model else weapon_id
 	match pose_id:
 		"knife":
-			_rest_pos = Vector3(0.23, -0.24, -0.34)
-			right_fingers = Vector3(-0.14, 0.23, -1.0)
-			right_palm = Vector3(-0.70, -0.65, -0.10)
-			left_fingers = Vector3(0.06, 0.16, -1.0)
-			left_palm = Vector3(0.55, -0.70, 0.0)
+			_rest_pos = Vector3(0.23, -0.32, -0.36)
+			right_fingers = Vector3(0.35, 0.90, -0.10)
+			right_palm = Vector3(-0.20, -0.10, -1.0)
+			left_fingers = Vector3(0.50, 0.75, -0.40)
+			left_palm = Vector3(0.15, -0.50, -0.85)
 		"deagle":
 			model.rotation.y = PI
 			grip = Vector3(0.024, 0.125, 0.093)
@@ -1085,7 +1086,9 @@ func _build_viewmodel(weapon_id: String) -> void:
 		"ak47":
 			model.rotation.y = 0.10
 			grip = model.basis * Vector3(0.027, -0.030, 0.046)
-			support = model.basis * Vector3(-0.032, -0.011, -0.19)
+			# Palm rests under the wooden handguard; fingers curl around its right side.
+			support = model.basis * Vector3(-0.025, 0.045, -0.32)
+			left_palm = Vector3(0.65, 0.75, 0.0)
 			_rest_pos = Vector3(0.125, -0.219, -0.109)
 			_barrel_length = 0.48
 		"launcher", "m249", "m1", "marked":
@@ -1126,10 +1129,15 @@ func _build_viewmodel(weapon_id: String) -> void:
 	_right_wrist.name = "RightGrip"
 	_right_wrist.basis = _hand_basis(right_fingers, right_palm)
 	if weapon_id == "knife":
+		# The handle crosses the closed palm and exits at the thumb, rather than
+		# following the extended fingers and appearing pinched at the blade.
+		model.basis = _right_wrist.basis * Basis(Vector3.UP, -PI * 0.5)
 		model.position = _right_wrist.transform * KNIFE_GRIP_IN_WRIST
 	_left_wrist = _marker(_support_rest)
 	_left_wrist.name = "LeftGrip"
 	_left_wrist.basis = _support_basis
+	if weapon_id == "ak47":
+		_left_wrist.set_meta(&"thumb_curl", 0.52)
 	if marked_model:
 		_left_wrist.set_meta(&"grip_curl", 0.21 if weapon_id in ["breacher", "compact"] else 0.12)
 	_right_palm = _palm_target(_right_wrist, &"TriggerPalm", true) if weapon_id != "knife" else null
@@ -1546,6 +1554,9 @@ static func _make_knife_model() -> Node3D:
 	knife.rotation.x = -PI * 0.5
 	knife.scale = Vector3.ONE * 1.42
 	knife.position.z = -0.071
+	var blade := knife.find_child("fish_knife_blade", true, false) as Node3D
+	if blade:
+		blade.scale.x *= 1.55
 	holder.add_child(knife)
 	return holder
 
@@ -1627,10 +1638,12 @@ func _marker(at: Vector3) -> Marker3D:
 	return marker
 
 
-func _palm_target(wrist: Marker3D, marker_name: StringName, right: bool) -> Marker3D:
+func _palm_target(wrist: Marker3D, marker_name: StringName, _right: bool) -> Marker3D:
 	var palm := Marker3D.new()
 	palm.name = marker_name
-	palm.position = _player.weapon_palm_offset(right)
+	# Grip coordinates describe contact on the weapon, not the wrist joint.
+	# The rig solver subtracts the fitted wrist-to-palm offset.
+	palm.position = Vector3.ZERO
 	wrist.add_child(palm)
 	return palm
 

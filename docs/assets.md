@@ -6,14 +6,15 @@
 
 | Ресурс | Использование | Источник и условия |
 | --- | --- | --- |
-| Tactical Operator | Модель игрока и ботов, форма, защитные накладки и часы на левом рукаве | [DanlyVostok, ambientCG и Poly Haven](../assets/operator/CREDITS.md). Модель CC BY 4.0, дополнительные материалы и часы CC0 |
-| Universal Animation Library | Стойка, движение, присед и прыжок бойцов | [Quaternius, CC0](../assets/animations/CREDITS.md) |
-| Human Character Dummy и Human Basic Motions FREE | Исходная поза и восемь направлений ходьбы и бега в локальной сборке | [Кевин Иглесиас и условия использования](../assets/animations/CREDITS.md). Подготовленная библиотека лежит в `assets/animations/local/` |
+| Grab3D Soldier Black / Camo | Игроки, боты и тела; зелёный камуфляж по умолчанию и для синей команды, чёрная форма только для красной команды; 774 948 треугольников и 4K PBR | [Grab3D, DanlyVostok и Poly Haven](../assets/operator/CREDITS.md). Тело и текстуры CC0, сохранённые перчатки CC BY 4.0, часы CC0 |
+| Mesh2Motion | 14 исходных клипов, нативный риг из 66 костей и полные пальцы | [Mesh2Motion, CC0](../assets/animations/mesh2motion/CREDITS.md) |
+| Universal Animation Library | Прежние клипы, сохранены как исходные ресурсы | [Quaternius, CC0](../assets/animations/CREDITS.md) |
+| Human Character Dummy и Human Basic Motions FREE | Прежние локальные клипы; новым моделям не требуются | [Кевин Иглесиас и условия использования](../assets/animations/CREDITS.md). Подготовленная библиотека лежит в `assets/animations/local/` |
 | Classic Weapons Pack | Модели огнестрельного оружия, выстрелы и перезарядка | [Stein Games, CC0](../assets/classic_weapons/CREDITS.md). [Отдельные материалы AK-47](../assets/ak47/CREDITS.md) |
 | Расширение арсенала | Восемь основных стволов, раздельные магазины и помпа, карты окклюзии и HDR-отражения | [3DAssets.dev, Poly Haven и Stein Games](../assets/weapon_expansion/CREDITS.md), CC0 |
 | Арсенал | Модели оружия, гранат и бронежилета, материалы металла и дерева | [Модели проекта, материалы Poly Haven и звук BigSoundBank](../assets/arsenal/CREDITS.md) |
 | Desert Eagle и нож | Модели от первого лица и предметы подбора с PBR-материалами | [SirDraco65 и Poly Haven, CC0](../assets/weapon_models/CREDITS.md) |
-| HDR-панорама двора | Рассеянный свет и отражения на открытых картах Sky3D | [Poly Haven, CC0](../game/maps/lighting/CREDITS.md) |
+| HDR-панорама двора, 4K | Рассеянный свет и отражения на открытых картах Sky3D | [Poly Haven, CC0](../game/maps/lighting/CREDITS.md) |
 | НПЗ | Рельеф GDT Terrain Generator, дневная HDRI Hilltop Construction, материалы и оборудование Poly Haven | [Источники и лицензии карты](../game/maps/refinery/CREDITS.md) |
 | Лесной хребет | Рельеф GDT Terrain Generator, скалы, папоротники, лесная подстилка и текстуры елей Poly Haven | [Источники и лицензии карты](../game/maps/forest_ridge/CREDITS.md) |
 | Материалы Dust II | Песчаник стен и арок, гравий для грунта и пандусов | [Poly Haven, CC0](../assets/map_textures/dust2/CREDITS.md). Карты цвета 4K, нормали и шероховатость 2K |

@@ -20,7 +20,8 @@ func _run() -> void:
 		quit(1)
 		return
 	arena.net_clock(45)
-	if not is_equal_approx(arena.get_node("WorldEnvironment").current_time, 13.01):
+	# Preset 1 is 180 s; 45 s remaining means 135 s of sky progression.
+	if not is_equal_approx(arena.get_node("WorldEnvironment").current_time, 13.09):
 		push_error("Training range sky did not advance with the round clock")
 		quit(1)
 		return

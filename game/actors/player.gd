@@ -10,7 +10,7 @@ const GROUND_ACCELERATION := 42.0
 const GROUND_BRAKING := 46.0
 const AIR_ACCELERATION := 24.0
 const STANDING_HEIGHT := 1.7
-const CROUCH_HEIGHT := 1.22
+const CROUCH_HEIGHT := 1.36
 const CROUCH_VIEW_DROP := 0.36
 const JUMP_VELOCITY: float = Balance.MOVEMENT.jump_vertical_speed_m_s
 const MOUSE_SENS := 0.0022
@@ -25,8 +25,7 @@ const LEAN_CLEARANCE := 0.07
 const FIRST_PERSON_BODY_LAYER := 3
 const Hurtboxes := preload("res://game/actors/operator_hurtboxes.gd")
 const OperatorPose := preload("res://game/actors/operator_pose.gd")
-const OPERATOR_OFFSET := Vector3(0.169, 0.0, -0.041)
-const OPERATOR_MODEL_PATH := "res://assets/operator/operator.glb"
+const OPERATOR_OFFSET := Vector3.ZERO
 const HitReaction := preload("res://addons/hit_reactions_lite/hit_flinch_lite.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const MovementAudio := preload("res://game/audio/movement_audio.gd")
@@ -1405,14 +1404,15 @@ func _update_capsule() -> void:
 
 
 func _build_operator() -> void:
-	var operator_model := load(OPERATOR_MODEL_PATH) as PackedScene
+	var visual_team: int = team_id() if get_parent().team_deathmatch else -1
+	var operator_model := OperatorPose.model_for_team(visual_team)
 	if operator_model == null:
 		push_error("Unable to load operator model")
 		return
 	_avatar = operator_model.instantiate() as Node3D
 	_avatar.name = "Operator"
 	_avatar.rotation.y = PI
-	_avatar.scale = Vector3.ONE * 0.96
+	_avatar.scale = Vector3.ONE
 	_avatar.position = OPERATOR_OFFSET
 	add_child(_avatar)
 	OperatorPose.apply_textures(_avatar, team_id() if get_parent().team_deathmatch else -1)
@@ -1432,19 +1432,19 @@ func _build_operator() -> void:
 		_hit_reaction.strength = 1.55
 		_hit_reaction.max_angle_deg = 17.0
 		_hit_reaction.hit_bones = PackedStringArray([
-			"mixamorig_Hips_01", "mixamorig_Spine_02", "mixamorig_Spine1_03", "mixamorig_Spine2_04",
-			"mixamorig_Neck_05", "mixamorig_Head_06",
-			"mixamorig_RightArm_09", "mixamorig_RightForeArm_010", "mixamorig_RightHand_011",
-			"mixamorig_LeftArm_033", "mixamorig_LeftForeArm_034", "mixamorig_LeftHand_035",
-			"mixamorig_RightUpLeg_057", "mixamorig_RightLeg_058", "mixamorig_RightFoot_059",
-			"mixamorig_LeftUpLeg_063", "mixamorig_LeftLeg_064", "mixamorig_LeftFoot_065",
+			"pelvis", "spine_01", "spine_02", "spine_03",
+			"neck_01", "head",
+			"upperarm_r", "lowerarm_r", "hand_r",
+			"upperarm_l", "lowerarm_l", "hand_l",
+			"thigh_r", "calf_r", "foot_r",
+			"thigh_l", "calf_l", "foot_l",
 		])
 		_skeleton.add_child(_hit_reaction)
 
-	var eyes := _avatar.find_child("Mil_R5_Eye", true, false).get_child(0) as MeshInstance3D
+	var eyes := _avatar.find_child("OperatorEyes", true, false) as MeshInstance3D
 	var eye_center := eyes.global_transform * eyes.get_aabb().get_center()
 	_eye_rest = to_local(eye_center) + Vector3(0.0, 0.0, -0.015)
-	var head := _skeleton.find_bone(&"mixamorig_Head_06")
+	var head := _skeleton.find_bone(&"head")
 	var head_rest := _skeleton.global_transform * _skeleton.get_bone_global_rest(head)
 	_head_pivot = to_local(head_rest.origin)
 	_pose.eye_in_head = head_rest.affine_inverse() * to_global(_eye_rest)
@@ -1454,22 +1454,21 @@ func _build_operator() -> void:
 	_pouch.position = _pouch_rest
 	add_child(_pouch)
 
-	_vest = _avatar.find_child(OperatorPose.VEST_MESH, true, false) as Node3D
-	_avatar.find_child("Object_111", true, false).hide()
+	_vest = OperatorPose.bind_vest_visibility(_avatar)
 	if _is_local():
 		for mesh: MeshInstance3D in _avatar.find_children("*", "MeshInstance3D", true, false):
 			mesh.set_layer_mask_value(1, false)
 			mesh.set_layer_mask_value(FIRST_PERSON_BODY_LAYER, true)
-		for mesh_name in ["Object_97", "Object_99", "Object_109"]:
-			var mesh := _avatar.find_child(mesh_name, true, false) as MeshInstance3D
-			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		for mesh: MeshInstance3D in _avatar.find_children("*", "MeshInstance3D", true, false):
+			if mesh.name in [&"Object_97", &"Object_99", &"Object_109"] or String(mesh.name).begins_with("HeadKit"):
+				mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		eyes.hide()
 	if get_parent().objectives and not Net.dedicated:
 		_build_objective_socket()
 
 
 func _build_objective_socket() -> void:
-	var spine := _skeleton.find_bone(&"mixamorig_Spine2_04")
+	var spine := _skeleton.find_bone(&"spine_03")
 	if spine < 0:
 		return
 	var rest := _skeleton.global_transform * _skeleton.get_bone_global_rest(spine)

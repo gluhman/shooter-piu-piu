@@ -230,6 +230,9 @@ func _check_hurtbox_lifetime() -> void:
 	var hurtboxes: Node3D = target._hurtboxes
 	var pose: SkeletonModifier3D = target._pose
 	var offset := Vector3(2.0, 0.0, 1.0)
+	# A signal alone does not run modifiers. Sample the same current bone pose
+	# before and after re-entry, rather than comparing to last frame's IK pose.
+	pose.modification_processed.emit()
 	var center: Vector3 = hurtboxes.center("chest")
 	arena.remove_child(target)
 	var disconnected := not pose.modification_processed.is_connected(hurtboxes.update_pose)

@@ -3,22 +3,21 @@ extends Node3D
 const Balance := preload("res://game/combat/combat_balance.gd")
 const OperatorPose := preload("res://game/actors/operator_pose.gd")
 const SIMULATION_SECONDS := 4.0
-const BONE_PREFIX := "mixamorig_"
 # Bone, end of its capsule, radius, mass, joint swing and twist limits.
 const SEGMENTS := [
-	["Hips_01", "Spine1_03", 0.145, 12.0, 0.0, 0.0],
-	["Spine2_04", "Neck_05", 0.165, 17.0, 22.0, 14.0],
-	["Head_06", "HeadTop_End_07", 0.095, 4.2, 28.0, 22.0],
-	["RightArm_09", "RightForeArm_010", 0.060, 2.3, 75.0, 35.0],
-	["RightForeArm_010", "RightHand_011", 0.052, 1.7, 64.0, 10.0],
-	["LeftArm_033", "LeftForeArm_034", 0.060, 2.3, 75.0, 35.0],
-	["LeftForeArm_034", "LeftHand_035", 0.052, 1.7, 64.0, 10.0],
-	["RightUpLeg_057", "RightLeg_058", 0.086, 7.0, 58.0, 19.0],
-	["RightLeg_058", "RightFoot_059", 0.061, 4.0, 78.0, 8.0],
-	["RightFoot_059", "RightToeBase_060", 0.063, 1.0, 27.0, 12.0],
-	["LeftUpLeg_063", "LeftLeg_064", 0.086, 7.0, 58.0, 19.0],
-	["LeftLeg_064", "LeftFoot_065", 0.061, 4.0, 78.0, 8.0],
-	["LeftFoot_065", "LeftToeBase_066", 0.063, 1.0, 27.0, 12.0],
+	["pelvis", "spine_02", 0.145, 12.0, 0.0, 0.0],
+	["spine_03", "neck_01", 0.165, 17.0, 22.0, 14.0],
+	["head", "head_leaf", 0.095, 4.2, 28.0, 22.0],
+	["upperarm_r", "lowerarm_r", 0.060, 2.3, 75.0, 35.0],
+	["lowerarm_r", "hand_r", 0.052, 1.7, 64.0, 10.0],
+	["upperarm_l", "lowerarm_l", 0.060, 2.3, 75.0, 35.0],
+	["lowerarm_l", "hand_l", 0.052, 1.7, 64.0, 10.0],
+	["thigh_r", "calf_r", 0.086, 7.0, 58.0, 19.0],
+	["calf_r", "foot_r", 0.061, 4.0, 78.0, 8.0],
+	["foot_r", "ball_r", 0.063, 1.0, 27.0, 12.0],
+	["thigh_l", "calf_l", 0.086, 7.0, 58.0, 19.0],
+	["calf_l", "foot_l", 0.061, 4.0, 78.0, 8.0],
+	["foot_l", "ball_l", 0.063, 1.0, 27.0, 12.0],
 ]
 const HIT_SEGMENTS := {"head": [2], "neck": [2], "chest": [1], "abdomen": [0], "pelvis": [0],
 	"upper_arm": [3, 5], "forearm_hand": [4, 6], "thigh": [7, 10], "calf_foot": [8, 11]}
@@ -32,20 +31,19 @@ var _team := -1
 
 
 func build(has_armor: bool, state: Dictionary, animate: bool) -> void:
-	var avatar := OperatorPose.MODEL.instantiate() as Node3D
-	avatar.rotation.y = PI
-	avatar.scale = Vector3.ONE * 0.96
-	avatar.position = Vector3(0.169, 0.0, -0.041)
-	add_child(avatar)
 	_team = int(state.get("team", -1))
+	var avatar := OperatorPose.model_for_team(_team).instantiate() as Node3D
+	avatar.rotation.y = PI
+	avatar.scale = Vector3.ONE
+	avatar.position = Vector3.ZERO
+	add_child(avatar)
 	OperatorPose.apply_textures(avatar, _team)
-	avatar.find_child(OperatorPose.VEST_MESH, true, false).visible = has_armor
-	avatar.find_child("Object_111", true, false).hide()
+	OperatorPose.bind_vest_visibility(avatar).visible = has_armor
 	_skeleton = avatar.find_child("Skeleton3D", true, false) as Skeleton3D
 	_skeleton.reset_bone_poses()
 	OperatorPose.attach_wristwatch(_skeleton)
 	for segment in SEGMENTS:
-		_indices.append(_skeleton.find_bone(BONE_PREFIX + segment[0]))
+		_indices.append(_skeleton.find_bone(segment[0]))
 	var pose: Array = state.get("pose", [])
 	if pose.size() == _skeleton.get_bone_count():
 		for index in pose.size():
@@ -64,8 +62,11 @@ func _start_fall(state: Dictionary) -> void:
 	for index in SEGMENTS.size():
 		var segment: Array = SEGMENTS[index]
 		var rest := _skeleton.get_bone_global_rest(_indices[index])
-		var end := _skeleton.get_bone_global_rest(_skeleton.find_bone(BONE_PREFIX + segment[1]))
+		var end := _skeleton.get_bone_global_rest(_skeleton.find_bone(segment[1]))
 		var span := rest.affine_inverse() * end.origin
+		if segment[0] == "head":
+			# M2M's head_leaf marks the upper face, not the top of the helmet.
+			span *= 2.8
 		var radius: float = segment[2]
 		var body := PhysicalBone3D.new()
 		body.set("bone_name", _skeleton.get_bone_name(_indices[index]))

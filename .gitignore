@@ -15,3 +15,6 @@
 /assets/arena_props/oxygen/
 /assets/animations/local/
 /archive/
+
+# Local Python art-pipeline caches
+__pycache__/

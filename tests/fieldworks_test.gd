@@ -101,14 +101,15 @@ func _run() -> void:
 	var grip_errors: Array[float] = []
 	var eye_errors: Array[float] = []
 	var hips_positions: Array[Vector3] = []
-	var hips_bone: int = actor._skeleton.find_bone(&"mixamorig_Hips_01")
+	var hips_bone: int = actor._skeleton.find_bone(&"pelvis")
 	var check_grips := func() -> void:
 		var pose: Node = actor._pose
 		var skeleton: Skeleton3D = actor._skeleton
-		var right := skeleton.to_global(skeleton.get_bone_global_pose(pose._right_arm[2]).origin)
-		var left := skeleton.to_global(skeleton.get_bone_global_pose(pose._left_arm[2]).origin)
-		grip_errors.append(maxf(right.distance_to(pose.right_wrist.global_position),
-			left.distance_to(pose.left_wrist.global_position)))
+		# Firearm markers describe palm contact; the wrist sits one palm length behind them.
+		var right := skeleton.to_global(skeleton.get_bone_global_pose(pose._right_arm[2]) * (pose._right_palm_offset as Vector3))
+		var left := skeleton.to_global(skeleton.get_bone_global_pose(pose._left_arm[2]) * (pose._left_palm_offset as Vector3))
+		grip_errors.append(maxf(right.distance_to(pose.right_palm.global_position),
+			left.distance_to(pose.left_palm.global_position)))
 		var eye := skeleton.to_global(skeleton.get_bone_global_pose(pose._head) * (pose.eye_in_head as Vector3))
 		eye_errors.append(eye.distance_to(camera.global_position))
 		hips_positions.append(skeleton.to_global(skeleton.get_bone_global_pose(hips_bone).origin))
@@ -131,7 +132,7 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	actor._pose.modification_processed.disconnect(check_grips)
-	_check("Both rigged wrists follow their grips across the mounted sweep",
+	_check("Both rigged palms follow their grips across the mounted sweep",
 		grip_errors.size() >= 8 and grip_errors.max() < 0.025)
 	_check("The camera stays at the rigged eye as the operator's hips move around the tripod",
 		eye_errors.size() >= 8 and eye_errors.max() < 0.01

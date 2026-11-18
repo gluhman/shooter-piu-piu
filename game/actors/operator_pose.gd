@@ -2,10 +2,10 @@ extends SkeletonModifier3D
 
 const Balance := preload("res://game/combat/combat_balance.gd")
 const WRISTWATCH := preload("res://assets/operator/watch/digital_wrist_watch_1k.gltf")
-const VEST_MESH := "Object_105"
-const MODEL := preload("res://assets/operator/operator.glb")
-const LOCOMOTION := preload("res://assets/animations/operator_locomotion.res")
-const DIRECTIONAL_LOCOMOTION := "res://assets/animations/local/operator_directions.res"
+const VEST_MESH := "ArmorState"
+const MODEL := preload("res://assets/operator/variants/operator_blue.glb")
+const RED_MODEL := preload("res://assets/operator/variants/operator_red.glb")
+const LOCOMOTION := preload("res://assets/animations/mesh2motion/operator_locomotion.res")
 const FABRIC_TEXTURES := {
 	"Mil_Suit_R5": [
 		preload("res://assets/operator/textures/uniform_albedo.jpg"),
@@ -24,38 +24,37 @@ const FABRIC_TEXTURES := {
 	],
 }
 
-const TEAM_ALBEDO := [
-	{
-		"Mil_Suit_R5": preload("res://assets/operator/textures/blue_uniform.jpg"),
-		"Mil_Suit_R5__Plate": preload("res://assets/operator/textures/blue_vest.jpg"),
-		"Mil_Suit_R5_Puches": preload("res://assets/operator/textures/blue_pouches.jpg"),
-	}, {
-		"Mil_Suit_R5": preload("res://assets/operator/textures/red_uniform.jpg"),
-		"Mil_Suit_R5__Plate": preload("res://assets/operator/textures/red_vest.jpg"),
-		"Mil_Suit_R5_Puches": preload("res://assets/operator/textures/red_pouches.jpg"),
-	},
-]
+const HD_FABRIC_NORMAL := preload("res://assets/operator/textures/hd/fabric_pattern_05_nor_gl_4k.jpg")
+const HD_FABRIC_ARM := preload("res://assets/operator/textures/hd/fabric_pattern_05_arm_4k.jpg")
+const HD_FABRIC_COLOR := preload("res://assets/operator/textures/hd/fabric_pattern_05_col_01_4k.jpg")
+const FABRIC_SHADER := preload("res://assets/operator/fabric.gdshader")
+const SCARF_SHADER := preload("res://assets/operator/scarf.gdshader")
+const SOLDIER_SHADER := preload("res://assets/operator/soldier.gdshader")
+const HD_LEATHER_COLOR := preload("res://assets/operator/textures/hd/fabric_leather_02_diff_4k.jpg")
+const HD_LEATHER_NORMAL := preload("res://assets/operator/textures/hd/fabric_leather_02_nor_gl_4k.jpg")
+const HD_LEATHER_ARM := preload("res://assets/operator/textures/hd/fabric_leather_02_arm_4k.jpg")
+const HD_LEATHER_HEIGHT := preload("res://assets/operator/textures/hd/fabric_leather_02_disp_4k.jpg")
 
-const RIGHT_ARM := [&"mixamorig_RightArm_09", &"mixamorig_RightForeArm_010", &"mixamorig_RightHand_011"]
-const LEFT_ARM := [&"mixamorig_LeftArm_033", &"mixamorig_LeftForeArm_034", &"mixamorig_LeftHand_035"]
-const RIGHT_LEG := [&"mixamorig_RightUpLeg_057", &"mixamorig_RightLeg_058", &"mixamorig_RightFoot_059", &"mixamorig_RightToeBase_060"]
-const LEFT_LEG := [&"mixamorig_LeftUpLeg_063", &"mixamorig_LeftLeg_064", &"mixamorig_LeftFoot_065", &"mixamorig_LeftToeBase_066"]
-const GAITS := [&"crouch_walk", &"walk", &"jog", &"sprint"]
-const WALK_DIRECTIONS := ["forward", "forward_right", "right", "backward_right",
-	"backward", "backward_left", "left", "forward_left"]
-const DIRECTION_STEP := TAU / 8.0
-const TOE_CLEARANCE := 0.04
-const CROUCH_TOE_OUT := 0.26
-const CROUCH_HIP_HEIGHT := 0.604
-const JOG_HIP_HEIGHT := 0.763
-const SPRINT_HIP_HEIGHT := 0.885
-const HIP_HEIGHT_BLEND := 0.014
+const RIGHT_ARM := [&"upperarm_r", &"lowerarm_r", &"hand_r"]
+const LEFT_ARM := [&"upperarm_l", &"lowerarm_l", &"hand_l"]
+const RIGHT_LEG := [&"thigh_r", &"calf_r", &"foot_r", &"ball_r"]
+const LEFT_LEG := [&"thigh_l", &"calf_l", &"foot_l", &"ball_l"]
+const GAITS := [&"crouch_walk", &"walk", &"jog", &"sprint", &"walk_back", &"strafe_left", &"strafe_right"]
 const ADS_SPINE_OFFSET := Vector3(0.0, -0.060, -0.015)
 const ADS_TORSO_PITCH := -0.27
 const ADS_NECK_PITCH := -0.16
 const ADS_HEAD_PITCH := -0.08
-const FIREARM_FINGER_CURL := [0.18, -0.13, 0.36, 0.42, 0.44]
-const KNIFE_FINGER_CURL := [0.30, 0.72, 0.83, 0.88, 0.95]
+const CROUCH_HIP_LIFT := 0.18
+# Thumb, index, middle, ring, little; proximal / middle / distal joints.
+# Values are offsets from the fitted bind pose, independent of locomotion fingers.
+const FIREARM_FINGER_CURL := [[0.25, 0.60, 0.45], [0.35, 0.55, 0.25],
+	[0.85, 1.20, 0.90], [0.90, 1.25, 0.95], [0.95, 1.25, 0.95]]
+const KNIFE_FINGER_CURL := [[0.60, 0.90, 0.65], [0.95, 1.30, 0.95],
+	[1.00, 1.35, 0.95], [1.05, 1.35, 1.00], [1.10, 1.30, 1.00]]
+const KNIFE_SUPPORT_CURL := [[0.15, 0.20, 0.10], [0.18, 0.30, 0.20],
+	[0.22, 0.32, 0.22], [0.28, 0.40, 0.25], [0.35, 0.45, 0.28]]
+const SHOVEL_FINGER_CURL := [[0.24, 0.35, 0.30], [0.52, 0.79, 0.67],
+	[0.64, 0.88, 0.76], [0.69, 0.93, 0.80], [0.73, 0.96, 0.83]]
 
 var actor: Node3D
 var right_wrist: Marker3D
@@ -77,31 +76,24 @@ var stance_offset := Vector3.ZERO
 var _right_arm: PackedInt32Array
 var _left_arm: PackedInt32Array
 var _legs: Array[PackedInt32Array]
-var _forward_boots: Array[Basis]
-var _rest_toe_pitch: Array[float]
-var _foot_contact: Array[bool] = [false, false]
-var _foot_anchor: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
 var _foot_height: Array[float] = [0.0, 0.0]
 var _floor_ray := PhysicsRayQueryParameters3D.new()
 var _right_fingers: Array[PackedInt32Array]
 var _left_fingers: Array[PackedInt32Array]
 var _locomotion: AnimationPlayer
-var _directional_gaits := false
-var _travel_sector := 0
 var _was_grounded := true
 var _transition_left := 0.0
 var _stride_yaw := 0.0
 var _stride_weight := 0.0
-var _crouch_weight := 0.0
-var _torso_angles := Vector3.ZERO
-var _hip_floor := CROUCH_HIP_HEIGHT
-var _hip_lift := 0.0
-var _hips := -1
 var _neck := -1
 var _head := -1
 var _spine := -1
+var _pelvis := -1
+var _crouch_weight := 0.0
 var _right_reach: Vector2
 var _left_reach: Vector2
+var _right_palm_frame: Basis
+var _left_palm_frame: Basis
 var _right_palm_offset: Vector3
 var _left_palm_offset: Vector3
 var aim_pitch := 0.0
@@ -113,34 +105,23 @@ func _ready() -> void:
 	_right_arm = _chain(skeleton, RIGHT_ARM)
 	_left_arm = _chain(skeleton, LEFT_ARM)
 	_legs = [_chain(skeleton, RIGHT_LEG), _chain(skeleton, LEFT_LEG)]
-	var rig_to_actor := actor.global_transform.affine_inverse() * skeleton.global_transform
-	for chain in _legs:
-		var ankle := rig_to_actor * skeleton.get_bone_global_rest(chain[2])
-		var toe := rig_to_actor * skeleton.get_bone_global_rest(chain[3])
-		var toe_offset := toe.origin - ankle.origin
-		var toe_yaw := atan2(-toe_offset.x, -toe_offset.z)
-		_forward_boots.append(Basis(Vector3.UP, -toe_yaw) * ankle.basis.orthonormalized())
-		_rest_toe_pitch.append(toe_offset.angle_to(Vector3.UP))
 	_floor_ray.collision_mask = Balance.WORLD_MASK
-	_right_fingers = _finger_chains(skeleton, "Right")
-	_left_fingers = _finger_chains(skeleton, "Left")
+	_right_fingers = _finger_chains(skeleton, "r")
+	_left_fingers = _finger_chains(skeleton, "l")
 	_right_palm_offset = skeleton.get_bone_rest(_right_fingers[2][0]).origin * 0.62
 	_left_palm_offset = skeleton.get_bone_rest(_left_fingers[2][0]).origin * 0.62
-	_hips = skeleton.find_bone(&"mixamorig_Hips_01")
-	_neck = skeleton.find_bone(&"mixamorig_Neck_05")
-	_head = skeleton.find_bone(&"mixamorig_Head_06")
-	_spine = skeleton.find_bone(&"mixamorig_Spine_02")
+	_right_palm_frame = _palm_frame(skeleton, true)
+	_left_palm_frame = _palm_frame(skeleton, false)
+	_neck = skeleton.find_bone(&"neck_01")
+	_head = skeleton.find_bone(&"head")
+	_spine = skeleton.find_bone(&"spine_01")
+	_pelvis = skeleton.find_bone(&"pelvis")
 	_right_reach = _arm_reach(skeleton, _right_arm)
 	_left_reach = _arm_reach(skeleton, _left_arm)
 	_locomotion = AnimationPlayer.new()
 	_locomotion.root_node = NodePath("../..")
 	_locomotion.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	_locomotion.add_animation_library(&"", LOCOMOTION)
-	if ResourceLoader.exists(DIRECTIONAL_LOCOMOTION, "AnimationLibrary"):
-		var directions := load(DIRECTIONAL_LOCOMOTION) as AnimationLibrary
-		if directions:
-			_locomotion.add_animation_library(&"directions", directions)
-			_directional_gaits = true
 	add_child(_locomotion)
 	reset_locomotion()
 
@@ -150,13 +131,8 @@ func reset_locomotion() -> void:
 	_transition_left = 0.0
 	_stride_yaw = 0.0
 	_stride_weight = 0.0
-	_travel_sector = 0
-	_crouch_weight = 0.0
-	_torso_angles = Vector3.ZERO
-	_hip_floor = CROUCH_HIP_HEIGHT
-	_hip_lift = 0.0
-	_foot_contact.fill(false)
 	_foot_height.fill(0.0)
+	_crouch_weight = 0.0
 	_locomotion.stop()
 	_locomotion.speed_scale = 1.0
 	_locomotion.play(&"idle")
@@ -164,9 +140,10 @@ func reset_locomotion() -> void:
 
 
 func update_locomotion(delta: float, crouched: bool, vertical_speed: float) -> void:
+	_crouch_weight = move_toward(_crouch_weight, float(crouched and grounded), delta * 7.5)
 	var speed := planar_velocity.length()
 	var current := _locomotion.current_animation
-	var was_moving := current in GAITS or current.begins_with("directions/")
+	var was_moving := current in GAITS
 	var clip: StringName = &"idle"
 	var rate := 1.0
 	var travel := actor.global_basis.inverse() * planar_velocity
@@ -186,7 +163,7 @@ func update_locomotion(delta: float, crouched: bool, vertical_speed: float) -> v
 		if speed > (5.9 if current == &"sprint" else 6.3) and travel.z < -speed * 0.55:
 			clip = &"sprint"
 			rate = clampf(speed / 6.4, 0.8, 1.35)
-		elif speed > (3.25 if current == &"jog" or current.begins_with("directions/jog_") else 3.65):
+		elif speed > (3.25 if current == &"jog" else 3.65):
 			clip = &"jog"
 			rate = clampf(speed / 4.2, 0.8, 1.60)
 		else:
@@ -197,24 +174,20 @@ func update_locomotion(delta: float, crouched: bool, vertical_speed: float) -> v
 	if moving:
 		var heading := atan2(travel.x, -travel.z)
 		stride_yaw = -heading
-		if _directional_gaits and clip in [&"walk", &"jog"]:
-			var last_heading := _travel_sector * DIRECTION_STEP
-			if not current.begins_with("directions/") or absf(angle_difference(last_heading, heading)) > DIRECTION_STEP * 0.5 + 0.10:
-				_travel_sector = posmod(roundi(heading / DIRECTION_STEP), WALK_DIRECTIONS.size())
-			var directional := StringName("directions/%s_%s" % [clip, WALK_DIRECTIONS[_travel_sector]])
-			if _locomotion.has_animation(directional):
-				rate = clampf(speed / (2.0 if clip == &"walk" else 4.0), 0.45, 1.65)
-				clip = directional
-				stride_yaw = -angle_difference(_travel_sector * DIRECTION_STEP, heading)
+		if clip in [&"walk", &"jog"]:
+			# Use real back/side steps; only rotate the residual diagonal stride.
+			var source_heading := 0.0
+			if absf(heading) > PI * 0.75:
+				clip = &"walk_back"
+				source_heading = PI
+				rate = clampf(speed / 1.8, 0.5, 2.3)
+			elif absf(heading) > PI * 0.25:
+				clip = &"strafe_right" if heading > 0.0 else &"strafe_left"
+				source_heading = signf(heading) * PI * 0.5
+				rate = clampf(speed / 2.2, 0.5, 2.4)
+			stride_yaw = -angle_difference(source_heading, heading)
 	_stride_yaw = rotate_toward(_stride_yaw, stride_yaw, delta * 13.0)
 	_stride_weight = move_toward(_stride_weight, float(moving), delta * 8.0)
-	_crouch_weight = move_toward(_crouch_weight, float(crouched and grounded), delta * 8.0)
-	var lean := Vector3(
-		clampf(travel.z * 0.023, -0.17, 0.06),
-		clampf(-travel.x * 0.027, -0.15, 0.15),
-		clampf(-travel.x * 0.030, -0.16, 0.16))
-	lean.x -= 0.08 if crouched else 0.0
-	_torso_angles = _torso_angles.lerp(lean, 1.0 - exp(-delta * 9.0))
 	_was_grounded = grounded
 	if current != clip:
 		var phase := 0.0
@@ -226,21 +199,6 @@ func update_locomotion(delta: float, crouched: bool, vertical_speed: float) -> v
 			_locomotion.seek(phase * _locomotion.get_animation(clip).length)
 	_locomotion.speed_scale = rate
 	_locomotion.advance(delta)
-	var hip_floor := CROUCH_HIP_HEIGHT
-	if clip == &"sprint":
-		hip_floor = SPRINT_HIP_HEIGHT
-	elif clip == &"jog" or clip.begins_with("directions/jog_"):
-		hip_floor = JOG_HIP_HEIGHT
-	_hip_floor = move_toward(_hip_floor, hip_floor, delta * 2.4)
-	var skeleton := get_skeleton()
-	var hip_height := actor.to_local(skeleton.to_global(skeleton.get_bone_global_pose(_hips).origin)).y
-	var clearance := hip_height - _hip_floor
-	_hip_lift = maxf(0.0, -clearance)
-	if absf(clearance) < HIP_HEIGHT_BLEND:
-		# Round the transition into the height limit so the stride keeps its rhythm.
-		_hip_lift = pow(HIP_HEIGHT_BLEND - clearance, 2.0) / (4.0 * HIP_HEIGHT_BLEND)
-	if not grounded:
-		_hip_lift = 0.0
 
 
 func weapon_carry_anchor() -> Vector3:
@@ -249,7 +207,10 @@ func weapon_carry_anchor() -> Vector3:
 
 func weapon_palm_offset(right: bool) -> Vector3:
 	var offset := _right_palm_offset if right else _left_palm_offset
-	return offset * get_skeleton().global_basis.get_scale().abs()
+	var skeleton := get_skeleton()
+	var hand := _right_arm[2] if right else _left_arm[2]
+	var frame := _right_palm_frame if right else _left_palm_frame
+	return (frame.inverse() * offset) * (skeleton.global_basis * skeleton.get_bone_global_rest(hand).basis).get_scale().abs()
 
 
 func weapon_reach_correction(two_handed: bool) -> Vector3:
@@ -284,7 +245,34 @@ func clamp_support_hand(point: Vector3) -> Vector3:
 func _animated_shoulder(chain: PackedInt32Array) -> Vector3:
 	var skeleton := get_skeleton()
 	var shoulder := skeleton.get_bone_global_pose(chain[0]).origin
-	return skeleton.to_global(_spine_adjustment(skeleton) * shoulder) + Vector3.UP * _hip_lift
+	return skeleton.to_global(_spine_adjustment(skeleton) * shoulder + _crouch_lift(skeleton))
+
+
+func _crouch_lift(skeleton: Skeleton3D) -> Vector3:
+	if mounted_grip or _crouch_weight <= 0.0:
+		return Vector3.ZERO
+	var lift := CROUCH_HIP_LIFT * _crouch_weight
+	# The crouch blend can still contain a nearly straight standing leg. Limit
+	# the lift to its available reach so the foot stays on its animated contact.
+	for chain in _legs:
+		var hip := skeleton.to_global(skeleton.get_bone_global_pose(chain[0]).origin)
+		var knee := skeleton.to_global(skeleton.get_bone_global_pose(chain[1]).origin)
+		var foot := skeleton.to_global(skeleton.get_bone_global_pose(chain[2]).origin)
+		var reach := hip.distance_to(knee) + knee.distance_to(foot) - 0.010
+		var offset := hip - foot
+		var vertical_reach := sqrt(maxf(0.0, reach * reach - offset.x * offset.x - offset.z * offset.z))
+		lift = minf(lift, maxf(0.0, vertical_reach - offset.y))
+	return skeleton.global_basis.inverse() * Vector3.UP * lift
+
+
+func _neck_rotation(skeleton: Skeleton3D, spine_adjustment := Transform3D.IDENTITY) -> Basis:
+	var axes := (skeleton.global_basis.inverse() * actor.global_basis).orthonormalized()
+	var direction := axes.inverse() * spine_adjustment.basis * (skeleton.get_bone_global_pose(_head).origin - skeleton.get_bone_global_pose(_neck).origin)
+	var tilt := atan2(-direction.z, direction.y)
+	# Unfold the source's tucked neck as well as the spine, keeping the face over
+	# the stock instead of turning an otherwise horizontal neck toward the gun.
+	var correction := clampf(tilt - 0.30, 0.0, 1.0) * _crouch_weight
+	return Basis(_aim_axis(skeleton), correction + ADS_NECK_PITCH * ads_weight)
 
 
 func aim_eye_position() -> Vector3:
@@ -292,10 +280,10 @@ func aim_eye_position() -> Vector3:
 	var spine_adjustment := _spine_adjustment(skeleton)
 	var neck := spine_adjustment * skeleton.get_bone_global_pose(_neck)
 	var head := skeleton.get_bone_global_pose(_head)
-	var neck_turn := Basis(_aim_axis(skeleton), ADS_NECK_PITCH * ads_weight)
+	var neck_turn := _neck_rotation(skeleton, spine_adjustment)
 	head.origin = neck.origin + neck_turn * (spine_adjustment * head.origin - neck.origin)
 	head.basis = _aim_head_basis(skeleton, head.basis)
-	return skeleton.to_global(head * eye_in_head) + Vector3.UP * _hip_lift
+	return skeleton.to_global(head * eye_in_head + _crouch_lift(skeleton))
 
 
 func _spine_adjustment(skeleton: Skeleton3D) -> Transform3D:
@@ -311,12 +299,28 @@ func _aim_axis(skeleton: Skeleton3D) -> Vector3:
 
 func _aim_head_basis(skeleton: Skeleton3D, basis: Basis) -> Basis:
 	var roll_axis := (skeleton.global_basis.inverse() * actor.global_basis.z).normalized()
-	return Basis(roll_axis, -lean * 0.16) * Basis(_aim_axis(skeleton), aim_pitch + ADS_HEAD_PITCH * ads_weight) * basis
+	if is_instance_valid(right_wrist) and not shovel_grip:
+		# Look along the weapon, including when the source crouch looks at the floor.
+		# Preserve the animated roll; only correct the direction of the face.
+		var rig_forward := (skeleton.global_basis.inverse() * -actor.global_basis.z).normalized()
+		var bind_forward := skeleton.get_bone_global_rest(_head).basis.inverse() * rig_forward
+		var desired := Basis(_aim_axis(skeleton), aim_pitch + ADS_HEAD_PITCH * ads_weight) * rig_forward
+		basis = Basis(Quaternion((basis * bind_forward).normalized(), desired.normalized())) * basis
+	else:
+		basis = Basis(_aim_axis(skeleton), aim_pitch + ADS_HEAD_PITCH * ads_weight) * basis
+	return Basis(roll_axis, -lean * 0.16) * basis
 
 
 func _torso_rotation(skeleton: Skeleton3D) -> Basis:
 	var axes := (skeleton.global_basis.inverse() * actor.global_basis).orthonormalized()
-	var angles := _torso_angles
+	var angles := Vector3.ZERO
+	if is_instance_valid(right_wrist) and not shovel_grip:
+		# A bounded aiming correction, not a replacement of the animated spine.
+		# The source's deep stealth crouch otherwise puts the gun above the head.
+		var spine_to_neck := skeleton.get_bone_global_pose(_neck).origin - skeleton.get_bone_global_pose(_spine).origin
+		var local_axis := axes.inverse() * spine_to_neck
+		var forward_tilt := atan2(-local_axis.z, local_axis.y)
+		angles.x += clampf(forward_tilt - lerpf(0.55, 0.48, _crouch_weight), 0.0, 0.95)
 	angles.x += aim_pitch * 0.25 - shovel_lean.x + ADS_TORSO_PITCH * ads_weight
 	if mounted_grip:
 		angles.x += 0.24 + maxf(0.0, aim_pitch) * 0.40
@@ -349,20 +353,20 @@ func _process_modification_with_delta(delta: float) -> void:
 	var world_to_rig := rig_transform.affine_inverse()
 	var rig_to_actor := actor_transform.affine_inverse() * rig_transform
 	var actor_to_rig := world_to_rig * actor_transform
-	var rig_lift := world_to_rig.basis * (Vector3.UP * _hip_lift)
-	if _hip_lift > 0.0:
-		var hips := skeleton.get_bone_global_pose(_hips)
-		hips.origin += rig_lift
-		skeleton.set_bone_global_pose(_hips, hips)
+	var feet: Array[Transform3D] = []
+	for chain in _legs:
+		feet.append(skeleton.get_bone_global_pose(chain[2]))
+	var pelvis := skeleton.get_bone_global_pose(_pelvis)
+	pelvis.origin += _crouch_lift(skeleton)
+	skeleton.set_bone_global_pose(_pelvis, pelvis)
 	if not mounted_grip:
 		for index in _legs.size():
-			_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig, rig_lift)
-
+			_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig, feet[index])
 	var head_basis := skeleton.get_bone_global_pose(_head).basis
 	skeleton.set_bone_global_pose(_spine, _spine_adjustment(skeleton) * skeleton.get_bone_global_pose(_spine))
-	if ads_weight > 0.0:
+	if ads_weight > 0.0 or _crouch_weight > 0.0:
 		var neck := skeleton.get_bone_global_pose(_neck)
-		neck.basis = Basis(_aim_axis(skeleton), ADS_NECK_PITCH * ads_weight) * neck.basis
+		neck.basis = _neck_rotation(skeleton) * neck.basis
 		skeleton.set_bone_global_pose(_neck, neck)
 	var head := skeleton.get_bone_global_pose(_head)
 	head.basis = _aim_head_basis(skeleton, head_basis)
@@ -376,90 +380,62 @@ func _process_modification_with_delta(delta: float) -> void:
 		rig_to_actor = actor_transform.affine_inverse() * skeleton.global_transform
 		actor_to_rig = world_to_rig * actor_transform
 		for index in _legs.size():
-			_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig, rig_lift)
+			_pose_leg(skeleton, index, delta, rig_to_actor, actor_to_rig, world_to_rig, skeleton.get_bone_global_pose(_legs[index][2]))
 
 	if is_instance_valid(right_wrist) and is_instance_valid(left_wrist):
 		_pose_arm(skeleton, _right_arm, right_wrist, right_palm, _right_palm_offset, 1.0, actor_to_rig.basis, world_to_rig)
 		_pose_arm(skeleton, _left_arm, left_wrist, left_palm, _left_palm_offset, -1.0, actor_to_rig.basis, world_to_rig)
-		_pose_fingers(skeleton, _right_fingers, KNIFE_FINGER_CURL if knife_grip or shovel_grip else FIREARM_FINGER_CURL)
+		_pose_fingers(skeleton, _right_fingers, SHOVEL_FINGER_CURL if shovel_grip else KNIFE_FINGER_CURL if knife_grip else FIREARM_FINGER_CURL)
 		var fingers := float(left_wrist.get_meta(&"grip_curl", 0.0))
-		_pose_fingers(skeleton, _left_fingers, KNIFE_FINGER_CURL if shovel_grip else [
-			lerpf(0.18 + fingers * 0.25, 0.08, support_grip),
-			lerpf(0.27 + fingers * 0.60, 0.02, support_grip),
-			lerpf(0.31 + fingers * 0.60, 0.10, support_grip),
-			lerpf(0.34 + fingers * 0.65, 0.20, support_grip),
-			lerpf(0.34 + fingers * 0.65, 0.22, support_grip),
+		var thumb := float(left_wrist.get_meta(&"thumb_curl", 0.18))
+		_pose_fingers(skeleton, _left_fingers, SHOVEL_FINGER_CURL if shovel_grip else KNIFE_SUPPORT_CURL if knife_grip else [
+			lerpf(thumb + fingers * 0.25, 0.08, support_grip),
+			lerpf(0.65 + fingers * 0.60, 0.02, support_grip),
+			lerpf(0.70 + fingers * 0.60, 0.10, support_grip),
+			lerpf(0.73 + fingers * 0.65, 0.20, support_grip),
+			lerpf(0.75 + fingers * 0.65, 0.22, support_grip),
 		])
 
 
 func _pose_leg(skeleton: Skeleton3D, index: int, delta: float, rig_to_actor: Transform3D,
-		actor_to_rig: Transform3D, world_to_rig: Transform3D, rig_lift: Vector3) -> void:
+		actor_to_rig: Transform3D, world_to_rig: Transform3D, ankle: Transform3D) -> void:
+	# Keep source foot contacts while correcting the raised crouch's knee plane,
+	# terrain height and residual heading between authored stride directions.
 	var chain := _legs[index]
-	var ankle := skeleton.get_bone_global_pose(chain[2])
-	var toe := skeleton.get_bone_global_pose(chain[3]).origin
-	var foot := rig_to_actor * (ankle.origin - rig_lift)
-	var toe_offset := rig_to_actor.basis * (toe - ankle.origin)
-	var animated_sole := foot.y + minf(toe_offset.y, -0.08)
-	var sole_height := animated_sole
-	var stride := Vector3(0.0, 0.0, foot.z - 0.035)
-	foot += (stride.rotated(Vector3.UP, _stride_yaw) - stride) * _stride_weight
-	var side := 1.0 if index == 0 else -1.0
-	var lateral_weight := absf(sin(_stride_yaw)) * _stride_weight
-	foot.x = lerpf(foot.x, side * maxf(side * foot.x, 0.055), lateral_weight)
-	foot.x = lerpf(foot.x, side * maxf(side * foot.x, 0.10), _crouch_weight)
-	var target := actor.to_global(foot)
-
-	var up := actor_to_rig.basis.y.normalized()
-	var toe_turn := clampf(_stride_yaw, -0.65, 0.65) * lateral_weight
-	var boot := Basis(up, toe_turn) * ankle.basis
-	var crouch_toe_yaw := -side * CROUCH_TOE_OUT
+	var local_foot := rig_to_actor * ankle.origin
+	var turn := Basis(Vector3.UP, _stride_yaw * _stride_weight)
+	var directed_foot := turn * local_foot
 	if _crouch_weight > 0.0:
-		var pitch := clampf(_rest_toe_pitch[index] - toe_offset.angle_to(Vector3.UP), -0.24, 0.30)
-		var crouch_boot := actor_to_rig.basis.orthonormalized() * Basis(Vector3.UP, crouch_toe_yaw)
-		crouch_boot *= Basis(Vector3.RIGHT, pitch * _stride_weight) * _forward_boots[index]
-		boot = boot.slerp(crouch_boot, _crouch_weight)
-		var posed_toe := rig_to_actor.basis * (boot * (ankle.basis.inverse() * (toe - ankle.origin)))
-		sole_height = foot.y + minf(posed_toe.y, -0.08)
-
-	var floor_offset := 0.0
-	var contacting := false
+		# Turn the stride around each foot's stance lane, not around the actor:
+		# rotating a whole crouch 180 degrees swaps the left and right feet.
+		var lane := Vector3(local_foot.x, 0.0, 0.15)
+		var travel := turn * Vector3(0.0, 0.0, local_foot.z - lane.z)
+		travel.x *= 0.55
+		var crouch_foot := lane + travel + Vector3.UP * local_foot.y
+		crouch_foot.x = signf(lane.x) * maxf(0.075, crouch_foot.x * signf(lane.x))
+		directed_foot = directed_foot.lerp(crouch_foot, _crouch_weight)
+	var target := actor.to_global(directed_foot)
+	var correction := 0.0
 	if grounded:
-		var probe := Vector3(target.x, actor.global_position.y, target.z)
-		_floor_ray.from = probe + Vector3.UP * 0.30
-		_floor_ray.to = probe - Vector3.UP * 0.32
+		_floor_ray.from = Vector3(target.x, actor.global_position.y + 0.30, target.z)
+		_floor_ray.to = _floor_ray.from - Vector3.UP * 0.62
 		var hit := actor.get_world_3d().direct_space_state.intersect_ray(_floor_ray)
 		if not hit.is_empty() and hit.normal.y >= 0.65:
-			var correction := TOE_CLEARANCE - sole_height
-			var crouch_idle := _crouch_weight * (1.0 - _stride_weight)
-			correction = lerpf(maxf(0.0, correction), correction, crouch_idle)
-			if mounted_grip:
-				correction = TOE_CLEARANCE - sole_height
-				floor_offset = clampf(hit.position.y - probe.y + correction, -0.32, 0.45)
-			else:
-				floor_offset = clampf(hit.position.y - probe.y + correction, -0.17, 0.20)
-			contacting = _stride_weight > 0.75 and animated_sole < 0.095
-	if contacting and not _foot_contact[index]:
-		_foot_anchor[index] = target
-	if contacting:
-		var drift := (_foot_anchor[index] - target).slide(Vector3.UP)
-		var plant := (1.0 - smoothstep(0.04, 0.095, animated_sole)) * (1.0 - smoothstep(0.07, 0.31, drift.length()))
-		target += drift * plant
-	_foot_contact[index] = contacting
-	_foot_height[index] = lerpf(_foot_height[index], floor_offset, 1.0 - exp(-delta * 23.0)) if grounded else 0.0
+			correction = clampf(hit.position.y - actor.global_position.y, -0.20, 0.20)
+	_foot_height[index] = lerpf(_foot_height[index], correction, 1.0 - exp(-delta * 23.0))
+	if absf(_foot_height[index]) < 0.001 and absf(_stride_yaw * _stride_weight) < 0.001 and _crouch_weight < 0.001:
+		return
 	target.y += _foot_height[index]
-
-	var goal := Transform3D(boot, world_to_rig * target)
-	var hip := skeleton.get_bone_global_pose(chain[0]).origin
+	var foot_turn := turn.slerp(Basis(Vector3.UP, clampf(_stride_yaw, -0.30, 0.30) * _stride_weight), _crouch_weight)
+	var goal := Transform3D(actor_to_rig.basis * foot_turn * rig_to_actor.basis * ankle.basis, world_to_rig * target)
 	var knee := skeleton.get_bone_global_pose(chain[1]).origin
-	var bend := (knee - hip).rotated(up, toe_turn).normalized()
 	if _crouch_weight > 0.0:
-		var leg_axis := (rig_to_actor.basis * (goal.origin - hip)).normalized()
-		var knee_forward := Vector3.FORWARD.rotated(Vector3.UP, crouch_toe_yaw)
-		# Adjust only the pole height to keep its horizontal heading aligned with the boot.
-		knee_forward.y = -knee_forward.dot(leg_axis) / minf(leg_axis.y, -0.22)
-		var crouch_bend := (actor_to_rig.basis * knee_forward).normalized()
-		bend = bend.lerp(crouch_bend, _crouch_weight)
-	_solve(skeleton, chain, goal, hip + bend, false, _crouch_weight)
+		var hip := rig_to_actor * skeleton.get_bone_global_pose(chain[0]).origin
+		var foot := actor.to_local(target)
+		var forward_knee := Vector3(lerpf(hip.x, foot.x, 0.5),
+			lerpf(hip.y, foot.y, 0.55), minf(hip.z, foot.z) - 0.45)
+		knee = knee.lerp(actor_to_rig * forward_knee, _crouch_weight)
+	_solve(skeleton, chain, goal, knee)
 
 
 func _chain(skeleton: Skeleton3D, names: Array) -> PackedInt32Array:
@@ -471,41 +447,54 @@ func _chain(skeleton: Skeleton3D, names: Array) -> PackedInt32Array:
 
 func _finger_chains(skeleton: Skeleton3D, side: String) -> Array[PackedInt32Array]:
 	var chains: Array[PackedInt32Array] = []
-	for digit in ["Thumb", "Index", "Middle", "Ring", "Pinky"]:
+	for digit in ["thumb", "index", "middle", "ring", "pinky"]:
 		var chain := PackedInt32Array()
 		for joint in range(1, 4):
-			var prefix := "mixamorig_%sHand%s%d_" % [side, digit, joint]
-			for index in skeleton.get_bone_count():
-				if String(skeleton.get_bone_name(index)).begins_with(prefix):
-					chain.append(index)
-					break
+			chain.append(skeleton.find_bone("%s_0%d_%s" % [digit, joint, side]))
 		chains.append(chain)
 	return chains
 
 
+func _palm_frame(skeleton: Skeleton3D, right: bool) -> Basis:
+	# Weapon sockets use Y along the fingers and Z into the palm. Native M2M
+	# hand axes differ from these socket axes; derive the conversion from the rig.
+	var chain := _right_fingers if right else _left_fingers
+	var hand := _right_arm[2] if right else _left_arm[2]
+	var rest := skeleton.get_bone_global_rest(hand)
+	var y := (skeleton.get_bone_global_rest(chain[2][0]).origin - rest.origin).normalized()
+	var across := skeleton.get_bone_global_rest(chain[1][0]).origin - skeleton.get_bone_global_rest(chain[4][0]).origin
+	var x := across.normalized() * (1.0 if right else -1.0)
+	var z := x.cross(y).normalized()
+	x = y.cross(z).normalized()
+	return rest.basis.inverse() * Basis(x, y, z)
+
+
 func _pose_fingers(skeleton: Skeleton3D, chains: Array[PackedInt32Array], curls: Array) -> void:
 	for digit in chains.size():
-		var axis := Vector3.RIGHT
-		for joint in chains[digit]:
-			var rotation := skeleton.get_bone_pose_rotation(joint)
-			skeleton.set_bone_pose_rotation(joint, Quaternion(axis, float(curls[digit])) * rotation)
-			# Rotating around the curl axis leaves it unchanged in the next joint's parent space.
-			axis = (rotation.inverse() * axis).normalized()
+		for phalanx in chains[digit].size():
+			var joint := chains[digit][phalanx]
+			var rotation := skeleton.get_bone_rest(joint).basis.get_rotation_quaternion()
+			var curl: float = curls[digit][phalanx] if curls[digit] is Array else float(curls[digit]) * [0.8, 1.15, 0.9][phalanx]
+			# M2M finger phalanges curl around their own local X, after rest rotation.
+			skeleton.set_bone_pose_rotation(joint, rotation * Quaternion(Vector3.RIGHT, curl))
 
 
 func _pose_arm(skeleton: Skeleton3D, chain: PackedInt32Array, wrist: Marker3D, palm: Marker3D, palm_offset: Vector3, side: float,
 		actor_to_rig: Basis, world_to_rig: Transform3D) -> void:
 	var shoulder := skeleton.get_bone_global_pose(chain[0]).origin
 	var pole := shoulder + actor_to_rig * Vector3(side * 0.13, -0.34, 0.16)
+	var frame := _right_palm_frame if side > 0.0 else _left_palm_frame
 	var goal := world_to_rig * wrist.global_transform
+	goal.basis *= frame.inverse()
 	if is_instance_valid(palm):
 		goal = world_to_rig * palm.global_transform
+		goal.basis *= frame.inverse()
 		goal.origin -= goal.basis.orthonormalized() * palm_offset
 	goal.basis = goal.basis.orthonormalized()
 	_solve(skeleton, chain, goal, pole, true)
 
 
-func _solve(skeleton: Skeleton3D, chain: PackedInt32Array, goal: Transform3D, pole: Vector3, follow_wrist: bool = false, hinge_weight: float = 0.0) -> void:
+func _solve(skeleton: Skeleton3D, chain: PackedInt32Array, goal: Transform3D, pole: Vector3, follow_wrist: bool = false) -> void:
 	var upper := skeleton.get_bone_global_pose(chain[0])
 	var lower := skeleton.get_bone_global_pose(chain[1])
 	var tip := skeleton.get_bone_global_pose(chain[2])
@@ -531,18 +520,13 @@ func _solve(skeleton: Skeleton3D, chain: PackedInt32Array, goal: Transform3D, po
 
 	var upper_axis := (elbow - upper.origin).normalized()
 	var lower_axis := (end - elbow).normalized()
-	var hinge := axis.cross(bend).normalized()
 	var upper_turn := Basis(Quaternion(upper_link.normalized(), upper_axis))
 	upper.basis = upper_turn * upper.basis
-	if hinge_weight > 0.0:
-		upper.basis = _align_hinge(upper.basis, upper_axis, hinge, hinge_weight)
 	skeleton.set_bone_global_pose(chain[0], upper)
 
 	var lower_turn := Basis(Quaternion((upper_turn * lower_link).normalized(), lower_axis))
 	lower.basis = lower_turn * upper_turn * lower.basis
-	if hinge_weight > 0.0:
-		lower.basis = _align_hinge(lower.basis, lower_axis, hinge, hinge_weight)
-	elif follow_wrist:
+	if follow_wrist:
 		var desired := goal.basis * skeleton.get_bone_rest(chain[2]).basis.inverse()
 		var current_side := lower.basis.z.slide(lower_axis)
 		var desired_side := desired.z.slide(lower_axis)
@@ -556,44 +540,133 @@ func _solve(skeleton: Skeleton3D, chain: PackedInt32Array, goal: Transform3D, po
 	skeleton.set_bone_global_pose(chain[2], goal)
 
 
-func _align_hinge(basis: Basis, segment: Vector3, hinge: Vector3, weight: float) -> Basis:
-	# The operator's thigh and shin use local X as their knee hinge axis.
-	var roll := basis.x.slide(segment).signed_angle_to(hinge, segment)
-	return Basis(segment, roll * weight) * basis
-
-
 static var _fabric_materials: Dictionary = {}
+
+
+static func model_for_team(team: int) -> PackedScene:
+	return RED_MODEL if team == 1 else MODEL
+
+
+static func bind_vest_visibility(avatar: Node3D) -> Node3D:
+	var vest := avatar.find_child(VEST_MESH, true, false) as Node3D
+	var equipment: Array[Node3D] = []
+	for mesh: MeshInstance3D in avatar.find_children("ChestKit*", "MeshInstance3D", true, false):
+		if not String(mesh.name).contains("Kit_scarf"):
+			equipment.append(mesh)
+	var sync := func() -> void:
+		for part in equipment:
+			part.visible = vest.visible
+	vest.visibility_changed.connect(sync)
+	sync.call()
+	return vest
 
 
 static func apply_textures(avatar: Node3D, team := -1) -> void:
 	for mesh: MeshInstance3D in avatar.find_children("*", "MeshInstance3D", true, false):
+		if mesh.name == &"OperatorEyes":
+			mesh.hide()
 		for surface in mesh.mesh.get_surface_count():
 			var original := mesh.mesh.surface_get_material(surface) as BaseMaterial3D
 			if original == null:
 				continue
 			var name := original.resource_name
-			var pads := name == "Mil_Suit_Pads__R5"
-			if not pads and not FABRIC_TEXTURES.has(name):
+			if name.begins_with("Soldier_"):
+				var soldier_key := "soldier/%d/%s" % [1 if team == 1 else 0, name]
+				if not _fabric_materials.has(soldier_key):
+					var soldier := ShaderMaterial.new()
+					soldier.shader = SOLDIER_SHADER
+					soldier.set_shader_parameter(&"base_color", original.albedo_texture)
+					soldier.set_shader_parameter(&"normal_map", original.normal_texture)
+					soldier.set_shader_parameter(&"metal_roughness", original.roughness_texture)
+					soldier.set_shader_parameter(&"black_uniform", team == 1)
+					soldier.set_shader_parameter(&"gloves", name in ["Soldier_Gloves", "Soldier_Cuff"])
+					soldier.set_shader_parameter(&"cuffs", name == "Soldier_Cuff")
+					_fabric_materials[soldier_key] = soldier
+				mesh.set_surface_override_material(surface, _fabric_materials[soldier_key])
 				continue
-			var key := "%d/%s" % [team, name]
+			if name.begins_with("Kit_scarf") or name in ["Kit_nylon", "Kit_sand", "Kit_stitch"]:
+				if not _fabric_materials.has(name):
+					var scarf := ShaderMaterial.new()
+					scarf.shader = SCARF_SHADER
+					scarf.set_shader_parameter(&"yarn_color", HD_FABRIC_COLOR)
+					scarf.set_shader_parameter(&"yarn_normal", HD_FABRIC_NORMAL)
+					scarf.set_shader_parameter(&"yarn_arm", HD_FABRIC_ARM)
+					scarf.set_shader_parameter(&"yarn_tint", original.albedo_color)
+					_fabric_materials[name] = scarf
+				mesh.set_surface_override_material(surface, _fabric_materials[name])
+				continue
+			if name.begins_with("Kit_"):
+				var kit_key := "kit/%d/%s" % [1 if team == 1 else 0, name]
+				if not _fabric_materials.has(kit_key):
+					var kit := original.duplicate() as BaseMaterial3D
+					kit.vertex_color_use_as_albedo = true
+					kit.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+					_fabric_materials[kit_key] = kit
+				mesh.set_surface_override_material(surface, _fabric_materials[kit_key])
+				continue
+			var texture_name := "Mil_Suit_R5" if name in ["Mil_Suit_R5_Trousers", "Mil_Suit_R5_Gloves", "Mil_Suit_R5_Boots"] else name
+			var pads := name == "Mil_Suit_Pads__R5"
+			if not pads and not FABRIC_TEXTURES.has(texture_name):
+				continue
+			var key := "%d/%s" % [1 if team == 1 else 0, name]
+			if not pads and name not in ["Mil_Suit_R5_Gloves", "Mil_Suit_R5_Boots"]:
+				if not _fabric_materials.has(key):
+					var cloth := ShaderMaterial.new()
+					cloth.shader = FABRIC_SHADER
+					cloth.set_shader_parameter(&"macro_color", FABRIC_TEXTURES[texture_name][0])
+					cloth.set_shader_parameter(&"macro_normal", FABRIC_TEXTURES[texture_name][1])
+					cloth.set_shader_parameter(&"macro_roughness", FABRIC_TEXTURES[texture_name][2])
+					if original.ao_texture: cloth.set_shader_parameter(&"macro_ao", original.ao_texture)
+					cloth.set_shader_parameter(&"weave_color", HD_FABRIC_COLOR)
+					cloth.set_shader_parameter(&"weave_normal", HD_FABRIC_NORMAL)
+					cloth.set_shader_parameter(&"weave_arm", HD_FABRIC_ARM)
+					cloth.set_shader_parameter(&"fabric_tint", original.albedo_color)
+					_fabric_materials[key] = cloth
+				mesh.set_surface_override_material(surface, _fabric_materials[key])
+				continue
 			if not _fabric_materials.has(key):
 				var material := original.duplicate() as BaseMaterial3D
 				if pads:
-					var packed := preload("res://assets/operator/textures/leather_detail_arm.jpg")
+					var packed := HD_LEATHER_ARM
 					material.roughness_texture = packed
 					material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
 					material.roughness = 0.96
 					material.detail_enabled = true
 					material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
-					material.detail_normal = preload("res://assets/operator/textures/leather_detail_normal.jpg")
+					material.detail_normal = HD_LEATHER_NORMAL
+					material.heightmap_enabled = true
+					material.heightmap_texture = HD_LEATHER_HEIGHT
+					material.heightmap_scale = 0.001
 					material.detail_mask = packed
 				else:
-					material.albedo_texture = TEAM_ALBEDO[team][name] if team in [0, 1] else FABRIC_TEXTURES[name][0]
-					material.normal_texture = FABRIC_TEXTURES[name][1]
+					material.albedo_texture = FABRIC_TEXTURES[texture_name][0]
+					material.normal_texture = FABRIC_TEXTURES[texture_name][1]
 					material.normal_enabled = true
-					material.roughness_texture = FABRIC_TEXTURES[name][2]
+					material.normal_scale = 0.65
+					material.roughness_texture = FABRIC_TEXTURES[texture_name][2]
 					material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 					material.roughness = 1.0
+					material.detail_enabled = true
+					material.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+					material.detail_normal = HD_FABRIC_NORMAL
+					material.detail_mask = HD_FABRIC_ARM
+					if name in ["Mil_Suit_R5_Gloves", "Mil_Suit_R5_Boots"]:
+						material.detail_normal = HD_LEATHER_NORMAL
+						material.roughness = 0.84
+				if name == "Mil_Suit_R5_Boots":
+					material.albedo_texture = HD_LEATHER_COLOR
+					material.albedo_color = Color(0.38, 0.31, 0.21) if team == 1 else Color(0.22, 0.235, 0.25)
+					material.normal_texture = HD_LEATHER_NORMAL
+					material.normal_scale = 0.35
+					material.roughness_texture = null
+					material.roughness = 0.9
+					material.uv1_triplanar = true
+					material.uv1_scale = Vector3.ONE * 8.0
+					material.ao_enabled = false
+				material.detail_uv_layer = BaseMaterial3D.DETAIL_UV_2
+				material.uv2_triplanar = true
+				material.uv2_scale = Vector3.ONE * 6.0
+				material.metallic = 0.0
 				material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 				_fabric_materials[key] = material
 			mesh.set_surface_override_material(surface, _fabric_materials[key])
@@ -602,7 +675,7 @@ static func apply_textures(avatar: Node3D, team := -1) -> void:
 static func attach_wristwatch(skeleton: Skeleton3D) -> void:
 	var cuff := BoneAttachment3D.new()
 	cuff.name = "WatchCuff"
-	cuff.bone_name = &"mixamorig_LeftHand_035"
+	cuff.bone_name = &"hand_l"
 	skeleton.add_child(cuff)
 	var watch := WRISTWATCH.instantiate() as Node3D
 	watch.name = "Wristwatch"

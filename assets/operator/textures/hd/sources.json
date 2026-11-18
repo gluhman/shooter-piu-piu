@@ -1,0 +1,56 @@
+[
+  {
+    "file": "assets/operator/textures/hd/fabric_pattern_05_col_01_4k.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/fabric_pattern_05/fabric_pattern_05_col_01_4k.jpg",
+    "md5": "7d7c81e4ba52c3a41f8f9c992c015f16",
+    "bytes": 10669919
+  },
+  {
+    "file": "assets/operator/textures/hd/fabric_pattern_05_nor_gl_4k.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/fabric_pattern_05/fabric_pattern_05_nor_gl_4k.jpg",
+    "md5": "b976998b3e851b496c79e74bddc9fa87",
+    "bytes": 8805171
+  },
+  {
+    "file": "assets/operator/textures/hd/fabric_pattern_05_arm_4k.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/fabric_pattern_05/fabric_pattern_05_arm_4k.jpg",
+    "md5": "1c3e93d0c32c68d00e41ba38293a9df3",
+    "bytes": 2731420
+  },
+  {
+    "file": "assets/operator/textures/hd/fabric_leather_02_nor_gl_4k.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/fabric_leather_02/fabric_leather_02_nor_gl_4k.jpg",
+    "md5": "18df78d05a74479e9029e44cd386e9c6",
+    "bytes": 3652355
+  },
+  {
+    "file": "assets/operator/textures/hd/fabric_leather_02_arm_4k.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/fabric_leather_02/fabric_leather_02_arm_4k.jpg",
+    "md5": "9c72cd41fbe93ba6d0ef85677092742a",
+    "bytes": 6821242
+  },
+  {
+    "file": "assets/operator/textures/hd/fabric_leather_02_disp_4k.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/fabric_leather_02/fabric_leather_02_disp_4k.jpg",
+    "md5": "03488aa64a3d11d5ce8629d60cc41016",
+    "bytes": 1174433
+  },
+  {
+    "file": "game/maps/lighting/overcast_industrial_courtyard.hdr",
+    "source": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/4k/overcast_industrial_courtyard_4k.hdr",
+    "md5": "74e783b1e12ca66be402862014ecdff7",
+    "bytes": 26068698
+  },
+  {
+    "file": "assets/operator/textures/hd/studio_small_09_4k.hdr",
+    "source": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/4k/studio_small_09_4k.hdr",
+    "md5": "fa4b6cd37878ff887d1bdad57bbeca92",
+    "bytes": 24670900
+  },
+  {
+    "file": "assets/operator/textures/hd/fabric_leather_02_diff_4k.jpg",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/fabric_leather_02/fabric_leather_02_diff_4k.jpg",
+    "md5": "b164202a8e93987b8ce6d7742d4a7e94",
+    "bytes": 10404181
+  }
+]

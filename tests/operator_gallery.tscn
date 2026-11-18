@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dy88my8rrg1xe"]
+
+[ext_resource type="Script" uid="uid://d1gm3ol14gpw7" path="res://tests/operator_gallery.gd" id="1_kjdfw"]
+
+[node name="OperatorGallery" type="Node3D" unique_id=1108043044]
+script = ExtResource("1_kjdfw")
