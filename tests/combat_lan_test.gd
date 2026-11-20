@@ -7,6 +7,21 @@ var arena: Node3D
 var net: Node
 var actors: Array[CharacterBody3D]
 var event_count := 0
+var rocket_case := false
+var rocket_seen := false
+var rocket_trail_seen := false
+var minimap_seen := false
+
+func _process(_delta: float) -> bool:
+	if rocket_case and is_instance_valid(arena):
+		if mode == "observer" and not arena.get_node("HUD")._minimap._shots.is_empty(): minimap_seen = true
+		for flight in arena.get_node("Grenades")._flights.values():
+			if flight.kind == "rocket":
+				rocket_seen = true
+				if is_instance_valid(flight.trail) and flight.trail.points.size() > 1:
+					rocket_trail_seen = flight.trail.length_m() <= 2.0001
+	return false
+
 
 
 func _initialize() -> void:
@@ -19,6 +34,7 @@ func _run() -> void:
 		_finish(false, "expected role, shared directory, port and optional cover case")
 		return
 	var cover_case := args.size() == 4 and args[3] == "cover"
+	rocket_case = args.size() == 4 and args[3] == "rocket"
 	mode = args[0]
 	shared_dir = args[1]
 	var transport := ENetMultiplayerPeer.new()
@@ -87,8 +103,10 @@ func _run() -> void:
 		if not await _wait_file("shooter.fired"):
 			_finish(false, "shooter did not send fire RPC")
 			return
-		await create_timer(0.35).timeout
+		await create_timer(0.8 if rocket_case else 0.35).timeout
 		var good: bool = event_count == 1 and shooter.gun.ammo_counts().x == 29 and victim.health < 100.0 and victim.health > 65.0
+		if rocket_case:
+			good = event_count == 1 and shooter.gun.ammo_counts().x == 0 and victim.health < 100.0 and rocket_seen
 		if cover_case:
 			good = good and victim.health > 77.5 and map._perforated[0].points.size() == 1
 		_write("server.result", "%f,%d" % [victim.health, shooter.gun.ammo_counts().x])
@@ -107,22 +125,24 @@ func _run() -> void:
 		pose[6] = 1.0
 		pose[10] = 1.0
 		var time: float = arena.estimated_server_time()
-		shooter.gun.net_fire.rpc_id(1, "ak47", pose, time)
+		shooter.gun.net_fire.rpc_id(1, "rpg" if rocket_case else "ak47", pose, time)
 		# Replay after the rate limit, so sequence validation alone must stop the second shot.
 		await create_timer(0.15).timeout
-		shooter.gun.net_fire.rpc_id(1, "ak47", pose, arena.estimated_server_time())
+		shooter.gun.net_fire.rpc_id(1, "rpg" if rocket_case else "ak47", pose, arena.estimated_server_time())
 		_write("shooter.fired", "yes")
 	if not await _wait_file("server.result"):
 		_finish(false, "missing server result")
 		return
 	var server := _read("server.result").split(",")
 	var good: bool = event_count == 1 and is_equal_approx(float(victim.health), float(server[0])) and victim.health < 100.0
+	if rocket_case:
+		good = good and rocket_seen and rocket_trail_seen and arena.get_node("Grenades")._flights.is_empty()
 	if cover_case:
 		good = good and map._perforated[0].points.size() == 1
 	if mode == "shooter":
 		good = good and local == shooter.score_id() and shooter.gun.ammo_counts().x == int(server[1])
 	if mode == "observer":
-		good = good and hud._minimap._shots.has(shooter.score_id())
+		good = good and (minimap_seen if rocket_case else hud._minimap._shots.has(shooter.score_id()))
 	_write(mode + ".checked", str(good))
 	# Leave transport open until both clients have completed their assertions.
 	await create_timer(0.4).timeout
@@ -134,14 +154,14 @@ func _spawn(peer: int, index: int) -> CharacterBody3D:
 	actor.name = str(peer)
 	actor.slot = index
 	actor.set_multiplayer_authority(peer, true)
-	actor.position = [Vector3(0, 0, -10), Vector3.ZERO, Vector3(4, 0, 0)][index]
+	actor.position = [Vector3(0, 0, -40 if rocket_case else -10), Vector3.ZERO, Vector3(4, 0, 0)][index]
 	actor.spawn_position = actor.position
 	arena.add_child(actor)
 	actor.set_process(false)
 	actor.set_physics_process(false)
 	actor.gun.set_process(false)
 	actor.rotation.y = 0.0
-	actor._apply_equip("ak47")
+	actor._apply_equip("rpg" if rocket_case and index == 1 else "ak47")
 	actor.cancel_spawn_protection()
 	actor._update_view_pose()
 	return actor

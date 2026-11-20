@@ -1,5 +1,12 @@
 extends SkeletonModifier3D
 
+signal pose_finished
+@export var use_godotik_arms := true
+var _arm_ik: SkeletonModifier3D
+var _arm_effectors: Array[Node3D] = []
+var _arm_poles: Array[Node] = []
+const ArmPole := preload("res://addons/libik/script/pole_bone_constraint.gd")
+
 const Balance := preload("res://game/combat/combat_balance.gd")
 const WRISTWATCH := preload("res://assets/operator/watch/digital_wrist_watch_1k.gltf")
 const VEST_MESH := "ArmorState"
@@ -102,6 +109,8 @@ var ads_weight := 0.0
 
 func _ready() -> void:
 	var skeleton := get_skeleton()
+	modification_processed.connect(_on_local_pose_finished)
+	_setup_arm_ik.call_deferred()
 	_right_arm = _chain(skeleton, RIGHT_ARM)
 	_left_arm = _chain(skeleton, LEFT_ARM)
 	_legs = [_chain(skeleton, RIGHT_LEG), _chain(skeleton, LEFT_LEG)]
@@ -137,6 +146,37 @@ func reset_locomotion() -> void:
 	_locomotion.speed_scale = 1.0
 	_locomotion.play(&"idle")
 	_locomotion.advance(0.0)
+
+
+func _setup_arm_ik() -> void:
+	if not ClassDB.class_exists("GodotIK"):
+		return
+	_arm_ik = ClassDB.instantiate("GodotIK") as SkeletonModifier3D
+	_arm_ik.name = "WeaponArmIK"
+	_arm_ik.set("iteration_count", 16)
+	_arm_ik.active = use_godotik_arms
+	for side in ["r", "l"]:
+		var effector := ClassDB.instantiate("GodotIKEffector") as Node3D
+		effector.name = "WeaponHand_" + side
+		effector.set("bone_name", "hand_" + side)
+		effector.set("bone_idx", get_skeleton().find_bone("hand_" + side))
+		effector.set("chain_length", 3)
+		effector.set("transform_mode", 3) # FULL_TRANSFORM: retain the weapon's explicit hand basis.
+		var constraint := ArmPole.new()
+		constraint.bone_name = "lowerarm_" + side
+		constraint.bone_idx = get_skeleton().find_bone("lowerarm_" + side)
+		constraint.pole_direction = Vector3.DOWN
+		effector.add_child(constraint)
+		_arm_ik.add_child(effector)
+		_arm_effectors.append(effector)
+		_arm_poles.append(constraint)
+	get_skeleton().add_child(_arm_ik)
+	_arm_ik.modification_processed.connect(func() -> void: pose_finished.emit())
+
+
+func _on_local_pose_finished() -> void:
+	if not use_godotik_arms or not is_instance_valid(_arm_ik) or not _arm_ik.active:
+		pose_finished.emit()
 
 
 func update_locomotion(delta: float, crouched: bool, vertical_speed: float) -> void:
@@ -385,7 +425,8 @@ func _process_modification_with_delta(delta: float) -> void:
 	if is_instance_valid(right_wrist) and is_instance_valid(left_wrist):
 		_pose_arm(skeleton, _right_arm, right_wrist, right_palm, _right_palm_offset, 1.0, actor_to_rig.basis, world_to_rig)
 		_pose_arm(skeleton, _left_arm, left_wrist, left_palm, _left_palm_offset, -1.0, actor_to_rig.basis, world_to_rig)
-		_pose_fingers(skeleton, _right_fingers, SHOVEL_FINGER_CURL if shovel_grip else KNIFE_FINGER_CURL if knife_grip else FIREARM_FINGER_CURL)
+		var right_curls: Array = right_wrist.get_meta(&"finger_curls", [])
+		_pose_fingers(skeleton, _right_fingers, SHOVEL_FINGER_CURL if shovel_grip else KNIFE_FINGER_CURL if knife_grip else right_curls if right_curls.size() == 5 else FIREARM_FINGER_CURL)
 		var fingers := float(left_wrist.get_meta(&"grip_curl", 0.0))
 		var thumb := float(left_wrist.get_meta(&"thumb_curl", 0.18))
 		_pose_fingers(skeleton, _left_fingers, SHOVEL_FINGER_CURL if shovel_grip else KNIFE_SUPPORT_CURL if knife_grip else [
@@ -395,6 +436,28 @@ func _process_modification_with_delta(delta: float) -> void:
 			lerpf(0.73 + fingers * 0.65, 0.20, support_grip),
 			lerpf(0.75 + fingers * 0.65, 0.22, support_grip),
 		])
+
+		if not knife_grip and not shovel_grip:
+			var left_curls: Array = left_wrist.get_meta(&"finger_curls", [])
+			if left_curls.size() == 5:
+				var blended: Array = []
+				for digit in 5:
+					var angles: Array = []
+					for joint in 3:
+						angles.append(lerpf(float(left_curls[digit][joint]), [0.08, 0.02, 0.10, 0.20, 0.22][digit], support_grip))
+					blended.append(angles)
+				_pose_fingers(skeleton, _left_fingers, blended)
+			_apply_finger_splay(skeleton, _right_fingers, right_wrist, 1.0)
+			_apply_finger_splay(skeleton, _left_fingers, left_wrist, 1.0 - support_grip)
+
+
+func _apply_finger_splay(skeleton: Skeleton3D, chains: Array[PackedInt32Array], wrist: Marker3D, weight: float) -> void:
+	var splay: Array = wrist.get_meta(&"finger_splay", [])
+	if splay.size() != 5: return
+	for digit in 5:
+		var joint := chains[digit][0]
+		var rotation := skeleton.get_bone_pose_rotation(joint)
+		skeleton.set_bone_pose_rotation(joint, rotation * Quaternion(Vector3.BACK, float(splay[digit]) * weight))
 
 
 func _pose_leg(skeleton: Skeleton3D, index: int, delta: float, rig_to_actor: Transform3D,
@@ -491,7 +554,24 @@ func _pose_arm(skeleton: Skeleton3D, chain: PackedInt32Array, wrist: Marker3D, p
 		goal.basis *= frame.inverse()
 		goal.origin -= goal.basis.orthonormalized() * palm_offset
 	goal.basis = goal.basis.orthonormalized()
-	_solve(skeleton, chain, goal, pole, true)
+	if not knife_grip and not shovel_grip:
+		# Place the elbow on its reachable circle toward a neutral wrist. The old
+		# fixed downward pole forced the hand to hinge sharply at the cuff.
+		var lower := skeleton.get_bone_global_pose(chain[1]).origin
+		var hand := skeleton.get_bone_global_pose(chain[2]).origin
+		var hand_axis := (goal.basis * palm_offset).normalized()
+		var relaxed_pole := goal.origin - hand_axis * lower.distance_to(hand)
+		var local_pole := actor_to_rig.inverse() * (relaxed_pole - shoulder)
+		local_pole.y = minf(local_pole.y, -0.02)
+		pole = shoulder + actor_to_rig * local_pole
+	if is_instance_valid(_arm_ik):
+		_arm_ik.active = use_godotik_arms
+	if use_godotik_arms and is_instance_valid(_arm_ik) and _arm_effectors.size() == 2:
+		var index := 0 if side > 0.0 else 1
+		_arm_effectors[index].transform = goal
+		_arm_poles[index].set("pole_direction", (pole - shoulder).normalized())
+	else:
+		_solve(skeleton, chain, goal, pole, true)
 
 
 func _solve(skeleton: Skeleton3D, chain: PackedInt32Array, goal: Transform3D, pole: Vector3, follow_wrist: bool = false) -> void:

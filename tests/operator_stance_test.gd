@@ -45,7 +45,7 @@ func _run() -> void:
 		actor._skeleton.add_child(probe)
 		actor._skeleton.move_child(probe, actor._pose.get_index())
 		source_probes[actor] = probe
-		actor._pose.modification_processed.connect(_sample.bind(actor))
+		actor._pose.pose_finished.connect(_sample.bind(actor))
 	for actor in get_nodes_in_group("bot"):
 		monitored = actor
 		actor.control_enabled = true

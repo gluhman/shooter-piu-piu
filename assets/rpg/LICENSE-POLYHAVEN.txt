@@ -1,0 +1,5 @@
+Poly Haven texture assets in textures/ are released under CC0 1.0 Universal.
+https://polyhaven.com/license
+https://creativecommons.org/publicdomain/zero/1.0/
+
+This dedication applies to the Poly Haven textures only, not the Ng1994 launcher geometry.

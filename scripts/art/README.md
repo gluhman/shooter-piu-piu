@@ -72,3 +72,30 @@ The fidelity test compares hierarchy, bind frames and 31 phases of every clip fo
 Also run combat, shot collision, fieldworks and training-range tests. `operator_corpse_lan_test.gd` accepts `-- host|client SHARED_DIR PORT`; run both processes with the same directory and loopback port to verify production corpse RPCs. `combat_lan_test.gd` similarly uses host/shooter/observer roles. The native skeleton changes corpse pose arrays, so protocol 20 is required.
 
 Static environment bounce lighting is rebuilt with the graphical Forward+ renderer using `scripts/bake_arena_lighting.gd`. See [animation notes](../../docs/animation.md) and [model attribution](../../assets/operator/CREDITS.md).
+
+## Weapon contacts and glove volume
+
+Follow [Weapon rigging](../../docs/weapon-rigging.md). After importing gun assets:
+
+```sh
+godot --headless --path . --script res://scripts/art/bake_weapon_contacts.gd
+godot --path . res://tests/weapon_contact_gallery.tscn
+blender --background --python scripts/art/fit_weapon_contacts.py
+godot --headless --path . --script res://scripts/art/finalize_weapon_contacts.gd
+python3 tests/weapon_grip_volume_test.py
+godot --path . res://tests/weapon_contact_gallery.tscn
+```
+
+The first gallery run writes arm-reach measurements; the last reviews fitted poses. The fitter uses the original glove skin weights, exact bind matrices, distal skin patches, full glove clearance against conservative grip envelopes, and reachable elbow geometry. It does not stretch finger bones. Temporary measurements and reports live in `/tmp`; the reviewed `assets/weapon_contacts.json` is exported with the game. A nearest-point seed is a starting point for review, never sufficient evidence that a whole hand fits.
+
+Use `-- --weapon longshot` to inspect one gun.
+
+`-- --poses` reviews all seven poses; `--contacts` reviews both sides and first person, and `--ads` reviews sighted reach. The gallery waits for a completed rendered frame before advancing, so a slow import or background window cannot label a previous weapon's image as the next one.
+
+On macOS, keep the preview visible and in the foreground so Metal supplies rendered frames. To rebuild the RPG from its separately downloaded author source:
+
+```sh
+blender --background --python scripts/art/prepare_rpg.py -- /path/to/Rpg.blend
+```
+
+The prepared launcher retains 380,312 triangles including the added loaded rocket. Source and texture terms are in `assets/rpg/CREDITS.md`.

@@ -41,6 +41,7 @@ const FIRE := {
 	"scout": {"range": 52.0, "preferred": 21.0, "delay": 0.87},
 	"rpk": {"range": 39.0, "preferred": 14.0, "delay": 0.42},
 	"gpmg": {"range": 47.0, "preferred": 17.0, "delay": 0.50},
+	"rpg": {"range": 100.0, "preferred": 45.0, "delay": 3.5, "minimum": 32.0},
 	"launcher": {"range": 28.0, "preferred": 13.0, "delay": 2.4, "minimum": 7.0},
 	"m249": {"range": 38.0, "preferred": 13.0, "delay": 0.37},
 	"m1": {"range": 45.0, "preferred": 17.0, "delay": 1.04},

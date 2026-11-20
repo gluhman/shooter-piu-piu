@@ -232,16 +232,16 @@ func _check_hurtbox_lifetime() -> void:
 	var offset := Vector3(2.0, 0.0, 1.0)
 	# A signal alone does not run modifiers. Sample the same current bone pose
 	# before and after re-entry, rather than comparing to last frame's IK pose.
-	pose.modification_processed.emit()
+	pose.pose_finished.emit()
 	var center: Vector3 = hurtboxes.center("chest")
 	arena.remove_child(target)
-	var disconnected := not pose.modification_processed.is_connected(hurtboxes.update_pose)
-	pose.modification_processed.emit()
+	var disconnected: bool = not pose.pose_finished.is_connected(hurtboxes.update_pose)
+	pose.pose_finished.emit()
 	hurtboxes.update_pose()
 	target.position += offset
 	arena.add_child(target)
-	pose.modification_processed.emit()
-	var reconnected := pose.modification_processed.is_connected(hurtboxes.update_pose)
+	pose.pose_finished.emit()
+	var reconnected: bool = pose.pose_finished.is_connected(hurtboxes.update_pose)
 	_check("Hurtboxes detach and resume tracking on re-entry", disconnected and reconnected
 		and (hurtboxes.center("chest") as Vector3).is_equal_approx(center + offset))
 

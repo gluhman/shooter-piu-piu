@@ -26,7 +26,7 @@ func _ready() -> void:
 	local.hide();local.control_enabled=false;local.set_physics_process(false);local.set_process(false)
 	for bot in get_tree().get_nodes_in_group("bot"):
 		actors.append(bot)
-		bot._pose.modification_processed.connect(_measure_grips.bind(bot))
+		bot._pose.pose_finished.connect(_measure_grips.bind(bot))
 		bot.control_enabled = false
 		bot.set_physics_process(false)
 		bot.set_process(false)

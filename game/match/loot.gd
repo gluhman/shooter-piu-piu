@@ -16,7 +16,7 @@ const CRATE_SCALE := 1.65
 const CRATE_RESPAWN_S := 28.0
 const CRATE_PICKUP_DELAY_S := 0.55
 const MARKET_REWARDS := [
-	[Kind.WEAPON, "launcher"], [Kind.WEAPON, "m249"], [Kind.ARMOR, ""], [Kind.MEDKIT, ""],
+	[Kind.WEAPON, "launcher"], [Kind.WEAPON, "rpg"], [Kind.WEAPON, "m249"], [Kind.ARMOR, ""], [Kind.MEDKIT, ""],
 ]
 
 var _crates: Array[StaticBody3D] = []

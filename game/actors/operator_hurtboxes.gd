@@ -32,12 +32,12 @@ var _centers: Dictionary[String, Area3D]
 
 func _enter_tree() -> void:
 	if is_instance_valid(_operator_pose):
-		_operator_pose.modification_processed.connect(update_pose)
+		_operator_pose.pose_finished.connect(update_pose)
 
 
 func _exit_tree() -> void:
-	if is_instance_valid(_operator_pose) and _operator_pose.modification_processed.is_connected(update_pose):
-		_operator_pose.modification_processed.disconnect(update_pose)
+	if is_instance_valid(_operator_pose) and _operator_pose.pose_finished.is_connected(update_pose):
+		_operator_pose.pose_finished.disconnect(update_pose)
 	reset_history()
 
 
@@ -71,7 +71,7 @@ func setup(skeleton: Skeleton3D, operator_pose: SkeletonModifier3D) -> void:
 		_centers[segment[0]] = area
 	if is_inside_tree():
 		update_pose()
-		operator_pose.modification_processed.connect(update_pose)
+		operator_pose.pose_finished.connect(update_pose)
 
 
 func set_active(active: bool) -> void:

@@ -1,6 +1,8 @@
 extends Node3D
 
 const Balance := preload("res://game/combat/combat_balance.gd")
+const RpgAssets := preload("res://game/combat/rpg_assets.gd")
+const RocketTrail := preload("res://game/combat/rocket_trail.gd")
 const ASSETS := preload("res://game/combat/arsenal_assets.gd")
 const SMOKE_SHADER := preload("res://game/combat/smoke_cloud.gdshader")
 const EXPLOSION := preload("res://assets/match_audio/explosion_body.wav")
@@ -35,6 +37,8 @@ class Flight:
 	var velocity: Vector3
 	var spin: Vector3
 	var model: Node3D
+	var trail: MeshInstance3D
+	var rocket_side := Vector3.RIGHT
 
 class Cloud:
 	var at: Vector3
@@ -92,13 +96,16 @@ func drop_cooked(actor: Node) -> void:
 			time, int(Balance.GRENADES.frag.max_damage))
 
 
-func round_aim_direction(origin: Vector3, target: Vector3, motion: Vector3) -> Vector3:
+func round_aim_direction(origin: Vector3, target: Vector3, motion: Vector3, rocket: bool = false) -> Vector3:
+	var speed := float(Balance.RPG.speed_m_s) if rocket else LAUNCH_SPEED
+	var gravity := GRAVITY * (float(Balance.RPG.gravity_multiplier) if rocket else 1.0)
+	var fuse := float(Balance.RPG.fuse_s) if rocket else ROUND_FUSE
 	var offset := target - origin
-	var time := offset.length() / LAUNCH_SPEED
+	var time := offset.length() / speed
 	for _iteration in 12:
-		var displacement := offset - motion * time - GRAVITY * (0.5 * time * time)
-		var next := displacement.length() / LAUNCH_SPEED
-		if next > ROUND_FUSE:
+		var displacement := offset - motion * time - gravity * (0.5 * time * time)
+		var next := displacement.length() / speed
+		if next > fuse:
 			return Vector3.ZERO
 		if absf(next - time) < 0.0005:
 			return displacement.normalized()
@@ -106,13 +113,17 @@ func round_aim_direction(origin: Vector3, target: Vector3, motion: Vector3) -> V
 	return Vector3.ZERO
 
 
-func launch_round(actor: Node, barrel: Transform3D, direction: Vector3, length: float, damage: int) -> void:
+func launch_round(actor: Node, barrel: Transform3D, direction: Vector3, length: float, damage: int, rocket: bool = false) -> void:
+	var kind := "rocket" if rocket else "round"
+	var speed := float(Balance.RPG.speed_m_s) if rocket else LAUNCH_SPEED
+	var fuse := float(Balance.RPG.fuse_s) if rocket else ROUND_FUSE
 	var query := PhysicsRayQueryParameters3D.create(barrel.origin + barrel.basis.z * length, barrel.origin, Balance.WORLD_AND_CAPSULES, [actor.get_rid()])
+	query.hit_from_inside = true
 	var wall := get_world_3d().direct_space_state.intersect_ray(query)
 	if not wall.is_empty():
-		_launch("round", actor, wall.position + wall.normal * 0.05, Vector3.ZERO, 0.0, damage)
+		_launch(kind, actor, wall.position + wall.normal * 0.05, Vector3.ZERO, 0.0, damage)
 		return
-	_launch("round", actor, barrel.origin, direction * LAUNCH_SPEED + actor.shot_motion(), ROUND_FUSE, damage)
+	_launch(kind, actor, barrel.origin, direction * speed + actor.shot_motion(), fuse, damage)
 
 
 func predict_round(actor: Node, barrel: Transform3D, length: float) -> Vector3:
@@ -295,7 +306,16 @@ func net_launch(id: int, kind: String, at: Vector3, velocity: Vector3, time: flo
 	flight.at = at
 	flight.velocity = velocity
 	flight.spin = Vector3(5.0, 2.5, 1.5) if kind != "round" else Vector3(0.0, 0.0, 9.0)
-	flight.model = ASSETS.make_model(kind if kind not in ["round", "concussion"] else "flash")
+	flight.model = RpgAssets.make_model(true) if kind == "rocket" else ASSETS.make_model(kind if kind not in ["round", "concussion"] else "flash")
+	if kind == "rocket":
+		flight.spin = Vector3.ZERO
+		if not velocity.is_zero_approx():
+			flight.rocket_side = velocity.normalized().cross(Vector3.UP).normalized()
+			if flight.rocket_side.is_zero_approx(): flight.rocket_side = Vector3.RIGHT
+			flight.model.basis = Basis.looking_at(velocity.normalized(), Vector3.FORWARD if absf(velocity.normalized().y) > 0.99 else Vector3.UP)
+		flight.trail = RocketTrail.new()
+		add_child(flight.trail)
+		flight.trail.advance(at + flight.model.basis * RpgAssets.EXHAUST_OFFSET)
 	if kind == "round":
 		flight.model.scale = Vector3.ONE * 0.56
 	add_child(flight.model)
@@ -320,24 +340,29 @@ func _step(flight: Flight, delta: float, space: PhysicsDirectSpaceState3D, autho
 		_detonate(flight.id, flight.kind, flight.at, flight.shooter, flight.damage)
 		return
 	if not flight.velocity.is_zero_approx():
-		var next := flight.at + flight.velocity * delta + GRAVITY * (delta * delta * 0.5)
+		var gravity := GRAVITY * (float(Balance.RPG.gravity_multiplier) if flight.kind == "rocket" else 1.0)
+		if flight.kind == "rocket":
+			# Small deterministic motor/fins oscillation; gravity remains the main arc.
+			var age := float(Balance.RPG.fuse_s) - flight.time
+			gravity += flight.rocket_side * sin(age * 13.0 + float(flight.id) * 2.39996) * float(Balance.RPG.sway_acceleration_m_s2)
+		var next := flight.at + flight.velocity * delta + gravity * (delta * delta * 0.5)
 		var query := PhysicsRayQueryParameters3D.create(flight.at, next, Balance.WORLD_AND_CAPSULES)
 		if flight.source.is_valid():
 			query.exclude = [flight.source]
 		var hit := space.intersect_ray(query) if authority else {}
-		if flight.kind != "round" and not hit.is_empty():
+		if flight.kind not in ["round", "rocket"] and not hit.is_empty():
 			var excluded := query.exclude
 			while _ballistics.shatter_glass(hit):
 				excluded.append(hit.rid)
 				query.exclude = excluded
 				hit = space.intersect_ray(query)
-		flight.velocity += GRAVITY * delta
+		flight.velocity += gravity * delta
 		if hit.is_empty():
 			flight.at = next
 		else:
 			var normal: Vector3 = hit.normal
 			flight.at = hit.position + normal * 0.075
-			if flight.kind == "round":
+			if flight.kind in ["round", "rocket"]:
 				_detonate(flight.id, flight.kind, flight.at, flight.shooter, flight.damage)
 				return
 			var normal_speed := flight.velocity.dot(normal)
@@ -347,8 +372,20 @@ func _step(flight: Flight, delta: float, space: PhysicsDirectSpaceState3D, autho
 			if normal.y > 0.6 and flight.velocity.length() < 1.5:
 				flight.velocity = Vector3.ZERO
 				flight.spin = Vector3.ZERO
+	if flight.kind == "rocket" and not flight.velocity.is_zero_approx():
+		var age := float(Balance.RPG.fuse_s) - flight.time
+		var phase := float(flight.id) * 2.39996
+		var settling := minf(age * 8.0, 1.0)
+		var direction := flight.velocity.normalized()
+		var upright := Vector3.FORWARD if absf(direction.y) > 0.99 else Vector3.UP
+		var pitch := sin(age * 13.0 + phase) * deg_to_rad(float(Balance.RPG.pitch_wobble_degrees)) * settling
+		var yaw := sin(age * 17.0 + phase * 0.7) * deg_to_rad(0.5) * settling
+		var roll := age * deg_to_rad(float(Balance.RPG.roll_degrees_s)) + sin(age * 15.0 + phase) * deg_to_rad(6.0) * settling
+		flight.model.basis = Basis.looking_at(direction, upright) * Basis.from_euler(Vector3(pitch, yaw, roll))
 	flight.model.rotation += flight.spin * delta
 	flight.model.global_position = flight.at
+	if is_instance_valid(flight.trail):
+		flight.trail.advance(flight.at + flight.model.basis * RpgAssets.EXHAUST_OFFSET)
 
 
 func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) -> void:
@@ -360,14 +397,14 @@ func _detonate(id: int, kind: String, at: Vector3, shooter: int, damage: int) ->
 	if kind == "smoke":
 		return
 	var preset: Dictionary = Balance.GRENADES.get(kind, {})
-	var radius := float(preset.get("blast_radius_m", preset.get("effect_radius_m", ROUND_RADIUS)))
+	var radius := blast_radius(kind)
 	var space := get_world_3d().direct_space_state
 	var query: PhysicsRayQueryParameters3D = _ballistics.world_query()
 	query.hit_from_inside = false
 	for actor in get_tree().get_nodes_in_group("player") + get_tree().get_nodes_in_group("bot"):
 		if not actor.control_enabled or not _match.allows_damage(shooter, actor.score_id()):
 			continue
-		var distance: float = actor.capsule_distance(at) if kind in ["frag", "round"] else actor.hurtbox_center("head").distance_to(at)
+		var distance: float = actor.capsule_distance(at) if kind in ["frag", "round", "rocket"] else actor.hurtbox_center("head").distance_to(at)
 		if distance >= radius:
 			continue
 		var clear := 0
@@ -402,6 +439,8 @@ func net_detonate(id: int, kind: String, at: Vector3) -> void:
 	if _match.round_finished() or not _flights.has(id):
 		return
 	_flights[id].model.queue_free()
+	if is_instance_valid(_flights[id].trail):
+		_flights[id].trail.queue_free()
 	_flights.erase(id)
 	var effects := _match.get_node("Ballistics")
 	if kind == "smoke":
@@ -416,7 +455,7 @@ func net_detonate(id: int, kind: String, at: Vector3) -> void:
 			var distant := camera != null and camera.global_position.distance_to(at) >= DISTANT_EXPLOSION_DISTANCE
 			effects.play_explosion_sound(DISTANT_EXPLOSION if distant else EXPLOSION, at,
 				-10.0 if distant else -3.0, 155.0, EXPLOSION_OCCLUSION_FLOOR_HZ)
-		effects.grenade_effect(at, flash, float(Balance.GRENADES.frag.blast_radius_m) if kind == "frag" else ROUND_RADIUS, kind == "round")
+		effects.grenade_effect(at, flash, blast_radius(kind) if kind in ["frag", "rocket"] else ROUND_RADIUS, kind == "round")
 
 
 @rpc("authority", "reliable")
@@ -523,3 +562,10 @@ func _probe_smoke(cloud: Cloud, space: PhysicsDirectSpaceState3D) -> void:
 	cloud.material.set_shader_parameter("smoke_ceiling", cloud.ceiling)
 	cloud.material.set_shader_parameter("wall_limits", cloud.limits)
 	cloud.node.visible = true
+
+
+static func blast_radius(kind: String) -> float:
+	if kind == "rocket":
+		return float(Balance.GRENADES.frag.blast_radius_m) * float(Balance.RPG.blast_radius_multiplier)
+	var preset: Dictionary = Balance.GRENADES.get(kind, {})
+	return float(preset.get("blast_radius_m", preset.get("effect_radius_m", ROUND_RADIUS)))

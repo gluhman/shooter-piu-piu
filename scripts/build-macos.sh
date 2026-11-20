@@ -93,7 +93,7 @@ if [[ -r "$local_template" ]]; then
     sed -i '' '1,/^\[preset\.1\]$/s|^custom_template/release=""$|custom_template/release="res://../macos-4.7.2.stable.zip"|' "$snapshot/export_presets.cfg"
 fi
 mkdir "$snapshot/addons"
-for addon in sky_3d spatial_audio_3d hit_reactions_lite pyrolux_fx godot_mcp_toolkit \
+for addon in sky_3d spatial_audio_3d hit_reactions_lite pyrolux_fx godot_mcp_toolkit libik \
     phantom_camera; do
     rsync -a "$project_dir/addons/$addon" "$snapshot/addons/"
 done

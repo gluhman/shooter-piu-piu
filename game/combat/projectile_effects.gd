@@ -6,6 +6,7 @@ const Classic := preload("res://game/combat/classic_weapons.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const SpatialAudio := preload("res://addons/spatial_audio_3d/spatial_audio_3d.gd")
 const GRENADE_EXPLOSION := preload("res://game/combat/grenade_explosion.tscn")
+const ShotSmoke := preload("res://game/combat/shot_smoke.gd")
 const FRAG_EXPLOSION := preload("res://game/combat/frag_explosion.tscn")
 const SHOT_HEARING_DISTANCE := 125.0
 const SHOT_DISTANCE_LOSS_DB := 16.0
@@ -23,6 +24,7 @@ const SURFACES := {
 const FLASH_SIZE := {"deagle": 0.21, "shotgun": 0.32, "breacher": 0.29, "ak47": 0.26, "m249": 0.27, "m14": 0.29, "m1": 0.32, "launcher": 0.38}
 const MARK_SIZE := {"deagle": 0.12, "shotgun": 0.07, "breacher": 0.07, "ak47": 0.105, "m249": 0.095, "m14": 0.11, "m1": 0.115, "m700": 0.125}
 const SHOT_SOUNDS := {
+	"rpg": preload("res://assets/arsenal/launcher_fire.wav"),
 	"ak47": preload("res://assets/ak47/fire.wav"),
 	"m249": preload("res://assets/arsenal/m249_fire.wav"),
 	"m14": preload("res://assets/arsenal/m14_fire.wav"),
@@ -196,6 +198,9 @@ func _warm_hidden_effects(ammo: Dictionary) -> void:
 		particles.particle_flag_align_y = kind in ["chip", "spark"]
 		particles.mesh = _particle_mesh(kind, 0.0)
 		samples.add_child(particles)
+	var smoke := ShotSmoke.new()
+	samples.add_child(smoke)
+	smoke.setup(Transform3D.IDENTITY, Vector3.ZERO, Vector3.ZERO, 0.2)
 	var fragment := FRAG_EXPLOSION.instantiate() as PyroluxExplosion3D
 	fragment.autoplay = false
 	samples.add_child(fragment)
@@ -245,9 +250,17 @@ func muzzle(profile: String, barrel: Transform3D, motion: Vector3, spatial_audio
 		light.omni_range = 3.0
 		flash.add_child(light)
 		fade.parallel().tween_property(light, "light_energy", 0.0, 0.045)
-		var drift := (forward * 1.6 + motion * 0.22 + Vector3.UP * 0.4).normalized()
-		_burst(position + forward * size * 0.33, drift, Color(0.60, 0.60, 0.56, 0.12), 4,
-			0.34, 1.7 + motion.length() * 0.15, 24.0, size * 0.29, Vector3.UP * 0.9, "smoke")
+	# Smoke is independent of the short-range muzzle light and follows the grenade wind.
+	var smoke_count := get_tree().get_nodes_in_group("shot_smoke").size()
+	if smoke_count < MAX_BURSTS:
+		var smoke := ShotSmoke.new()
+		add_child(smoke)
+		smoke.add_to_group("shot_smoke")
+		var sky := get_parent().get_parent().get_node_or_null("WorldEnvironment")
+		var wind := Vector3.ZERO
+		if sky:
+			wind = Vector3(-sin(sky.wind_direction), 0.0, cos(sky.wind_direction)) * sky.wind_speed
+		smoke.setup(barrel, motion, wind, size * 0.8)
 	fade.tween_callback(flash.queue_free)
 
 
@@ -393,7 +406,7 @@ func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> v
 		var floor_hit := get_world_3d().direct_space_state.intersect_ray(query)
 		var grounded: bool = not floor_hit.is_empty() and floor_hit.normal.y > 0.65
 		var origin: Vector3 = floor_hit.position + Vector3.UP * 0.025 if grounded else at
-		_frag_burst(origin, grounded, distance_sq)
+		_frag_burst(origin, grounded, distance_sq, radius / float(Balance.GRENADES.frag.blast_radius_m))
 		return
 	var scale := radius / 5.0 * (0.82 if launcher else 1.0)
 	var center := at + Vector3.UP * 0.38 * scale
@@ -433,8 +446,10 @@ func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> v
 		12, 0.94, 6.3 * scale, 115.0, 0.85 * scale, Vector3.UP * 0.40, "smoke")
 
 
-func _frag_burst(at: Vector3, grounded: bool, distance_sq: float) -> void:
+func _frag_burst(at: Vector3, grounded: bool, distance_sq: float, scale_factor: float = 1.0) -> void:
 	var explosion := FRAG_EXPLOSION.instantiate() as PyroluxExplosion3D
+	explosion.radius *= scale_factor
+	explosion.light_range *= scale_factor
 	explosion.position = to_local(at)
 	explosion.style = PyroluxExplosion3D.Style.GROUND if grounded else PyroluxExplosion3D.Style.AIR
 	explosion.free_when_done = true

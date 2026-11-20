@@ -3,6 +3,8 @@ const Pose := preload("res://game/actors/operator_pose.gd")
 const Fallen := preload("res://game/actors/fallen_operator.gd")
 var failed := false
 var grip_errors: Dictionary = {}
+var palm_axes: Dictionary = {}
+var support_lateral_error: Dictionary = {}
 func _initialize() -> void:
 	_run.call_deferred()
 func check(value: bool, message: String) -> void:
@@ -48,7 +50,7 @@ func _run() -> void:
 	await arena.start_solo(2, 1, 0, 0, Vector2i.ZERO, 0, true, false, 1)
 	var teams_seen: Array[int] = []
 	for actor in get_nodes_in_group("bot"):
-		actor._pose.modification_processed.connect(_sample_grips.bind(actor))
+		actor._pose.pose_finished.connect(_sample_grips.bind(actor))
 		actor.control_enabled = false
 		actor.set_physics_process(false)
 		var team: int = actor.team_id()
@@ -57,7 +59,7 @@ func _run() -> void:
 		actor._vest.hide()
 		check(actor._avatar.find_child("Soldier_Uniform", true, false).visible, "Spent plates must not hide the integrated carrier/body")
 		actor._vest.show()
-		for weapon in ["ak47", "deagle", "knife"]:
+		for weapon in actor.gun.WEAPONS:
 			actor.gun.equip(weapon)
 			for frame in 4:
 				actor._update_operator(1.0 / 30.0)
@@ -65,6 +67,11 @@ func _run() -> void:
 			check(actor._pose._right_fingers.size() == 5 and actor._pose._left_fingers.size() == 5, "Hand controllers were not initialized")
 			check(actor._pose.right_wrist.global_position.is_finite(), "Invalid weapon grip")
 			check(grip_errors.has(team) and grip_errors.get(team, INF) < 0.015, "Hand lost contact with " + weapon)
+			if weapon != "knife":
+				var axes: Vector3 = palm_axes.get(team, Vector3.ZERO)
+				check(minf(axes.x, minf(axes.y, axes.z)) >= .8, "Final IK trigger palm is rolled over on " + weapon + ": " + str(axes))
+			if weapon == "gpmg":
+				check(float(support_lateral_error.get(team, INF)) < .025, "GPMG support palm sits to the right of the handguard")
 		var body := Fallen.new()
 		arena.add_child(body)
 		var death_pose: Array[Transform3D] = []
@@ -93,4 +100,10 @@ func _sample_grips(actor: Node) -> void:
 		var target: Marker3D = palm if palm else actor._pose.right_wrist if right else actor._pose.left_wrist
 		var contact: Vector3 = sk.global_transform * sk.get_bone_global_pose(bone) * (offset if palm else Vector3.ZERO)
 		largest = maxf(largest, contact.distance_to(target.global_position))
+		if not right and actor.gun._weapon_id == "gpmg":
+			var palm_in_view: Vector3 = actor.gun._view.to_local(contact)
+			support_lateral_error[actor.team_id()] = absf(palm_in_view.x - actor.gun._model.position.x)
+		if right and palm:
+			var socket: Basis = (actor.gun._view.global_basis.inverse() * sk.global_basis * sk.get_bone_global_pose(bone).basis * actor._pose._right_palm_frame).orthonormalized()
+			palm_axes[actor.team_id()] = Vector3(socket.x.y, -socket.y.z, -socket.z.x)
 	grip_errors[actor.team_id()] = largest

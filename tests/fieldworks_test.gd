@@ -113,7 +113,7 @@ func _run() -> void:
 		var eye := skeleton.to_global(skeleton.get_bone_global_pose(pose._head) * (pose.eye_in_head as Vector3))
 		eye_errors.append(eye.distance_to(camera.global_position))
 		hips_positions.append(skeleton.to_global(skeleton.get_bone_global_pose(hips_bone).origin))
-	actor._pose.modification_processed.connect(check_grips)
+	actor._pose.pose_finished.connect(check_grips)
 	actor._look(PI, -PI)
 	await process_frame
 	await process_frame
@@ -131,7 +131,7 @@ func _run() -> void:
 	_check("Mounted yaw stops at -70 degrees", is_equal_approx(actor.rotation.y, deg_to_rad(-70.0)))
 	await process_frame
 	await process_frame
-	actor._pose.modification_processed.disconnect(check_grips)
+	actor._pose.pose_finished.disconnect(check_grips)
 	_check("Both rigged palms follow their grips across the mounted sweep",
 		grip_errors.size() >= 8 and grip_errors.max() < 0.025)
 	_check("The camera stays at the rigged eye as the operator's hips move around the tripod",
