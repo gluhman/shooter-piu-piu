@@ -1,5 +1,6 @@
 extends RefCounted
 
+const ImportedOptics := preload("res://game/combat/imported_optics.gd")
 const Balance := preload("res://game/combat/combat_balance.gd")
 const GRENADE_IDS := ["frag", "flash", "concussion", "smoke"]
 const GRENADE_LABELS := {"frag": "Осколочная", "flash": "Светошумовая", "smoke": "Дымовая", "concussion": "Оглушающая"}
@@ -8,7 +9,7 @@ const MODELS := {
 	"launcher": "res://assets/arsenal/launcher.glb",
 	"m249": "res://assets/arsenal/m249.glb",
 	"m14": "res://assets/arsenal/m14.glb",
-	"m1": "res://assets/arsenal/m1.glb",
+	"m1": "res://assets/detailed_weapons/m1_scope_base.glb",
 	"frag": "res://assets/arsenal/frag.glb",
 	"flash": "res://assets/arsenal/flash.glb",
 	"concussion": "res://assets/arsenal/flash.glb",
@@ -40,7 +41,32 @@ static func make_model(id: String) -> Node3D:
 			var name := mesh.mesh.surface_get_material(surface).resource_name
 			if SURFACES.has(name):
 				mesh.set_surface_override_material(surface, _material(name, id != "m249"))
+	if id == "m1":
+		_connect_m1_scope(model)
 	return model
+
+
+static func _connect_m1_scope(model: Node3D) -> void:
+	var scope := ImportedOptics.make_model("accushot")
+	scope.name = "ScopeAssembly"
+	scope.position = Vector3(0,.073,.01)
+	model.add_child(scope)
+	for label in ["RearSight", "FrontSight"]:
+		(model.find_child(label, true, false) as Node3D).position.y = .123
+	# Connect the imported ring feet (86 mm) to the receiver rail.
+	for piece in [
+		["ScopeRail", Vector3(0.048, 0.018, 0.220), Vector3(0.0, 0.078, 0.010)],
+		["ScopeRearRingBase", Vector3(0.038, 0.012, 0.038), Vector3(0.0, 0.087, 0.080)],
+		["ScopeFrontRingBase", Vector3(0.038, 0.012, 0.038), Vector3(0.0, 0.087, -0.060)],
+	]:
+		var mount := MeshInstance3D.new()
+		mount.name = piece[0]
+		var box := BoxMesh.new()
+		box.size = piece[1]
+		mount.mesh = box
+		mount.position = piece[2]
+		mount.material_override = _material("Steel", true)
+		model.add_child(mount)
 
 
 static func _material(name: String, detailed: bool) -> StandardMaterial3D:

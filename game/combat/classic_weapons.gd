@@ -1,5 +1,6 @@
 extends RefCounted
 
+const ImportedOptics := preload("res://game/combat/imported_optics.gd")
 const ROOT := "res://assets/classic_weapons/"
 const MODELS := {
 	"m1911": [Vector3(0.021, -0.033, 0.008), Vector3(-0.024, -0.025, 0.044), -0.022],
@@ -18,15 +19,13 @@ const SCOPE_FRONT := Vector3(0.0, 0.101, 0.337)
 static var _resources: Dictionary[String, Resource] = {}
 static var _materials: Dictionary[String, StandardMaterial3D] = {}
 static var _brass: StandardMaterial3D
-static var _scope_mesh: ArrayMesh
-static var _scope_mount: BoxMesh
 
 
 static func prepare(tree: SceneTree, weapons: Array) -> void:
 	var pending: Array[String] = []
 	for id: String in weapons:
 		var files: Array[String] = []
-		if MODELS.has(id):
+		if MODELS.has(id) and id not in ["tec9", "mac10", "mp5", "m700"]:
 			files.append_array(["model.fbx", "albedo.png"])
 			if id != "tec9":
 				files.append_array(["normal.png", "rmao.png"])
@@ -79,50 +78,32 @@ static func make_model(id: String) -> Node3D:
 			instance.set_surface_override_material(surface, _brass if cartridge else material)
 	if id == "m700":
 		_mount_scope(model)
+	elif id == "m14":
+		# Receiver top is 70 mm; bridge the old 7 mm gap below the collimator.
+		var rail := MeshInstance3D.new()
+		rail.name = "OpticRail"
+		var bridge := BoxMesh.new()
+		bridge.size = Vector3(0.042, 0.010, 0.064)
+		rail.mesh = bridge
+		rail.position = Vector3(0.0, 0.073, 0.205)
+		var finish := StandardMaterial3D.new()
+		finish.albedo_color = Color("#34393a")
+		finish.metallic = 0.65
+		finish.roughness = 0.44
+		rail.material_override = finish
+		model.add_child(rail)
 	return model
 
 
 static func _mount_scope(model: Node3D) -> void:
-	if _scope_mesh == null:
-		var metal := StandardMaterial3D.new()
-		metal.albedo_color = Color("#34393a")
-		metal.roughness = 0.44
-		metal.metallic = 0.42
-		metal.cull_mode = BaseMaterial3D.CULL_DISABLED
-		var builder := SurfaceTool.new()
-		builder.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var profile := [
-			Vector2(-0.041, 0.026), Vector2(-0.037, 0.031), Vector2(0.019, 0.031),
-			Vector2(0.038, 0.022), Vector2(0.226, 0.022), Vector2(0.257, 0.037),
-			Vector2(0.337, 0.037), Vector2(0.337, 0.031), Vector2(0.255, 0.030),
-			Vector2(0.222, 0.018), Vector2(0.038, 0.018), Vector2(0.021, 0.024),
-			Vector2(-0.041, 0.024), Vector2(-0.041, 0.026),
-		]
-		for ring in profile.size() - 1:
-			for side in 32:
-				var a := Vector2.from_angle(TAU * side / 32.0)
-				var b := Vector2.from_angle(TAU * (side + 1) / 32.0)
-				var from: Vector2 = profile[ring]
-				var to: Vector2 = profile[ring + 1]
-				var p := Vector3(a.x * from.y, a.y * from.y, from.x)
-				var q := Vector3(b.x * from.y, b.y * from.y, from.x)
-				var r := Vector3(a.x * to.y, a.y * to.y, to.x)
-				var t := Vector3(b.x * to.y, b.y * to.y, to.x)
-				for point in [p, q, r, q, t, r]:
-					builder.add_vertex(point)
-		builder.generate_normals()
-		builder.set_material(metal)
-		_scope_mesh = builder.commit()
-		_scope_mount = BoxMesh.new()
-		_scope_mount.size = Vector3(0.041, 0.045, 0.026)
-		_scope_mount.material = metal
-
-	for part in [[_scope_mesh, Vector3.UP * SCOPE_REAR.y],
-		[_scope_mount, Vector3(0.0, 0.057, 0.047)], [_scope_mount, Vector3(0.0, 0.057, 0.173)]]:
-		var instance := MeshInstance3D.new()
-		instance.mesh = part[0]
-		instance.position = part[1]
-		model.add_child(instance)
+	var scope := ImportedOptics.make_model("nightforce")
+	scope.name = "ScopeAssembly"
+	scope.rotation.y = PI
+	scope.position = Vector3(0, SCOPE_REAR.y - .05, .148)
+	model.add_child(scope)
+	# Seat the imported ring feet on the receiver; both have solid overlap.
+	for part in [["ScopeRearMount", .047], ["ScopeFrontMount", .173]]:
+		ImportedOptics.bridge(model, part[0], Vector3(.041,.030,.026), Vector3(0,.043,part[1]))
 
 
 static func _material(id: String) -> StandardMaterial3D:

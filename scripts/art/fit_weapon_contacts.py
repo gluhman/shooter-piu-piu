@@ -47,17 +47,27 @@ for node in g['nodes']:
    mapped=np.array([[remap.get(names[k],0) for k in row] for row in ii])
    skin_data[side]=(local, mapped, ww,sample)
    print('SKIN',side,len(pp),'sample',len(sample),flush=True)
-result={};reports={}
+support_only="--support-only" in sys.argv
+reference_support="--support-reference" in sys.argv
+result=json.loads((ROOT/"assets/weapon_contacts.json").read_text()) if support_only or "--weapon" in sys.argv or "--new-models" in sys.argv or "--weapons" in sys.argv else {}
+reports={}
 for name,weapon in source['weapons'].items():
- result[name]={};reports[name]={}
+ if '--new-models' in sys.argv and not weapon.get('authored_contacts',False):continue
+ if '--weapon' in sys.argv and name!=sys.argv[sys.argv.index('--weapon')+1]:continue
+ if '--weapons' in sys.argv and name not in sys.argv[sys.argv.index('--weapons')+1].split(','):continue
+ if support_only and name in (["deagle","m1911","tec9","mac10"] if reference_support else ["deagle","m1911","tec9","mac10","gpmg"]):continue
+ if not support_only:result[name]={}
+ reports[name]={}
  model_b=mat(weapon['model']['basis']);model_p=np.array(weapon['model']['origin']);inv=np.linalg.inv(model_b);mb=model_b/np.linalg.norm(model_b[:,0]);verts=np.array(weapon['vertices'])
- for side in ['right','left']:
+ for side in (['left'] if support_only else ['right','left']):
   data=weapon[side];rig=source['rig'][side];tag='r' if side=='right' else 'l'
-  precision_grip=name in ['deagle','gpmg']
+  precision_grip=reference_support or name in ['deagle','gpmg','tec9','mac10'] or weapon.get('authored_contacts',False)
   centred_support=name=='gpmg' and side=='left'
+  reference=reference_support and side=='left'
+  vertical=reference and data.get('support_kind')=='vertical_grip'
   frame=mat(rig['frame']);offset=np.array(rig['offset']);scale=np.array(rig['scale']);basis=mat(data['basis'])
   surface=np.array(data['palm']);normal=np.array(data['normal'])
-  if centred_support:
+  if centred_support and not weapon.get('authored_contacts',False):
    shift_z=-.28-surface[2];surface=np.array([-.0285,.057,-.28]);normal=np.array([0.,-1.,0.])
    for target in data['targets']:target['point'][2]+=shift_z
   cup=side=='left' and name in ['deagle','m1911','tec9','mac10']
@@ -66,11 +76,13 @@ for name,weapon in source['weapons'].items():
    patch=right_glove[(np.abs(right_glove[:,2]-grip[2])<.075)&(np.abs(right_glove[:,1]-grip[1])<.08)]
    surface=np.array([patch[:,0].min(),grip[1],grip[2]])
    normal=np.array([-1.,0.,0.])
-   if name=='deagle':
+   if name in ['deagle','tec9','mac10']:
     y=np.array([0.,0.,-1.]);z=np.array([1.,0.,0.]);basis=np.column_stack([np.cross(y,z),y,z])
   # Conservative authored grasp envelopes include the handguard/grip cross-section,
   # so a fingertip on the far side cannot pull its phalanges through the barrel.
-  if side=='left' and not cup:
+  if vertical:
+   select=(np.abs(verts[:,2]-surface[2])<.027)&(np.abs(verts[:,1]-surface[1])<.045)&(np.abs(verts[:,0]-surface[0])<.075)
+  elif side=='left' and not cup:
    select=(np.abs(verts[:,2]-surface[2])<.025)&(verts[:,1]>surface[1]-.03)&(verts[:,1]<surface[1]+.075)&(np.abs(verts[:,0]-surface[0])<.11)
   elif side=='right' and precision_grip:
    # Keep the large pistol's trigger-guard opening out of the solid grip hull.
@@ -78,11 +90,24 @@ for name,weapon in source['weapons'].items():
   else:
    select=(np.abs(verts[:,2]-surface[2])<.075)&(verts[:,1]>surface[1]-.10)&(verts[:,1]<surface[1]+.035)&(np.abs(verts[:,0])<.085)
   points=verts[select]
+  if reference and name=='m249':
+   # Long low-poly faces can cross the grasp without having vertices inside it.
+   # Measure their intersections instead of falling back to a much larger hull.
+   triangles=np.fromfile('/tmp/weapon-surface-m249.bin',dtype=np.float32).reshape(-1,3,3)
+   sections=[]
+   for depth in [surface[2]-.015,surface[2],surface[2]+.015]:
+    for edge in range(3):
+     a,b=triangles[:,edge],triangles[:,(edge+1)%3];dz=b[:,2]-a[:,2]
+     crossing=(np.abs(dz)>1e-8)&((a[:,2]-depth)*(b[:,2]-depth)<=0)
+     t=(depth-a[crossing,2])/dz[crossing]
+     sections.append(a[crossing]+t[:,None]*(b[crossing]-a[crossing]))
+   points=np.concatenate(sections)
+   points=points[(np.abs(points[:,0]-model_p[0])<.04)&(points[:,1]>surface[1]-.012)&(points[:,1]<surface[1]+.075)]
   if cup:
-   if name=='deagle':points=verts[(np.abs(verts[:,2]-grip[2])<.035)&(verts[:,1]>grip[1]-.08)&(verts[:,1]<grip[1]+.025)&(np.abs(verts[:,0]-grip[0])<.08)]
+   if name in ['deagle','tec9','mac10']:points=verts[(np.abs(verts[:,2]-grip[2])<.035)&(verts[:,1]>grip[1]-.08)&(verts[:,1]<grip[1]+.025)&(np.abs(verts[:,0]-grip[0])<.08)]
    else:points=np.r_[points,patch]
   if len(points)<8:points=verts[np.linalg.norm(verts-surface,axis=1)<.15]
-  if side=='left' and not cup:
+  if side=='left' and not cup and not vertical:
    section=points.copy();front=section.copy();back=section.copy();front[:,2]=surface[2]-.12;back[:,2]=surface[2]+.12;volume_points=np.r_[front,back]
   else:volume_points=points
   planes=hull(volume_points)
@@ -96,26 +121,62 @@ for name,weapon in source['weapons'].items():
   targets=np.array([np.array(t['point'])+np.array(t['normal'])*.008 for t in data['targets']])
   if cup:
    targets=np.array([np.array(t['point'])+np.array(t['normal'])*.008 for t in weapon['right']['targets']])
-   if name=='deagle':targets=np.array([right_glove[np.argmin(np.linalg.norm(right_glove-target,axis=1))] for target in targets])
+   if name in ['deagle','tec9','mac10']:targets=np.array([right_glove[np.argmin(np.linalg.norm(right_glove-target,axis=1))] for target in targets])
   initial=np.array([0.,0.,0.]+[v for d in [[.25,.6,.45],[.35,.55,.25],[.85,1.2,.9],[.9,1.25,.95],[.95,1.25,.95]] for v in d]+[0.]*5+[0.,0.,0.])
-  if cup and name=='deagle':initial[3:18]=np.array([[.1,.15,.1],[.12,.15,.12],[.15,.2,.15],[.16,.2,.16],[.18,.22,.18]]).ravel()
+  if cup and name in ['deagle','tec9','mac10']:initial[3:18]=np.array([[.1,.15,.1],[.12,.15,.12],[.15,.2,.15],[.16,.2,.16],[.18,.22,.18]]).ravel()
   elif side=='left':
    initial[3:18]=np.array([[.14,.207,.162],[.52,.75,.585],[.56,.805,.63],[.584,.84,.657],[.60,.863,.675]]).ravel()
+  if reference:
+   initial[3:18]=np.array([[.05,.08,.05],[.03,.05,.05],[.03,.05,.05],[.04,.06,.06],[.05,.08,.08]]).ravel()
+  seed_pose=None
+  if reference and not vertical and '--reference-seed' in sys.argv:
+   seed_pose=result[sys.argv[sys.argv.index('--reference-seed')+1]]['left']
+   initial[3:18]=np.array(seed_pose['curl']).ravel();initial[18:23]=seed_pose['splay']
   # Translate the palm's skeletal centre outside the metal by glove thickness.
   anchor=surface+normal*.025
-  if side=='left' and not cup:
+  if vertical:
+   surface=np.array([points[:,0].min(),surface[1],surface[2]])
+   normal=np.array([-1.,0.,0.]);anchor=surface+normal*.025
+   y=np.array([0.,0.,-1.]);z=np.array([1.,0.,0.]);basis=np.column_stack([np.cross(y,z),y,z])
+  elif side=='left' and not cup:
    surface=np.array([(points[:,0].min()+points[:,0].max())*.5,points[:,1].min(),surface[2]])
    normal=np.array([0.,-1.,0.])
    anchor=surface+normal*.025
-   y=np.array([1.,.1,-.25]) if centred_support else np.array([-1.,.1,-.25]);y/=np.linalg.norm(y);z=np.array([0.,1.,0.]);xaxis=np.cross(y,z);xaxis/=np.linalg.norm(xaxis);z=np.cross(xaxis,y);basis=np.column_stack([xaxis,y,z])
-  limit=.3 if cup and name=="deagle" else 1.4 if side=="left" or name=="deagle" else .6
+   y=np.array([1.,0.,0.]) if reference else np.array([1.,.1,-.25]);y/=np.linalg.norm(y);z=np.array([0.,1.,0.]);xaxis=np.cross(y,z);xaxis/=np.linalg.norm(xaxis);z=np.cross(xaxis,y);basis=np.column_stack([xaxis,y,z])
+  if seed_pose:
+   seed_model=mat(seed_pose['model_frame']['basis']);seed_rotation=seed_model/np.linalg.norm(seed_model[:,0]);basis=seed_rotation@mat(seed_pose['basis'])
+   seed_offset=seed_rotation@np.array(seed_pose['palm_offset']);initial[23:26]=seed_offset+np.array([0,.025,0])
+  grasp_center=surface[0] if reference and not vertical else model_p[0]
+  limit=.3 if cup and name in ["deagle","tec9","mac10"] else 1.4 if side=="left" or name=="deagle" else .6
   if name=="gpmg" and side=="right":limit=.2
   if centred_support:limit=.45
   lo=np.array([-limit]*3+[-.25]*15+[-1.1,-.45,-.4,-.4,-.4]+[-.07,-.085,-.095]);hi=np.array([limit]*3+[1.7]*15+[1.1,.45,.4,.4,.4]+[.07,.085,.095])
-  lo[3:18]=np.full(15,-.05) if side=="right" and precision_grip else np.maximum(initial[3:18]-(.45 if centred_support else .25),-.05)
-  hi[3:18]=np.full(15,1.55) if side=="right" and precision_grip else np.minimum(initial[3:18]+(.45 if centred_support else .25),1.55)
+  lo[3:18]=np.full(15,-.05) if precision_grip and not centred_support else np.maximum(initial[3:18]-(.45 if centred_support else .25),-.05)
+  hi[3:18]=np.full(15,1.55) if precision_grip and not centred_support else np.minimum(initial[3:18]+(.45 if centred_support else .25),1.55)
   lo[18:23]=[-.35,-.15,-.15,-.15,-.15]
   hi[18:23]=[.35,.15,.15,.15,.15]
+  if reference:
+   lo[:3]=[-.15,-.15,-.22] if vertical else [-.075,-.075,-.35]
+   hi[:3]=[.15,.15,.22] if vertical else [.075,.075,.35]
+   lo[3:18]=-.05;hi[3:18]=1.55
+   if not vertical:
+    lo[23]=max(lo[23],grasp_center-.025-anchor[0])
+    lo[24]=-.004;hi[24]=.006
+    lo[18]=-.9;hi[18]=.9
+   else:
+    lo[23]=-.004;hi[23]=.006
+    lo[18]=-.9;hi[18]=.9
+   if seed_pose:lo[:3]=-.025;hi[:3]=.025
+  if side=='left' and not cup:
+   hi[23]=min(hi[23],grasp_center+(.020 if reference and name=='m249' else .005)-anchor[0])
+   initial[23]=min(initial[23],hi[23])
+   initial[23]=max(initial[23],lo[23])
+  thumb_pose=seed_pose if seed_pose else result.get(name,{}).get(side,{})
+  thumb_roll=float(thumb_pose.get('thumb_roll',0.0))
+  if reference and thumb_pose.get('thumb_pose')=='relaxed_forward':
+   initial[3:6]=thumb_pose['curl'][0];initial[18]=thumb_pose['splay'][0]
+   lo[3:6]=np.array(initial[3:6])-.1;hi[3:6]=np.array(initial[3:6])+.1
+   lo[18]=initial[18]-.1;hi[18]=initial[18]+.1
   forearm=np.array([0.,0.,-1.])
   contact_indices=[]
   for digit in range(5):
@@ -128,9 +189,9 @@ for name,weapon in source['weapons'].items():
   hand_points=L[np.arange(len(L)),hand_slots,:3]
   palm_rest=offset+frame[:,2]*.015
   hand_candidates=np.where(((M==0)&(W>.8)).any(1))[0]
-  palm_patch=hand_candidates[np.argsort(np.linalg.norm(hand_points[hand_candidates]-palm_rest,axis=1))[:24]]
+  palm_patch=hand_candidates[np.argsort(np.linalg.norm(hand_points[hand_candidates]-palm_rest,axis=1))[:(100 if reference else 24)]]
   def fk(x,full=False):
-   socket=basis@rx(x[0])@ry(x[1])@rz(x[2]);H=socket@np.linalg.inv(frame);pos=anchor+x[23:]-H@(offset*scale)
+   socket=basis@rx(x[0])@ry(x[1])@rz(x[2]);H=socket@np.linalg.inv(frame);pos=anchor+x[23:26]-H@(offset*scale)
    T=np.eye(4);T[:3,:3]=H;T[:3,3]=pos;matrices=[T];tips=[]
    for digit,chain in enumerate(chains):
     P=pos.copy();B=H.copy()
@@ -138,7 +199,9 @@ for name,weapon in source['weapons'].items():
      P=P+B@(o*scale);B=B@b
      if joint<3:
       B=B@rx(x[3+digit*3+joint])
-      if joint==0:B=B@rz(x[18+digit])
+      if joint==0:
+       B=B@rz(x[18+digit])
+       if digit==0:B=B@ry(thumb_roll)
      T=np.eye(4);T[:3,:3]=B;T[:3,3]=P
      matrices.append(T)
     tips.append(P)
@@ -149,7 +212,7 @@ for name,weapon in source['weapons'].items():
   def residual(x):
    tips,v,socket=fk(x)
    sdf=(v@planes[:,:3].T+planes[:,3]).max(axis=1)
-   collision=np.sort(np.maximum(.003-sdf,0))[-80:]*40.0 if precision_grip else np.sort(np.maximum(.003-sdf,0))[-40:]*4.0
+   collision=np.maximum(.0025-sdf,0)*15.0 if reference else np.sort(np.maximum(.003-sdf,0))[-80:]*40.0 if precision_grip else np.sort(np.maximum(.003-sdf,0))[-40:]*4.0
    # Palm longitudinal axis stays within 30 degrees of the forearm.
    contacts=[]
    for digit,ids in enumerate(contact_indices):
@@ -163,20 +226,22 @@ for name,weapon in source['weapons'].items():
    palm_distances=(patch@planes[:,:3].T+planes[:,3]).max(axis=1)
    nearest=int(np.argmin(np.abs(palm_distances-.002)))
    palm_contact=np.array([(palm_distances[nearest]-.002)*3.,(patch[nearest,2]-surface[2])*.6])
-   if centred_support or (cup and name=='deagle'):
+   if precision_grip:
     palm_goal=surface+normal*.002;nearest=int(np.argmin(np.linalg.norm(patch-palm_goal,axis=1)));palm_contact=(patch[nearest]-palm_goal)*3.
    palm_orientation=max(0.,math.cos(math.radians(35))-socket[:,2]@(-normal))*.1
    geometry=arm_geometry[name][side]
-   shoulder=np.array(geometry['shoulder']);palm_position=anchor+x[23:];hand_position=palm_position-socket@np.linalg.inv(frame)@(offset*scale)
+   shoulder=np.array(geometry['shoulder']);palm_position=anchor+x[23:26];hand_position=palm_position-socket@np.linalg.inv(frame)@(offset*scale)
    reach=hand_position-shoulder;distance=np.linalg.norm(reach);upper=geometry['upper'];lower=geometry['lower']
    cone=math.acos(np.clip((distance*distance+lower*lower-upper*upper)/(2*max(distance,.001)*lower),-1,1))
    axis_angle=math.acos(np.clip(socket[:,1]@(reach/max(distance,.001)),-1,1))
-   wrist_penalty=max(0.,abs(axis_angle-cone)-math.radians(15))*5.0
-   orientation=np.maximum(.8-np.array([socket[1,0],-socket[2,1],-socket[0,2]]),0)*.5 if side=='right' else np.zeros(3)
-   return np.r_[orientation,np.array(contacts)*2.0,palm_contact*4.0,palm_orientation,collision,wrist_penalty,(x[3:18]-initial[3:18])*.020,x[:3]*.0005,x[18:23]*.020,x[23:]*.018]
+   wrist_penalty=max(0.,abs(axis_angle-cone)-math.radians(15))*(2.0 if reference else 5.0)
+   # Left fingers cross toward +X from the left; prevent the optimizer
+   # from finding the mirrored, right-side approach with similar clearance.
+   orientation=np.maximum(.84-np.array([socket[1,0],-socket[2,1],-socket[0,2]]),0)*5.0 if side=='right' else np.array([max(0.,.35-socket[0,1]),0.,0.])*.8 if not cup and not vertical else np.zeros(3)
+   return np.r_[orientation,np.array(contacts)*2.0,palm_contact*(20.0 if reference else 4.0),palm_orientation,collision,wrist_penalty,(x[3:18]-initial[3:18])*(.003 if reference else .020),x[:3]*.0005,x[18:23]*.020,x[23:26]*.018]
 
   # Stable damped least squares, with bounded line-search steps.
-  x=initial.copy();lam=.0001
+  x=np.clip(initial,lo,hi);lam=.0001
   for iteration in range(260 if name=="gpmg" else 180):
    r=residual(x);J=np.empty((len(r),len(x)));eps=.00015
    for i in range(len(x)):
@@ -192,7 +257,7 @@ for name,weapon in source['weapons'].items():
   patch_ids=[np.where((((mapped==3+digit*4)|(mapped==4+digit*4))&(weights>.35)).any(1))[0] for digit in range(5)]
   geometry=arm_geometry[name][side]
   def wrist_angle(shift):
-   H=socket@np.linalg.inv(frame);hand_position=anchor+x[23:]+shift-H@(offset*scale)
+   H=socket@np.linalg.inv(frame);hand_position=anchor+x[23:26]+shift-H@(offset*scale)
    reach=hand_position-np.array(geometry['shoulder']);length=np.linalg.norm(reach);u,l=geometry['upper'],geometry['lower']
    cone=math.acos(np.clip((length*length+l*l-u*u)/(2*max(length,.001)*l),-1,1));axis=math.acos(np.clip(socket[:,1]@(reach/max(length,.001)),-1,1))
    return math.degrees(abs(axis-cone))
@@ -214,16 +279,24 @@ for name,weapon in source['weapons'].items():
     for lo,hi in sorted(zip(low[valid],high[valid])):
      if lo<=distance<=hi:distance=hi+.0001
    shift=direction*distance
+   if reference and not vertical and not grasp_center-.020<=anchor[0]+x[23]+shift[0]<=grasp_center+(.022 if name=='m249' else .010):continue
+   if reference and not vertical and anchor[1]+x[24]+shift[1]>surface[1]-.012:continue
+   if side=='left' and not cup and anchor[0]+x[23]+shift[0]>model_p[0]+.02:continue
    gaps=[np.linalg.norm(v[ids]+shift-targets[digit],axis=1).min() for digit,ids in enumerate(patch_ids)]
-   angle=wrist_angle(shift);score=np.mean(gaps)+max(0,angle-30)*.0015+np.linalg.norm(shift)*.08
+   palm_gap=np.linalg.norm(v[palm_patch]+shift-(surface+normal*.002),axis=1).min() if reference and precision_grip else 0.
+   angle=wrist_angle(shift);score=np.mean(gaps)+max(0,angle-30)*.0015+np.linalg.norm(shift)*.08+palm_gap*10.
    if best is None or score<best[0]:best=(score,shift,gaps,angle)
+  if best is None:raise RuntimeError(name+'/'+side+': no feasible clearance correction within the grasp region')
   _,shift,gaps,angle=best
   if side=='right':right_glove=v+shift
-  x[23:]+=shift
+  x[23:26]+=shift
   sdf=(dist+planes[:,:3]@shift).max(1)
   # Keep actual model surface keypoints and record the separate skeletal offset.
-  palm=anchor+x[23:]
+  palm=anchor+x[23:26]
   out={'model_frame':weapon['model'],'palm':list(inv@(surface-model_p)),'palm_offset':list(np.linalg.inv(mb)@(palm-surface)),'basis':(np.linalg.inv(mb)@socket).T.tolist(),'curl':x[3:18].reshape(5,3).tolist(),'splay':x[18:23].tolist(),'volume_planes':planes.tolist(),'fit_wrist_degrees':angle,'fit_min_clearance_m':float(sdf.min()),'skin_contact_error_m':gaps,'clearance_correction_m':shift.tolist()}
+  if reference:out['support_kind']='vertical_grip' if vertical else 'handguard'
+  if reference and thumb_pose.get('thumb_pose')=='relaxed_forward':
+   out['thumb_roll']=thumb_roll;out['thumb_reference']=True;out['thumb_pose']='relaxed_forward'
   for i,digit in enumerate(DIGITS):
    out[digit]=list(inv@(targets[i]-model_p));contact_source=weapon['right'] if cup else data;out[digit+'_normal']=list(np.linalg.inv(mb)@np.array(contact_source['targets'][i]['normal']))
   result[name][side]=out

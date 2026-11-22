@@ -24,7 +24,7 @@ const SURFACES := {
 const FLASH_SIZE := {"deagle": 0.21, "shotgun": 0.32, "breacher": 0.29, "ak47": 0.26, "m249": 0.27, "m14": 0.29, "m1": 0.32, "launcher": 0.38}
 const MARK_SIZE := {"deagle": 0.12, "shotgun": 0.07, "breacher": 0.07, "ak47": 0.105, "m249": 0.095, "m14": 0.11, "m1": 0.115, "m700": 0.125}
 const SHOT_SOUNDS := {
-	"rpg": preload("res://assets/arsenal/launcher_fire.wav"),
+	"rpg": preload("res://assets/weapon_audio/rpg_fire.wav"),
 	"ak47": preload("res://assets/ak47/fire.wav"),
 	"m249": preload("res://assets/arsenal/m249_fire.wav"),
 	"m14": preload("res://assets/arsenal/m14_fire.wav"),

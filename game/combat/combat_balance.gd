@@ -682,9 +682,10 @@ const MATCH: Dictionary = DATA.match
 const PLAYER: Dictionary = DATA.player
 const VESTS: Dictionary = DATA.armor.tiers
 const GRENADES: Dictionary = DATA.grenades
+# 17 m/s² at 85 m/s matches the reference ladder at a 26° vertical FOV.
 # Rocket radius remains tied to frag tuning; linear radius, not area or volume.
-const RPG := {"blast_radius_multiplier": 4.0, "max_damage": 160, "speed_m_s": 85.0,
-	"fuse_s": 5.0, "gravity_multiplier": 0.15, "sway_acceleration_m_s2": 0.18,
+const RPG := {"blast_radius_multiplier": 4.0 / 1.7, "max_damage": 160, "speed_m_s": 85.0,
+	"fuse_s": 5.0, "gravity_multiplier": 0.85, "sway_acceleration_m_s2": 0.18,
 	"pitch_wobble_degrees": 1.5, "roll_degrees_s": 80.0, "mag": 1, "reserve": 3,
 	"reload_s": 3.4, "cooldown_s": 1.2}
 const ACCURACY: Dictionary = DATA.accuracy

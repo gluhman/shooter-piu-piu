@@ -83,11 +83,17 @@ func _process(delta: float) -> void:
 			preview_phases = [0, 1, 6]
 		elif "--first-person" in args:
 			preview_phases = [6]
+		elif "--first-person-ads" in args:
+			preview_phases = [7]
 		elif "--ads" in args:
 			preview_phases = [2]
+		elif "--reload" in args:
+			preview_phases = [5]
 		poses = preview_phases != [0]
 		if "--weapon" in args:
 			weapons = [args[args.find("--weapon") + 1]]
+		elif "--weapons" in args:
+			weapons = Array(args[args.find("--weapons") + 1].split(","))
 	clock += delta
 	phase_elapsed += delta
 	phase_frames += 1
@@ -116,7 +122,7 @@ func _process(delta: float) -> void:
 				actor.gun.reload_bot()
 		camera.make_current()
 		preview_local.hide()
-		if preview_phase == 6:
+		if preview_phase in [6, 7]:
 			preview_local.show()
 			preview_local._avatar.show()
 			preview_local.gun.equip(weapons[index])
@@ -129,6 +135,9 @@ func _process(delta: float) -> void:
 		if preview_phase == 1:
 			camera.position = Vector3(-1.4, 1.45, -0.5)
 		camera.look_at(Vector3(-0.62, 1.35, 0.2))
+		if "--scale" in OS.get_cmdline_user_args():
+			camera.position = Vector3(2.4, 1.5, 4.8)
+			camera.look_at(Vector3(0.0, 1.0, 0.0))
 	for actor in actors:
 		actor._update_operator(delta)
 		if preview_phase == 2:
@@ -142,8 +151,11 @@ func _process(delta: float) -> void:
 		elif preview_phase == 5:
 			actor.gun._reload_left = actor.gun._reload_time * 0.55
 			actor.gun._apply_view(0.0)
-	if preview_phase == 6:
+	if preview_phase in [6, 7]:
 		preview_local._update_operator(delta)
+		if preview_phase == 7:
+			preview_local.gun._aim_amount = 1.0
+			preview_local.set_aim_posture(1.0)
 		# Hidden map colliders can sit centimetres from this studio camera. Review
 		# the normal distant-target hold, rather than converging the gun into them.
 		preview_local.gun._apply_view(0.0, false)
@@ -159,7 +171,7 @@ func _process(delta: float) -> void:
 func _capture_weapon(id: String, step: int) -> void:
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("/tmp/weapon-contact-" + id + ".png")
-	if preview_phase == 6:
+	if preview_phase in [6, 7]:
 		var eye: Camera3D = get_viewport().get_camera_3d()
 		print("FIRST_PERSON ", eye.get_path(), " fov=", eye.fov, " near=", eye.near, " palm_camera=", eye.to_local(preview_local.gun._left_palm.global_position), " screen=", eye.unproject_position(preview_local.gun._left_palm.global_position), " viewport=", get_viewport().get_visible_rect().size)
 	print("CONTACT ", id, " palms ", grip_errors, " wrist_degrees ", wrist_angles)

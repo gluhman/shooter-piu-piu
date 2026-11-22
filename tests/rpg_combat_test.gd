@@ -32,12 +32,12 @@ func _run() -> void:
 	grenades = arena.get_node("Grenades")
 	grenades.set_physics_process(false)
 	var shooter := spawn(Vector3(0, 0, 50), 1)
-	var inside := spawn(Vector3(0, 0, -20), 2)
-	var outside := spawn(Vector3(0, 0, -29), 3)
+	var inside := spawn(Vector3(0, 0, -12), 2)
+	var outside := spawn(Vector3(0, 0, -18), 3)
 	await physics_frame
 	await physics_frame
 	check(Weapon.specialization("rpg") == "support", "RPG belongs to support")
-	check(is_equal_approx(Grenades.blast_radius("rocket"), 4.0 * Grenades.blast_radius("frag")), "Rocket radius is exactly four frag radii (28 m)")
+	check(is_equal_approx(Grenades.blast_radius("rocket"), 4.0 * Grenades.blast_radius("frag") / 1.7), "Rocket radius is 28 / 1.7 metres (about 16.47 m)")
 	check(is_equal_approx(Grenades.blast_radius("round"), 5.0), "M79 keeps its existing 5 m radius")
 	check(shooter.gun.fire_bot(Vector3(0, 1, 0), 0.0), "Support weapon fires through the normal weapon path")
 	check(shooter.gun._mag == 0 and grenades._flights.size() == 1 and arena.get_node("Ballistics")._shots.is_empty(), "RPG consumes one round and never dispatches a hitscan/bullet projectile")
@@ -46,6 +46,19 @@ func _run() -> void:
 	shooter.gun._cooldown = 0.0
 	shooter.gun.reload_bot()
 	check(shooter.gun.is_reloading(), "Empty RPG can reload")
+	var gun: Node3D = shooter.gun
+	gun._pose_reload(.08)
+	check(not gun._loaded_rocket.visible, "Reload starts with an empty tube")
+	gun._pose_reload(.48)
+	var presented: Vector3 = gun._loaded_rocket.position
+	check(gun._loaded_rocket.visible and presented.z < gun._rocket_rest.origin.z - .50, "Source projectile is aligned in front of the launcher before insertion")
+	gun._pose_reload(.65)
+	check(gun._loaded_rocket.position.z > presented.z and gun._loaded_rocket.position.z < gun._rocket_rest.origin.z, "Projectile enters from the front along the tube")
+	gun._pose_reload(.90)
+	check(gun._loaded_rocket.transform.is_equal_approx(gun._rocket_rest), "Projectile seats at its original loaded position")
+	gun.cancel_reload()
+	check(not gun._loaded_rocket.visible and gun._loaded_rocket.transform.is_equal_approx(gun._rocket_rest), "Interrupted reload leaves the launcher empty and resets the projectile")
+	gun.reload_bot()
 	shooter.gun._finish_reload()
 	shooter.gun._apply_view(0.0, false)
 	check(shooter.gun._mag == 1 and shooter.gun._reserve == 2 and shooter.gun._loaded_rocket.visible, "Reload transfers one reserve rocket and restores the loaded model")
@@ -57,7 +70,7 @@ func _run() -> void:
 	check(is_equal_approx(flight.velocity.length(), float(Balance.RPG.speed_m_s)), "Rocket uses its own launch speed")
 	var initial_y: float = flight.velocity.y
 	grenades._step(flight, 0.1, root.get_world_3d().direct_space_state, true)
-	check(is_equal_approx(flight.velocity.y - initial_y, -float(Balance.MOVEMENT.gravity_m_s2) * float(Balance.RPG.gravity_multiplier) * 0.1), "Rocket uses reduced gravity")
+	check(is_equal_approx(flight.velocity.y - initial_y, -float(Balance.MOVEMENT.gravity_m_s2) * float(Balance.RPG.gravity_multiplier) * 0.1), "Rocket uses calibrated gravity")
 	grenades._detonate(flight.id, "rocket", Vector3(0, 1, 0), 1, int(Balance.RPG.max_damage))
 	check(inside.health < 100.0 and outside.health == 100.0, "Blast damages beyond frag radius and stops outside rocket radius")
 	check(grenades._flights.is_empty(), "Detonation removes the rocket")

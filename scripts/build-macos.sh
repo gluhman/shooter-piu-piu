@@ -71,6 +71,7 @@ mkdir -p "$(dirname "$output")"
 backup="$build_dir/previous.app"
 mkdir "$build_dir" || fail "Не удалось создать $build_dir. Проверь, идёт ли другая сборка."
 
+bundle_stage=
 cleanup() {
     if [[ -d "$backup" && ! -e "$output" ]]; then
         if ! mv "$backup" "$output"; then
@@ -79,6 +80,9 @@ cleanup() {
         fi
     fi
     rm -rf -- "$build_dir"
+    if [[ -n "$bundle_stage" ]]; then
+        rm -rf -- "$bundle_stage"
+    fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -145,7 +149,10 @@ if [[ -n "$base_pack" ]]; then
     exit 0
 fi
 
-built="$build_dir/Shooter.app"
+# File Provider folders can attach FinderInfo to .app bundles while exporting.
+# Stage and verify outside the synced project, then move the finished app.
+bundle_stage="$(mktemp -d "${TMPDIR:-/tmp}/shooter-macos.XXXXXX")"
+built="$bundle_stage/Shooter.app"
 printf 'Экспорт приложения macOS\n'
 if ! "$godot" --headless --path "$snapshot" --export-release macOS "$built" >"$build_dir/export.log" 2>&1 ||
     grep -q 'ERROR:' "$build_dir/export.log"; then

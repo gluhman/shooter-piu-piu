@@ -11,7 +11,8 @@
 | Universal Animation Library | Прежние клипы, сохранены как исходные ресурсы | [Quaternius, CC0](../assets/animations/CREDITS.md) |
 | Human Character Dummy и Human Basic Motions FREE | Прежние локальные клипы; новым моделям не требуются | [Кевин Иглесиас и условия использования](../assets/animations/CREDITS.md). Подготовленная библиотека лежит в `assets/animations/local/` |
 | Classic Weapons Pack | Модели огнестрельного оружия, выстрелы и перезарядка | [Stein Games, CC0](../assets/classic_weapons/CREDITS.md). [Отдельные материалы AK-47](../assets/ak47/CREDITS.md) |
-| Расширение арсенала | Восемь основных стволов, раздельные магазины и помпа, карты окклюзии и HDR-отражения | [3DAssets.dev, Poly Haven и Stein Games](../assets/weapon_expansion/CREDITS.md), CC0 |
+| Новые оружейные сборки | Carbine, Bullpup, Compact, Shotgun, Breacher, Longshot, Scout, RPK, Launcher, M249 и GPMG; исходные UV/PBR, подвижные магазины и помпа, нормализованные размеры | [Blendkit и Polyy.AI, авторы и условия](../assets/detailed_weapons/CREDITS.md). M4 — CC0/2K, M249 — Royalty Free/2K, стилизованные модели Polyy — CC0/1K |
+| Расширение арсенала | Прежние модели восьми стволов; используемые записи выстрелов, перезарядки и общие материалы | [3DAssets.dev, Poly Haven и Stein Games](../assets/weapon_expansion/CREDITS.md), CC0 |
 | РПГ-7 | Высокодетализированная модель, отдельная ракета и оригинальные 4K PBR-текстуры | [Ng1994, Poly Haven и условия использования](../assets/rpg/CREDITS.md) |
 | Арсенал | Модели оружия, гранат и бронежилета, материалы металла и дерева | [Модели проекта, материалы Poly Haven и звук BigSoundBank](../assets/arsenal/CREDITS.md) |
 | Desert Eagle и нож | Модели от первого лица и предметы подбора с PBR-материалами | [SirDraco65 и Poly Haven, CC0](../assets/weapon_models/CREDITS.md) |
@@ -28,7 +29,7 @@
 | Ресурс | Использование | Источник и условия |
 | --- | --- | --- |
 | Impact Sounds, Metal Hit 95 и ветер Dust II | Шаги, звуки попаданий и зацикленный фон карты | [Источники и лицензии](../assets/match_audio/CREDITS.md) |
-| Записи выстрелов и механики | Выстрелы от первого лица, затворы и перезарядка | [Авторы, исходные записи и лицензии](../assets/weapon_audio/CREDITS.md) |
+| Записи выстрелов и механики | Выстрелы от первого лица, затворы и перезарядка; отдельная запись запуска РПГ в стерео и пространственном моно | [Авторы, исходные записи и лицензии](../assets/weapon_audio/CREDITS.md) |
 | Текстуры дыма взрыва | Кадры дыма и карты нормалей для выстрела гранатомёта | [Duarte David и порт memo1918, MIT](../assets/explosion_vfx/LICENSE.txt) |
 | PYROLUX Lite | Вспышка, огненное облако, дым, пыль, искры и ударное кольцо осколочной гранаты. У взрыва в воздухе нет слоя пыли с поверхности | [gennai](https://gennai.itch.io/pyrolux-lite), [исходный код и пресет](https://github.com/kai777123/godot-4-free-vfx/tree/15b8e21925841b10fa3e19aab99fff1038c1486b/fire), [MIT](../addons/pyrolux_fx/LICENSE.txt). Плотность, яркость и время дыма настроены в [сцене осколочного взрыва](../game/combat/frag_explosion.tscn) |
 | Дым выстрела | Короткие рассеивающиеся клубы у дула всех стволов; тот же объёмный billboard-шейдер, что у дымовой гранаты, с ветром карты и ограничением количества | Реализация Shooter: `game/combat/shot_smoke.gd`. Косметический эффект без зоны блокировки обзора ИИ |
@@ -91,3 +92,9 @@ godot --headless --path . --script res://addons/gut/gut_cmdln.gd -gdir=res://tes
 1. Проверь на странице автора разрешение на использование в игре и распространение исходников. Если право распространять исходники ограничено, держи их вне Git и опиши, куда положить нужные файлы.
 2. Запиши рядом с ресурсом автора, ссылку на источник, лицензию, версию набора и изменения, сделанные для Shooter. Сохрани оригинальный файл лицензии, если он прилагается.
 3. Обнови этот каталог. Если ассет влияет на игру или сборку, добавь изменение в [журнал версии](../CHANGELOG.md).
+
+Модели от 22 ноября 2026: TEC-9, MAC-10, MP5, Carbine, Bullpup и Compact заменены пользовательскими GLB. Три red-dot корпуса установлены на Carbine/Bullpup/M14, две оптические сборки — на M700/M1. Авторы, CC BY / CC BY-SA и изменения перечислены в [кредитах моделей и оптики](../assets/replacement_optics/CREDITS.md).
+
+Вторая партия пользовательских GLB: M1, RPG-7, M79, GPMG, M249, SQUAD LMG, Breacher, Shotgun, Scout, Longshot и M700. GPMG больше не использует модель M249. Сохранены исходные материалы и подвижные детали; полётная ракета соответствует заряженной. [Авторы и лицензии](../assets/detailed_weapons/CREDITS.md): Shotgun — CC BY-NC 4.0, остальные модели партии — CC BY 4.0.
+
+GPMG использует 4K PBR-карты Metal Plate 02 и Dark Wood и HDRI Studio Small 09 из Poly Haven (CC0); [источники и авторы](../assets/detailed_weapons/gpmg_pbr/CREDITS.md). В M249 оптика удаляется целыми исходными деталями, без срезов рукоятки переноса.

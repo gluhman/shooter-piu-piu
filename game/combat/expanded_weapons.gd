@@ -48,7 +48,7 @@ const RUBBER_NORMAL := preload("res://assets/weapon_expansion/rubber_tiles_nor_g
 const RUBBER_ARM := preload("res://assets/weapon_expansion/rubber_tiles_arm_2k.jpg")
 const STUDIO_HDR := preload("res://assets/weapon_expansion/pav_studio_03_1k.hdr")
 const REFLECTION_SHADER := preload("res://game/combat/weapon_reflections.gdshader")
-const SCOPED := ["m700", "m1", "longshot", "scout"]
+const SCOPED := ["rpg", "m700", "m1", "longshot", "scout"]
 
 static var _materials: Dictionary[String, StandardMaterial3D] = {}
 static var _world_materials: Dictionary[String, StandardMaterial3D] = {}

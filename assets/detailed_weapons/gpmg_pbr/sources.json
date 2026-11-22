@@ -1,0 +1,37 @@
+[
+  {
+    "file": "dark_wood_diff_4k.jpg",
+    "sha256": "23b0d56932232c77b453f3db2b135f1a6375744be4b667c4b0f9f0ccb68a1481",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/dark_wood/dark_wood_diff_4k.jpg"
+  },
+  {
+    "file": "dark_wood_nor_gl_4k.jpg",
+    "sha256": "64c16692046e350fd1647ae1cd4c587f762e57e6f2eceb4b0a4620ba0f2966a4",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/dark_wood/dark_wood_nor_gl_4k.jpg"
+  },
+  {
+    "file": "dark_wood_rough_4k.jpg",
+    "sha256": "45c781b364500b0343d81e86698cbc5e0f0a43f871d8d97acd5d00f04b0e64e0",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/dark_wood/dark_wood_rough_4k.jpg"
+  },
+  {
+    "file": "metal_plate_02_diff_4k.jpg",
+    "sha256": "8f87ae49fa2e8245db08f18d4847fbdd75f2ef03c6405c7f90679b137541bb53",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/metal_plate_02/metal_plate_02_diff_4k.jpg"
+  },
+  {
+    "file": "metal_plate_02_metal_4k.jpg",
+    "sha256": "ad2aa9ff2c409bbce7384a4baa0a42e2f198b38afccc341ef96a1c0b9055b830",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/metal_plate_02/metal_plate_02_metal_4k.jpg"
+  },
+  {
+    "file": "metal_plate_02_nor_gl_4k.jpg",
+    "sha256": "7b5ddff95f81da6575e5f20694b0a4330a158ef479ed5c489492db805987e8e1",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/metal_plate_02/metal_plate_02_nor_gl_4k.jpg"
+  },
+  {
+    "file": "metal_plate_02_rough_4k.jpg",
+    "sha256": "fc6aa00f0e506de20735a4ff7d97c27ee90181139c13225a804a6d231ef050b3",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/metal_plate_02/metal_plate_02_rough_4k.jpg"
+  }
+]

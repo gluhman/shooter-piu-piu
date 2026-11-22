@@ -1,0 +1,15 @@
+CC0 1.0 Universal (CC0 1.0) Public Domain Dedication
+=====================================================
+
+The 3D Low-Poly Guns Pack by Polyy (https://polyy.ai) is dedicated to the public
+domain under CC0 1.0. To the extent possible under law, the author has waived all
+copyright and related or neighboring rights to this work.
+
+You can copy, modify, distribute and use the models, even for commercial
+purposes, all without asking permission. No attribution is required (but
+appreciated).
+
+The one thing we ask (not a legal condition): please don't resell this pack
+unmodified as your own asset pack.
+
+Full legal text: https://creativecommons.org/publicdomain/zero/1.0/legalcode

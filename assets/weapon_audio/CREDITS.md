@@ -26,6 +26,22 @@ The player uses stereo 48 kHz PCM edits of the recordings below. Edits isolate t
 | M14 | [Izhmash Saiga MK-106, areniporgen](https://freesound.org/people/areniporgen/sounds/696023/), .308 rifle |
 | M1 Garand | [Rifle Shot (M1 Garand), Rijam](https://freesound.org/people/Rijam/sounds/385785/) |
 | M249 SAW | [Machine Gun 002 single shot, pgi](https://freesound.org/people/pgi/sounds/212607/), designed machine-gun effect |
+| RPG-7 | [rpg launcher three shots.wav, klangfabrik](https://freesound.org/people/klangfabrik/sounds/249298/), first exterior launch |
 | M79 | [Grenade Launcher, LeMudCrab](https://freesound.org/people/LeMudCrab/sounds/163458/), 40 mm launcher discharge |
 
 All first-person sources are published under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+
+## RPG-7 launch
+
+`first_person/rpg.wav` and `rpg_fire.wav` are dedicated edits of **rpg launcher three shots.wav** by **klangfabrik**, published 18 September 2014 on [Freesound](https://freesound.org/people/klangfabrik/sounds/249298/) under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The author's description identifies three exterior RPG/anti-tank launcher firings.
+
+Retrieved 20 November 2026 from the public [HQ MP3 preview](https://cdn.freesound.org/previews/249/249298_181941-hq.mp3). Source MP3 SHA-256: `ab11dd57d26ff89578644628ef3f587e594b89200ff440fe58075fd4b0c5c219`.
+
+Preparation: decoded the preview to 48 kHz PCM16 stereo; isolated the first launch, 0.098–2.498 seconds, retaining its attack and exhaust/reverberation tail without the later launches; removed DC/sub-bass, applied a mild 140 Hz body lift, added click-prevention fades, and peak-normalized to −1.2 dBFS. The local clip remains stereo; the world clip is a mono downmix for positional panning and occlusion. Both are 2.4 seconds, with looping disabled. The recording contains the launch event; impact explosions remain separate gameplay events.
+
+Rebuild with NumPy:
+
+```sh
+afconvert -f WAVE -d LEI16@48000 /path/to/249298_181941-hq.mp3 /tmp/rpg-source.wav
+python3 scripts/art/prepare_rpg_audio.py /tmp/rpg-source.wav
+```

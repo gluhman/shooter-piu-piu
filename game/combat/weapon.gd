@@ -3,6 +3,8 @@ extends Node3D
 const ARSENAL := preload("res://game/combat/arsenal_assets.gd")
 const Collimator := preload("res://game/combat/collimator.gd")
 const Expanded := preload("res://game/combat/expanded_weapons.gd")
+const Detailed := preload("res://game/combat/detailed_weapons.gd")
+const RpgBallistics := preload("res://game/combat/rpg_ballistics.gd")
 const RpgAssets := preload("res://game/combat/rpg_assets.gd")
 const Contacts := preload("res://game/combat/weapon_contacts.gd")
 const Classic := preload("res://game/combat/classic_weapons.gd")
@@ -22,8 +24,9 @@ const SHELL_START: float = Balance.DATA.weapons.shotgun.reload_start_s
 const SHELL_INTERVAL: float = Balance.DATA.weapons.shotgun.reload_shell_s
 const SHELL_FINISH: float = Balance.DATA.weapons.shotgun.reload_end_s
 const SHELL_IN_HAND := Vector3(-0.024, 0.126, 0.052)
+const LAUNCHER_ROUND_IN_HAND := Vector3(-0.012, 0.060, 0.024)
 const HIP_FOV := 110.0
-const READY_DROP := 0.12
+const READY_DROP := 0.06
 const RUN_CARRY_HEIGHT := -0.16
 const KNIFE_SWING_TIME := 0.48
 const KNIFE_GRIP_IN_WRIST := Vector3(-0.020, 0.108, 0.031)
@@ -37,9 +40,15 @@ const COLLIMATOR_MOUNTS := {
 	"m14": Vector3(0, 0.077, 0.205),
 }
 const M249_RELOAD_ACTION_START := 0.34
-const M249_TRIPOD_FROM_MUZZLE := Vector3(0.0, -0.105, 0.19)
+const M249_TRIPOD_FROM_MUZZLE := Vector3(0.0, -0.035, 0.095)
 # Keep sight alignment while bringing the support grip inside the arm's ADS reach.
-const ADS_EYE_RELIEF := {"bullpup": 0.18, "compact": 0.24, "rpk": 0.14, "scout": 0.08}
+const ADS_EYE_RELIEF := {
+	"bullpup": 0.18, "compact": 0.24, "rpk": 0.14, "scout": 0.035,
+	"carbine": 0.10, "longshot": 0.025, "shotgun": 0.20, "breacher": 0.06,
+	"mac10": 0.24, "mp5": 0.23, "launcher": 0.22,
+	"m249": 0.09, "gpmg": 0.28,
+	"m700": 0.08,
+}
 const STOCKED_WEAPONS := ["ak47", "shotgun", "mp5", "m700", "lever", "m14", "launcher", "rpg", "m249", "m1",
 	"carbine", "bullpup", "compact", "longshot", "scout", "rpk", "gpmg"]
 const SIDEARMS := ["deagle", "m1911", "tec9"]
@@ -67,7 +76,7 @@ const SPECIALIZATIONS := {
 }
 
 const FIRST_PERSON_SHOTS := {
-	"rpg": preload("res://assets/weapon_audio/first_person/launcher.wav"),
+	"rpg": preload("res://assets/weapon_audio/first_person/rpg.wav"),
 	"deagle": preload("res://assets/weapon_audio/first_person/deagle.wav"),
 	"shotgun": preload("res://assets/weapon_audio/first_person/shotgun.wav"),
 	"ak47": preload("res://assets/weapon_audio/first_person/ak47.wav"),
@@ -86,7 +95,7 @@ const FIRST_PERSON_SHOTS := {
 static var WEAPONS := Balance.weapon_stats({
 	"rpg": {"name": "РПГ-7", "mode": "реактивный гранатомёт", "mag": Balance.RPG.mag,
 		"reserve": Balance.RPG.reserve, "reload": Balance.RPG.reload_s, "cooldown": Balance.RPG.cooldown_s,
-		"pellets": 1, "spread": 0.35, "aim_spread": 0.08, "aim_fov": 70.0, "range": 220.0,
+		"pellets": 1, "spread": 0.35, "aim_spread": 0.08, "aim_fov": RpgBallistics.AIM_FOV, "range": 220.0,
 		"recoil": 4.5, "recoil_yaw": 0.4, "kick": 0.10, "damage": Balance.RPG.max_damage,
 		"damage_min": 0, "falloff_start": 0.0, "falloff_end": 220.0},
 	"carbine": {"name": "CARBINE", "mode": "автоматический", "aim_fov": 70.0, "kick": 0.028},
@@ -194,6 +203,9 @@ var _view: Node3D
 var _tripod_legs: Array[MeshInstance3D] = []
 var _model: Node3D
 var _loaded_rocket: Node3D
+var _rocket_rest: Transform3D
+var _break_action: Node3D
+var _break_action_rest: Transform3D
 var _muzzle: Marker3D
 var _rear_sight: Marker3D
 var _barrel_length := 0.0
@@ -353,8 +365,8 @@ func _process(delta: float) -> void:
 		_cross.update_pose(0.0, true, false, 0.0, false)
 		return
 
-	var optic_id := _weapon_id if _weapon_id in ["longshot", "scout"] else ""
-	_cross.update_pose(aim_blend(), _reloading, _weapon_id == "knife", _current_spread(), _weapon_id in Expanded.SCOPED, _camera, optic_id, _uses_physical_sight(_weapon_id))
+	var optic_id := _weapon_id if _weapon_id in ["longshot", "scout", "rpg"] else ""
+	_cross.update_pose(aim_blend(), _reloading, _weapon_id == "knife", _current_spread(), _weapon_id in Expanded.SCOPED, _camera, optic_id, _uses_physical_sight(_weapon_id), _camera.to_local(_muzzle.global_position) if _muzzle else Vector3.ZERO)
 	var shooting := _trigger_held
 	var repeat := bool(_stats.get("automatic", false)) and (_mag > 0 or _reserve > 0)
 	if _fire_requested or (shooting and repeat) or _sprint_fire_queued:
@@ -503,7 +515,7 @@ func _shoot() -> void:
 	elif Expanded.MODELS.has(_weapon_id):
 		clip = Expanded.sound(_weapon_id, "local")
 	_play_shot(clip, volume, randf_range(0.97, 1.03))
-	if _action_sound(_weapon_id) != null:
+	if _action_sound(_weapon_id) != null or _bolt != null:
 		_pump_wait = 0.38
 
 
@@ -639,8 +651,11 @@ func fire_bot(target: Vector3, aim_error: float) -> bool:
 func _launch_sighted(barrel: Transform3D, camera: Transform3D, target: Vector3, rewind: float = -1.0) -> void:
 	var aim := barrel.basis
 	var works: Node = _player.fieldworks()
-	if _weapon_id in ["launcher", "rpg"]:
-		var direction: Vector3 = _grenades.round_aim_direction(barrel.origin, target, _player.shot_motion(), _weapon_id == "rpg")
+	if _weapon_id == "rpg":
+		# Fixed bore: the shooter uses the range ladder; never solve to the raycast hit.
+		aim = Basis.looking_at(RpgBallistics.aim_direction(camera.basis, aim_blend()), camera.basis.y)
+	elif _weapon_id == "launcher":
+		var direction: Vector3 = _grenades.round_aim_direction(barrel.origin, target, _player.shot_motion())
 		if not direction.is_zero_approx():
 			aim = Basis.looking_at(direction, camera.basis.y)
 	elif not (works and works.is_mounted(_player)):
@@ -748,7 +763,7 @@ func _play_remote_shot(weapon_name: String, barrel: Transform3D) -> void:
 		return
 	_match.get_node("HUD").record_minimap_shot(_player.score_id(), barrel.origin)
 	_ballistics.muzzle_effect(weapon_name, barrel, _player.shot_motion(), true)
-	if _action_sound(weapon_name) != null:
+	if _action_sound(weapon_name) != null or _bolt != null:
 		_pump_wait = 0.38
 	_recoil_remote(weapon_name)
 
@@ -970,7 +985,7 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 		_camera.fov = lerpf(HIP_FOV, float(_stats["aim_fov"]), blend)
 		if _weapon_id in Expanded.SCOPED:
 			# Hide the physical lens as soon as the expanded scope overlay starts.
-			var scope_threshold := 0.87 if Expanded.MODELS.has(_weapon_id) else 0.96
+			var scope_threshold := 0.87 if Expanded.MODELS.has(_weapon_id) or _weapon_id == "rpg" else 0.96
 			_set_scope_view(blend >= scope_threshold)
 			_model.visible = not _scope_view
 	_bob_t += delta * speed * 1.7
@@ -983,9 +998,12 @@ func _apply_view(delta: float, converge: bool = true) -> void:
 	var pitch := Basis(Vector3.RIGHT, aim_offset)
 	var reload_roll := -0.56 if _weapon_id in ["shotgun", "breacher"] else -0.40
 	var handling_offset := _kick_pos + Vector3(-0.02, 0.025, -0.052) * reload_pose
+	if _weapon_id == "rpg":
+		# Bring the front-loading tube within the support hand's reach.
+		handling_offset += Vector3(0.0, -0.05, 0.20) * reload_pose
 	var handling_rotation := Basis.from_euler(Vector3(deg_to_rad(_kick_rot) + 0.14 * reload_pose,
 		0.0, reload_roll * reload_pose - deg_to_rad(_kick_rot) * 0.25))
-	var crouch_ready := Vector3.UP * 0.10 * smoothstep(0.0, 1.0, _player._crouch_blend)
+	var crouch_ready := Vector3.UP * 0.06 * smoothstep(0.0, 1.0, _player._crouch_blend)
 	var hip_position := pitch * (_rest_pos + Vector3.DOWN * READY_DROP + crouch_ready + bob + handling_offset)
 	var hip_basis := pitch * handling_rotation
 	var run_carry := smoothstep(0.0, 1.0, _run_carry)
@@ -1060,11 +1078,13 @@ func _build_viewmodel(weapon_id: String) -> void:
 	var model := _make_model(weapon_id, _player._is_local())
 	_model = model
 	_loaded_rocket = model.find_child("LoadedRocket", true, false) as Node3D if weapon_id == "rpg" else null
+	if _loaded_rocket:
+		_rocket_rest = _loaded_rocket.transform
 	_view.add_child(model)
 	for animation_player in model.find_children("*", "AnimationPlayer", true, false):
 		animation_player.active = false
 
-	var marked_model := Expanded.MODELS.has(weapon_id)
+	var marked_model := Detailed.MODELS.has(weapon_id) or Expanded.MODELS.has(weapon_id)
 	var grip := Vector3.ZERO
 	var support := Vector3.ZERO
 	var right_fingers := Vector3(-0.06, 0.24, -1.0)
@@ -1112,8 +1132,21 @@ func _build_viewmodel(weapon_id: String) -> void:
 			_barrel_length = _model_marker(model, "Muzzle").distance_to(Vector3(0.0, 0.04, 0.055))
 			if marked_model:
 				_barrel_length = absf(_model_marker(model, "Muzzle").z - grip.z)
-				if weapon_id == "breacher":
-					_rest_pos = Vector3(0.135, -0.215, -0.21)
+				if weapon_id in ["tec9", "mac10"]:
+					_rest_pos.z = -0.255
+				if weapon_id == "rpg":
+					_rest_pos.z = -0.35
+				if weapon_id in ["gpmg", "m249"]:
+					_rest_pos.y -= 0.07
+				if weapon_id == "rpk":
+					_rest_pos = Vector3(0.135, -0.215, -0.07)
+				if weapon_id in ["shotgun", "breacher"]:
+					_rest_pos = Vector3(0.135, -0.215, -0.05 if weapon_id == "breacher" else -0.21)
+					if weapon_id == "breacher":
+						# Its short fore-end needs less lift to keep both wrists relaxed.
+						_rest_pos.y -= 0.025
+				if weapon_id == "longshot":
+					_rest_pos.z = -0.10
 				if weapon_id in ["compact", "bullpup"]:
 					left_fingers = Vector3(0.36, 0.16, -1.0)
 					left_palm = Vector3(0.51, 0.86, 0.0)
@@ -1164,9 +1197,9 @@ func _build_viewmodel(weapon_id: String) -> void:
 	_muzzle = _marker(_muzzle_point(model, weapon_id))
 	_muzzle.name = "Muzzle"
 	var bore := Vector3.FORWARD
-	if weapon_id == "deagle" or Classic.MODELS.has(weapon_id):
+	if not Detailed.MODELS.has(weapon_id) and (weapon_id == "deagle" or Classic.MODELS.has(weapon_id)):
 		bore = Vector3.BACK
-	elif weapon_id == "shotgun":
+	elif weapon_id == "shotgun" and not Detailed.MODELS.has(weapon_id):
 		bore = Vector3.LEFT
 	_muzzle.basis = Basis.looking_at((model.basis * bore).normalized())
 	_tripod_legs.clear()
@@ -1183,11 +1216,20 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 	var eye_relief := 0.21
 	var sight_clearance := 0.004
 	var pose_id := "marked" if Expanded.MODELS.has(weapon_id) else weapon_id
-	if COLLIMATOR_MOUNTS.has(weapon_id):
+	if Detailed.MODELS.has(weapon_id):
+		pose_id = "detailed"
+	elif COLLIMATOR_MOUNTS.has(weapon_id):
 		pose_id = "collimator"
 	elif Expanded.SIGHTS.has(weapon_id):
 		pose_id = "replacement_sight"
 	match pose_id:
+		"detailed":
+			rear = _model_marker(model, "RearSight")
+			front = _model_marker(model, "FrontSight")
+			eye_relief = 0.24
+			sight_clearance = 0.002
+			if weapon_id in Expanded.SCOPED:
+				eye_relief = 0.13
 		"replacement_sight":
 			rear = _model_marker(model, "RearAnchor")
 			front = _model_marker(model, "FrontAnchor")
@@ -1256,6 +1298,8 @@ func _set_aim_pose(model: Node3D, weapon_id: String) -> void:
 	_aim_pose = Transform3D(basis, Vector3(0.0, -sight_clearance, -eye_relief) - basis * _rear_sight.position)
 	_aim_depth_limit = 0.05 if _uses_physical_sight(weapon_id) else eye_relief - 0.10
 	match weapon_id:
+		"m700":
+			_aim_depth_limit = 0.055
 		"lever":
 			_aim_depth_limit = 0.11
 		"mp5":
@@ -1311,12 +1355,40 @@ func _hand_basis(fingers: Vector3, palm: Vector3) -> Basis:
 
 
 func _prepare_reload(model: Node3D) -> void:
+	_break_action = model.find_child("BreakAction", true, false) as Node3D
+	if _break_action:
+		_break_action_rest = _break_action.transform
 	_magazine = null
 	_magazine_skeleton = null
 	_magazine_bone = -1
 	_shell = null
 	_pump = null
 	_bolt = null
+	if Detailed.MODELS.has(_weapon_id):
+		_loading_port = model.transform * _model_marker(model, "LoadingPort")
+		_magazine_seat = _loading_port
+		if _loads_one_round() or _weapon_id in ["launcher", "longshot", "m700"]:
+			_shell = _make_shell()
+			if _weapon_id in ["longshot", "m700"]:
+				_shell.scale = Vector3(.5,.85,.5)
+			if _weapon_id == "launcher":
+				_shell.scale = Vector3(1.67, 1.2, 1.67)
+			_view.add_child(_shell)
+			_shell.hide()
+		else:
+			_magazine = model.find_child("Magazine", true, false) as Node3D
+			if _magazine:
+				_magazine_rest = _magazine.transform
+				_magazine_seat = _view.to_local(_magazine.global_position)
+			else:
+				_magazine_seat = _loading_port
+		_pump = model.find_child("Pump", true, false) as Node3D
+		if _pump:
+			_pump_rest = _pump.position
+		_bolt = model.find_child("Bolt", true, false) as Node3D
+		if _bolt:
+			_bolt_rest = _bolt.transform
+		return
 	if Expanded.MODELS.has(_weapon_id):
 		_prepare_expanded_reload(model)
 		return
@@ -1379,6 +1451,11 @@ func _pose_action() -> void:
 
 
 func _reset_reload_pose() -> void:
+	if _loaded_rocket:
+		_loaded_rocket.transform = _rocket_rest
+		_loaded_rocket.visible = _mag > 0
+	if _break_action:
+		_break_action.transform = _break_action_rest
 	if _pump:
 		_pump.position = _pump_rest
 	if _bolt:
@@ -1393,10 +1470,19 @@ func _reset_reload_pose() -> void:
 
 
 func _pose_reload(progress: float) -> void:
+	if _weapon_id == "rpg" and _loaded_rocket:
+		_pose_rpg_reload(progress)
+		return
 	var pouch := _view.to_local(_player.reload_pouch_position())
 	# Arc forward from the pouch so the wrist clears the vest and receiver.
 	var reach := pouch + Vector3(-0.04, 0.08, -0.13)
 	var pose_progress := _reload_pose_progress(progress)
+	if _break_action:
+		var open := smoothstep(.08,.24,pose_progress) * (1.0-smoothstep(.80,.96,pose_progress))
+		_break_action.transform = _break_action_rest
+		_break_action.rotate_x(-.52 * open)
+		_loading_port = _model.transform * _model_marker(_model, "LoadingPort")
+		_magazine_seat = _loading_port
 	_player.set_support_grip(smoothstep(0.0, 0.17, pose_progress) * (1.0 - smoothstep(0.82, 1.0, pose_progress)))
 	if _loads_one_round():
 		_pose_shell_reload(pouch, reach)
@@ -1422,6 +1508,33 @@ func _pose_reload(progress: float) -> void:
 	else:
 		var tilt := -0.32 * smoothstep(0.17, 0.34, pose_progress) * (1.0 - smoothstep(0.69, 0.85, pose_progress))
 		_place_magazine(wrist - hand_offset, tilt)
+	if _shell:
+		_shell.visible = pose_progress > 0.25 and pose_progress < 0.82
+		_shell.position = _left_wrist.transform * LAUNCHER_ROUND_IN_HAND
+		_shell.rotation.x = -PI / 2.0
+
+
+func _pose_rpg_reload(progress: float) -> void:
+	var present := smoothstep(.08, .28, progress)
+	var insert := smoothstep(.48, .82, progress)
+	var release := smoothstep(.82, .98, progress)
+	var travel := Vector3(-.12 * (1.0-present), -.10 * (1.0-present), -.58) * (1.0-insert)
+	# Grasp the motor shaft, keeping the tail aimed into the front of the tube.
+	var shaft: Vector3 = _muzzle.position + Vector3.BACK * .66 + travel
+	var hand := shaft + Vector3(-.045, -.035, .025)
+	var pouch := _view.to_local(_player.reload_pouch_position())
+	var target := pouch.lerp(hand, present)
+	target = target.lerp(_support_rest, release)
+	_left_wrist.position = _view.to_local(_player.clamp_support_hand(_view.to_global(target)))
+	if progress < .48:
+		# Carry the actual round with the hand until its tail reaches the tube.
+		travel += _left_wrist.position - hand
+	_loaded_rocket.transform = _rocket_rest
+	_loaded_rocket.position += _loaded_rocket.get_parent().global_basis.inverse() * _view.global_basis * travel
+	_loaded_rocket.visible = progress >= .10
+	var grasp := _hand_basis(Vector3(.7,.1,-.7), Vector3(.3,.95,0))
+	_left_wrist.basis = _support_basis.slerp(grasp, present * (1.0-release))
+	_player.set_support_grip(.25 * present * (1.0-release))
 
 
 func _reload_pose_progress(progress: float) -> float:
@@ -1526,7 +1639,7 @@ static func render_warmup(weapons: Array) -> Node3D:
 	for id in weapons:
 		var model := _make_model(id)
 		warmup.add_child(model)
-		if id == "shotgun":
+		if id == "shotgun" and not Detailed.MODELS.has(id):
 			_apply_shotgun_material(model)
 		if id in ["shotgun", "breacher", "lever"]:
 			warmup.add_child(_make_shell())
@@ -1535,6 +1648,8 @@ static func render_warmup(weapons: Array) -> Node3D:
 
 
 static func _make_model(weapon_id: String, studio_reflections := true) -> Node3D:
+	if Detailed.MODELS.has(weapon_id):
+		return Detailed.make_model(weapon_id, studio_reflections)
 	if weapon_id == "rpg":
 		return RpgAssets.make_model()
 	if weapon_id == "knife":
@@ -1565,7 +1680,7 @@ static func _make_model(weapon_id: String, studio_reflections := true) -> Node3D
 
 
 static func _uses_physical_sight(id: String) -> bool:
-	return Expanded.SIGHTS.has(id) or IRON_SIGHT_OFFSETS.has(id) or COLLIMATOR_MOUNTS.has(id)
+	return Detailed.MODELS.has(id) or Expanded.SIGHTS.has(id) or IRON_SIGHT_OFFSETS.has(id) or COLLIMATOR_MOUNTS.has(id)
 
 
 static func _make_knife_model() -> Node3D:
@@ -1607,7 +1722,7 @@ static func _scale_longest_axis(model: Node3D, root: Node3D, length: float) -> v
 static func add_pickup_model(parent: Node3D, id: String) -> void:
 	var model := _make_model(id, false)
 	parent.add_child(model)
-	if id == "shotgun":
+	if id == "shotgun" and not Detailed.MODELS.has(id):
 		_apply_shotgun_material(model)
 		_scale_longest_axis(model, parent, 0.85)
 	model.rotation.z = PI * 0.5
@@ -1619,7 +1734,7 @@ static func add_pickup_model(parent: Node3D, id: String) -> void:
 
 
 static func _muzzle_point(model: Node3D, weapon_id: String) -> Vector3:
-	if weapon_id in ["launcher", "rpg", "m249", "m1"] or Expanded.MODELS.has(weapon_id):
+	if Detailed.MODELS.has(weapon_id) or weapon_id in ["launcher", "rpg", "m249", "m1"] or Expanded.MODELS.has(weapon_id):
 		return model.transform * _model_marker(model, "Muzzle")
 	if Classic.MODELS.has(weapon_id):
 		return model.transform * Classic.bone_point(model, &"FX_FIRE")

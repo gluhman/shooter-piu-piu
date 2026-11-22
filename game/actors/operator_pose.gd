@@ -457,7 +457,10 @@ func _apply_finger_splay(skeleton: Skeleton3D, chains: Array[PackedInt32Array], 
 	for digit in 5:
 		var joint := chains[digit][0]
 		var rotation := skeleton.get_bone_pose_rotation(joint)
-		skeleton.set_bone_pose_rotation(joint, rotation * Quaternion(Vector3.BACK, float(splay[digit]) * weight))
+		rotation *= Quaternion(Vector3.BACK, float(splay[digit]) * weight)
+		if digit == 0:
+			rotation *= Quaternion(Vector3.UP, float(wrist.get_meta(&"thumb_roll", 0.0)) * weight)
+		skeleton.set_bone_pose_rotation(joint, rotation)
 
 
 func _pose_leg(skeleton: Skeleton3D, index: int, delta: float, rig_to_actor: Transform3D,

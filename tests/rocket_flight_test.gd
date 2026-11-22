@@ -17,7 +17,7 @@ func _run() -> void:
 	arena.set_physics_process(false)
 	var grenades = arena.get_node("Grenades")
 	grenades.set_physics_process(false)
-	grenades.net_launch(47, "rocket", Vector3(0, 30, 0), Vector3.FORWARD * float(Balance.RPG.speed_m_s), float(Balance.RPG.fuse_s), 1)
+	grenades.net_launch(47, "rocket", Vector3(0, 80, 0), Vector3.FORWARD * float(Balance.RPG.speed_m_s), float(Balance.RPG.fuse_s), 1)
 	var flight = grenades._flights[47]
 	var initial_basis: Basis = flight.model.basis
 	var maximum_pitch := 0.0
@@ -27,7 +27,7 @@ func _run() -> void:
 		var rotation: Vector3 = (Basis.looking_at(flight.velocity.normalized()).inverse() * flight.model.basis).get_euler()
 		maximum_pitch = maxf(maximum_pitch, absf(rotation.x))
 		maximum_roll = maxf(maximum_roll, absf(rotation.z))
-	check(absf(flight.at.y - 24.0) < .01, "Rocket drops 6 m over 170 m of travel: shallow long-range ballistic arc")
+	check(absf(flight.at.y - 46.0) < .01, "Rocket drops 34 m over 170 m of travel: calibrated RPG arc")
 	check(absf(flight.at.x) > .001 and absf(flight.at.x) < .1, "Flight has bounded, deterministic lateral instability")
 	check(not flight.model.basis.is_equal_approx(initial_basis), "Projectile pitch and roll change during flight")
 	check(maximum_pitch > deg_to_rad(.5) and maximum_pitch < deg_to_rad(1.6) and maximum_roll > deg_to_rad(45.0), "Pitch varies within 1.5 degrees while the rocket rolls about its flight axis")

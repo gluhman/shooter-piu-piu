@@ -23,6 +23,10 @@ func _run() -> void:
 	var maximum_error := 0.0
 	for id: String in actor.gun.WEAPONS:
 		if id == "knife": continue
+		if "--new-models" in OS.get_cmdline_user_args() and not actor.gun.Detailed.MODELS.has(id): continue
+		var args := OS.get_cmdline_user_args()
+		if "--weapon" in args and id != args[args.find("--weapon") + 1]: continue
+		if "--weapons" in args and id not in args[args.find("--weapons") + 1].split(","): continue
 		actor.gun.equip(id)
 		await process_frame
 		var model: Node3D = actor.gun._model

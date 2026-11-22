@@ -5,6 +5,10 @@ var failed := false
 var grip_errors: Dictionary = {}
 var palm_axes: Dictionary = {}
 var support_lateral_error: Dictionary = {}
+var support_axes: Dictionary = {}
+var support_palm_normals: Dictionary = {}
+var support_thumb_axes: Dictionary = {}
+var support_thumb_sides: Dictionary = {}
 func _initialize() -> void:
 	_run.call_deferred()
 func check(value: bool, message: String) -> void:
@@ -70,6 +74,16 @@ func _run() -> void:
 			if weapon != "knife":
 				var axes: Vector3 = palm_axes.get(team, Vector3.ZERO)
 				check(minf(axes.x, minf(axes.y, axes.z)) >= .8, "Final IK trigger palm is rolled over on " + weapon + ": " + str(axes))
+			if weapon not in ["knife", "deagle", "m1911", "tec9", "mac10"]:
+				var normal: Vector3 = support_palm_normals.get(team, Vector3.ZERO)
+				if actor.gun._left_wrist.get_meta(&"support_kind", "") == "vertical_grip":
+					check(normal.x >= .95, "Final IK palm must grasp the front grip on " + weapon)
+				else:
+					check(float(support_axes.get(team, -1.0)) >= .3, "Final IK support fingers approach from the wrong side on " + weapon)
+					check(normal.y >= .985, "Final IK handguard palm must face up on " + weapon)
+					if actor.gun._left_wrist.get_meta(&"thumb_reference", false):
+						var thumb_axis: Vector3 = support_thumb_axes.get(team, Vector3.ZERO)
+						check(thumb_axis.z <= .2 and float(support_thumb_sides.get(team, INF)) < .005, "Final support thumb must rest on the left on " + weapon)
 			if weapon == "gpmg":
 				check(float(support_lateral_error.get(team, INF)) < .025, "GPMG support palm sits to the right of the handguard")
 		var body := Fallen.new()
@@ -103,6 +117,14 @@ func _sample_grips(actor: Node) -> void:
 		if not right and actor.gun._weapon_id == "gpmg":
 			var palm_in_view: Vector3 = actor.gun._view.to_local(contact)
 			support_lateral_error[actor.team_id()] = absf(palm_in_view.x - actor.gun._model.position.x)
+		if not right and palm:
+			var socket: Basis = (actor.gun._view.global_basis.inverse() * sk.global_basis * sk.get_bone_global_pose(bone).basis * actor._pose._left_palm_frame).orthonormalized()
+			support_axes[actor.team_id()] = socket.y.x
+			support_palm_normals[actor.team_id()] = socket.z
+			var thumb_base: Vector3 = sk.to_global(sk.get_bone_global_pose(sk.find_bone("thumb_01_l")).origin)
+			var thumb_tip: Vector3 = sk.to_global(sk.get_bone_global_pose(sk.find_bone("thumb_04_leaf_l")).origin)
+			support_thumb_axes[actor.team_id()] = actor.gun._view.global_basis.inverse() * (thumb_tip-thumb_base).normalized()
+			support_thumb_sides[actor.team_id()] = actor.gun._view.to_local(thumb_tip).x - actor.gun._model.position.x
 		if right and palm:
 			var socket: Basis = (actor.gun._view.global_basis.inverse() * sk.global_basis * sk.get_bone_global_pose(bone).basis * actor._pose._right_palm_frame).orthonormalized()
 			palm_axes[actor.team_id()] = Vector3(socket.x.y, -socket.y.z, -socket.z.x)

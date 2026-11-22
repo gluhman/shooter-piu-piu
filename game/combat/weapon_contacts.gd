@@ -15,6 +15,7 @@ static func install(id: String, model: Node3D, right: Marker3D, left: Marker3D) 
 	for side in ["right", "left"]:
 		var wrist := right if side == "right" else left
 		var data: Dictionary = profile[side]
+		if side == "left": wrist.set_meta(&"support_kind", data.get("support_kind", "pistol_cup"))
 		var frame: Array = data.get("basis", [])
 		if frame.size() == 3:
 			wrist.basis = model.basis.orthonormalized() * Basis(vector(frame[0]), vector(frame[1]), vector(frame[2]))
@@ -26,6 +27,9 @@ static func install(id: String, model: Node3D, right: Marker3D, left: Marker3D) 
 		wrist.position = wrist.get_parent().to_local(palm_point)
 		wrist.set_meta(&"finger_curls", data.get("curl", []))
 		wrist.set_meta(&"finger_splay", data.get("splay", []))
+		wrist.set_meta(&"thumb_roll", float(data.get("thumb_roll", 0.0)))
+		wrist.set_meta(&"thumb_reference", bool(data.get("thumb_reference", false)))
+		wrist.set_meta(&"thumb_pose", String(data.get("thumb_pose", "")))
 		for digit in DIGITS:
 			var target := Marker3D.new()
 			target.name = "Contact_" + digit
