@@ -19,6 +19,10 @@ boot_splash/stretch_mode=0
 boot_splash/image="res://game/ui/startup/shooter_boot.png"
 config/icon="res://assets/menu/icon.svg"
 
+[audio]
+
+buses/default_bus_layout="uid://ccidycotdch18"
+
 [autoload]
 
 ShooterRelease="*res://game/release/shooter_release.gd"

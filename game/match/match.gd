@@ -33,7 +33,7 @@ const REFINERY_SKY := preload("res://game/maps/refinery/refinery_sky.gdshader")
 const FARPOST_HDRI := "res://game/maps/farpost/art/sky/kloofendal_overcast_puresky_2k.hdr"
 const OFFICE_ENVIRONMENT := preload("res://game/maps/lighting/office_environment.tres")
 const OFFICE_EXPOSURE := preload("res://game/maps/lighting/office_exposure.tres")
-const SHADOW_GRADE := preload("res://game/maps/lighting/shadow_grade.tres")
+const VISUAL_TEMPLATE := preload("res://game/maps/lighting/forest_ridge_visuals.tres")
 const OFFICE_BOUNCE := "res://game/maps/lighting/office_bounce.res"
 const ARENA_WEATHER := {
 	0: {"hour": 13.0, "wind": Vector2(25, 1.0)},
@@ -188,9 +188,8 @@ func _apply_graphics() -> void:
 func _apply_indirect_lighting(environment: Environment) -> void:
 	var enabled := GameSettings.indirect_lighting and GameSettings.supports_advanced_graphics() \
 		and DisplayServer.get_name() != "headless" and not Net.dedicated
-	# Closely spaced floors and roofs lose too much ambient fill with SDFGI.
-	environment.sdfgi_enabled = enabled and map_id not in [
-		MAP.OFFICE_ID, MAP.BREAKWATER_ID, MAP.VILLAGE_ID, MAP.WORKSHOP_ID, MAP.FOREST_RIDGE_ID, MAP.OUTPOST_ID, MAP.STATION_ID, MAP.REFINERY_ID]
+	# Forest Ridge uses sky ambient fill rather than SDFGI.
+	environment.sdfgi_enabled = enabled and VISUAL_TEMPLATE.environment_settings["sdfgi_enabled"]
 	var probe := $Map.get_node_or_null("OfficeBounce") as VoxelGI
 	if is_instance_valid(_breakwater):
 		probe = _breakwater.get_node("HallBounce") as VoxelGI
@@ -198,8 +197,7 @@ func _apply_indirect_lighting(environment: Environment) -> void:
 		probe.visible = enabled
 	var baked_bounce := probe != null and probe.visible
 	environment.ssil_enabled = GameSettings.supports_advanced_graphics() \
-		and (enabled or GameSettings.ambient_occlusion) and not environment.sdfgi_enabled and not baked_bounce \
-		and map_id != MAP.STATION_ID
+		and (enabled or GameSettings.ambient_occlusion) and not environment.sdfgi_enabled and not baked_bounce
 
 
 func prepare_startup_resources() -> void:
@@ -1050,37 +1048,17 @@ func _play_ambience() -> void:
 	$Ambience.play()
 
 
-func _grade_arena(world_environment: WorldEnvironment) -> void:
-	var environment := world_environment.environment
-	environment.tonemap_mode = Environment.TONE_MAPPER_AGX
-	environment.tonemap_exposure = 1.0
-	environment.glow_enabled = true
-	environment.glow_bloom = 0.075
-	environment.glow_intensity = 0.38
-	environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
-	environment.ssil_intensity = 0.5
-	environment.adjustment_enabled = true
-	environment.adjustment_color_correction = SHADOW_GRADE
-	environment.adjustment_contrast = 1.0
-	environment.adjustment_saturation = 1.06
-	environment.ssao_radius = 1.25
-	if map_id == MAP.OFFICE_ID:
-		environment.ssao_intensity = 0.85
-		return
-
-	environment.ssao_intensity = 0.78
-	environment.sdfgi_energy = 1.25
-	if map_id == MAP.BREAKWATER_ID:
-		environment.ambient_light_energy = 0.98
+func _apply_visual_template(world_environment: WorldEnvironment) -> void:
+	VISUAL_TEMPLATE.apply_environment(world_environment.environment)
+	var sun: DirectionalLight3D = $WorldEnvironment/SunLight
+	if is_instance_valid(_breakwater):
+		sun = _breakwater.get_node("Sun")
+		sun.light_energy = VISUAL_TEMPLATE.sun_energy
 	else:
-		environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-		environment.ambient_light_energy = 0.85
-		environment.fog_enabled = true
-		environment.fog_density = 0.0038 if map_id == MAP.FOREST_RIDGE_ID else 0.0009
-		environment.fog_aerial_perspective = 0.9
-		environment.fog_sky_affect = 0.0
-		# Set the dome's target as well so its day/night tween retains the fill.
-		$WorldEnvironment.sky_contribution = 0.55
+		# Keep the sky's original time and direction, with the shared lighting intensity.
+		$WorldEnvironment.sun_energy = VISUAL_TEMPLATE.sun_energy
+		$WorldEnvironment.sky_contribution = world_environment.environment.ambient_light_sky_contribution
+	VISUAL_TEMPLATE.apply_sun(sun)
 
 
 func _configure_farpost_sky() -> void:
@@ -1091,11 +1069,6 @@ func _configure_farpost_sky() -> void:
 	var sky := Sky.new()
 	sky.sky_material = panorama
 	environment.sky = sky
-	environment.fog_density = 0.0018
-	environment.fog_aerial_perspective = 0.39
-	environment.fog_light_color = Color("#8395a3")
-	environment.ambient_light_energy = 0.71
-	$WorldEnvironment.sun_energy = 0.74
 
 
 func _configure_refinery_sky() -> void:
@@ -1106,12 +1079,6 @@ func _configure_refinery_sky() -> void:
 	var sky := Sky.new()
 	sky.sky_material = material
 	environment.sky = sky
-	environment.fog_density = 0.0019
-	environment.fog_aerial_perspective = 0.38
-	environment.adjustment_contrast = 1.12
-	environment.adjustment_saturation = 1.12
-	environment.ambient_light_energy = 0.71
-	$WorldEnvironment.sun_energy = 1.10
 
 
 func _configure_station_sky() -> void:
@@ -1123,16 +1090,6 @@ func _configure_station_sky() -> void:
 	sky.sky_material = panorama
 	environment.sky = sky
 	environment.background_intensity = 1.0
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color("#a0bfd6")
-	environment.ambient_light_sky_contribution = 0.0
-	environment.ambient_light_energy = 0.69
-	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	environment.fog_enabled = false
-	environment.adjustment_saturation = 1.0
-	environment.glow_bloom = 0.0
-	environment.glow_intensity = 0.11
-	environment.glow_hdr_threshold = 1.75
 	$WorldEnvironment.camera_attributes = STATION_EXPOSURE
 	$WorldEnvironment/SunLight.hide()
 	$WorldEnvironment/MoonLight.hide()
@@ -1156,10 +1113,10 @@ func _build_arena(layout_seed: int) -> void:
 		$Map.add_child(_breakwater)
 		_breakwater.apply_layout(map_size)
 		world_environment = _breakwater.get_node("WorldEnvironment")
-		_grade_arena(world_environment)
 		if play_mode != OBJECTIVE_LAYOUT.DEFUSE:
 			$Loot.build_crates(_breakwater.get_supply_placements())
 	else:
+		$WorldEnvironment.environment = _base_environment.duplicate()
 		var weather: Dictionary = ARENA_WEATHER[map_id]
 		$WorldEnvironment.current_time = weather.hour
 		var wind: Vector2 = weather.wind
@@ -1173,9 +1130,6 @@ func _build_arena(layout_seed: int) -> void:
 		var farpost_sky := map_id == MAP.OUTPOST_ID and DisplayServer.get_name() != "headless"
 		var station_sky := map_id == MAP.STATION_ID and DisplayServer.get_name() != "headless"
 		var refinery_sky := map_id == MAP.REFINERY_ID and DisplayServer.get_name() != "headless"
-		if farpost_sky or station_sky or refinery_sky:
-			$WorldEnvironment.environment = _base_environment.duplicate()
-		_grade_arena(world_environment)
 		if farpost_sky:
 			_configure_farpost_sky()
 		if station_sky:
@@ -1208,6 +1162,7 @@ func _build_arena(layout_seed: int) -> void:
 				_attack_side_by_arena[map_id] = objective_attack_side
 			objectives.rules.attack = objective_attack_side
 		objectives.pending_slots = _objective_pending
+	_apply_visual_template(world_environment)
 	# Physical camera profiles enable depth of field when created. Clear it on the
 	# active profile after the map has selected its final exposure settings.
 	_disable_gameplay_depth_of_field(world_environment)

@@ -100,3 +100,7 @@ macOS, Godot 4.7.2, Metal и Forward+. Обе сборки измерялись 
 | НПЗ | 5,96 с | 1,54–1,63 с | 1,10 с | 0,99–1,02 с |
 
 В дополнительной проверке Dust II одновременно запускали вспышку выстрела, осколочную, светошумовую, взрыв подствольного снаряда и дым. Счётчик компиляций при отрисовке не вырос. Самые длинные кадры за 90 кадров после запуска эффектов составили 44 и 53 мс при первом и повторном заходах. Нагрузка с полностью пустым кэшем драйвера и на других видеокартах требует отдельных замеров.
+
+## Shared Forest Ridge effects profile
+
+Maps use the original Forest Ridge lighting and effects preset while retaining their individual backgrounds and camera profiles. SSR and SDFGI are disabled; SSIL, SSAO and shadows respect graphics controls. Fog density is 0.0038. Earlier benchmarks describe earlier profiles; this preset has no new FPS measurements.

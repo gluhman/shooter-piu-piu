@@ -103,3 +103,11 @@ game/maps/
 ## Выпуск
 
 Новая карта, заметный набор ассетов или несовместимое изменение её путей требуют новой полной базы по правилам [релизов и PCK-патчей](releases.md). Обычный PCK-hotfix не должен случайно включать ресурсы карты: перед публикацией сверяйте состав и размер артефакта.
+
+## Shared Forest Ridge visual template
+
+`game/maps/lighting/forest_ridge_visuals.tres` saves the original Forest Ridge runtime lighting and effects: ambient fill, sun intensity and softness, AgX, SSAO, SSR/SSIL/SDFGI, glow, fog and color grading. `visual_template.gd` applies only these property groups after each map configures its own environment. The preset contains no sky, HDRI, background properties, sky rotation or camera profile.
+
+Every map retains its original background, background brightness, sky orientation, time of day and camera exposure. This includes Breakwater's freight panorama, Station's night sky, Farpost's overcast sky, Refinery's hilltop panorama, Office's dark color background and the original dynamic skies on other maps. A background without a sky uses color ambient fill. Local fixtures, bounce probes and gameplay wind remain map-owned. Graphics menu controls still apply.
+
+Run `godot --headless --path . --script res://tests/map_visual_template_test.gd` to check every map and background preservation. Run without `--headless` and add `-- --screenshots` for rendered screenshots at `/tmp/piupiu-forest-template-XX.png`.
