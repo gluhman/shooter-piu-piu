@@ -2,9 +2,10 @@ extends RefCounted
 
 const HEIGHTFIELD := preload("art/gdt/terrain_heightfield.gd")
 const TERRAIN_MESH := preload("art/gdt/terrain_mesh_builder.gd")
-const GROUND_SHADER := preload("forest_ground.gdshader")
+const TERRAIN_3D := preload("../terrain_3d_surface.gd")
 const FIR_MESHES := preload("fir_meshes.gd")
 const WATER_SHADER := preload("forest_water.gdshader")
+const WATER_SURFACE := preload("forest_water.gd")
 const CRATE_PATH := "res://assets/arena_props/village/wooden_crate_01.glb"
 const BARREL_PATH := "res://assets/arena_props/village/wine_barrel_01.glb"
 
@@ -13,6 +14,7 @@ const HALF := WIDTH * 0.5
 const QUADS := 200
 const CHUNK_QUADS := 50
 const DITCH_FLOOR := -2.35
+const WATER_LEVEL := DITCH_FLOOR + 0.30
 const TERRAIN_BAKE_BOUNDS := AABB(Vector3(-HALF, -3.0, -HALF), Vector3(WIDTH, 25.0, WIDTH))
 
 const CAMPS := [Vector2(-36, 36), Vector2(36, -36), Vector2(36, 36), Vector2(-36, -36)]
@@ -135,48 +137,42 @@ func _build_ground() -> void:
 		"active_step": _heightfield.step,
 		"active_half_size": HALF,
 	})
-	var ground := _ground_material() if _visuals else null
+
 	for z in QUADS / CHUNK_QUADS:
 		for x in QUADS / CHUNK_QUADS:
-			_build_chunk(builder, x, z, ground)
+			_build_chunk(builder, x, z)
 	if _visuals:
+		_build_terrain_3d()
 		_add_ditch_water()
 
 
-func _ground_material() -> ShaderMaterial:
-	var material := ShaderMaterial.new()
-	material.shader = GROUND_SHADER
+func _build_terrain_3d() -> void:
 	var directory := "res://game/maps/forest_ridge/art/ground/"
-	var texture_sets := {"floor": "forest_ground_04", "trail": "rocky_trail"}
-	var textures := {"color": "diff", "normal": "nor_gl", "arm": "arm"}
-	for layer: String in texture_sets:
-		for channel: String in textures:
-			material.set_shader_parameter(layer + "_" + channel,
-				load("%s%s_%s_1k.jpg" % [directory, texture_sets[layer], textures[channel]]))
-	return material
+	var layers: Array[Dictionary] = []
+	for entry: Array in [["forest_ground_04", Color(0.68, 0.90, 0.52)], ["rocky_trail", Color(1.05, 1.02, 0.90)]]:
+		var prefix: String = directory + entry[0]
+		layers.append({"name": entry[0], "color": prefix + "_diff_1k.jpg",
+			"normal": prefix + "_nor_gl_1k.jpg", "roughness": prefix + "_arm_1k.jpg", "tint": entry[1]})
+	var height := func(point: Vector2) -> float: return _heightfield.sample_world(point.x, point.y)
+	TERRAIN_3D.build(_world, Rect2(-Vector2.ONE * HALF, Vector2.ONE * WIDTH), height, _terrain_paint, layers)
 
 
-func _build_chunk(builder: RefCounted, x: int, z: int, material: ShaderMaterial) -> void:
-	var arrays: Array = builder.build_chunk_mesh_arrays(x, z, 1)
-	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
-	var chunk_stride := CHUNK_QUADS + 1
-	for local_z in chunk_stride:
-		for local_x in chunk_stride:
-			var index := (z * CHUNK_QUADS + local_z) * (QUADS + 1) + x * CHUNK_QUADS + local_x
-			colors[local_z * chunk_stride + local_x] = Color(_trail_grid[index], _ditch_grid[index], 0, 1)
-	arrays[Mesh.ARRAY_COLOR] = colors
-	var mesh: ArrayMesh = builder.create_mesh_from_arrays(arrays)
+func _terrain_paint(point: Vector2) -> Vector4:
+	var x := clampi(roundi((point.x + HALF) / _heightfield.step), 0, QUADS)
+	var z := clampi(roundi((point.y + HALF) / _heightfield.step), 0, QUADS)
+	var index := z * (QUADS + 1) + x
+	var ditch := _ditch_grid[index]
+	return Vector4(0, 1, maxf(_trail_grid[index], ditch * 0.55), lerpf(1.0, 0.60, ditch))
+
+
+func _build_chunk(builder: RefCounted, x: int, z: int) -> void:
+	var mesh: ArrayMesh = builder.build_chunk_mesh(x, z, 1)
 	var body := StaticBody3D.new()
 	body.name = "Terrain_%d_%d" % [x, z]
 	body.set_meta(&"impact_surface", "dirt")
 	var collision := CollisionShape3D.new()
 	collision.shape = mesh.create_trimesh_shape()
 	body.add_child(collision)
-	if _visuals:
-		var visual := MeshInstance3D.new()
-		visual.mesh = mesh
-		visual.material_override = material
-		body.add_child(visual)
 	_world.add_child(body)
 
 
@@ -205,29 +201,45 @@ func _ditch_weight(point: Vector2) -> float:
 func _add_ditch_water() -> void:
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Clip each terrain triangle against a horizontal waterline. This follows the
+	# actual bed, including the tapered ends and the two raised, dry crossings.
 	for side in [-1.0, 1.0]:
-		for stretch: Vector2 in [Vector2(-18, -9), Vector2(9, 18)]:
-			for meter in range(int(stretch.x), int(stretch.y)):
-				var a := float(meter)
-				var b := a + 1.0
-				var start := _ditch_x(side, a)
-				var finish := _ditch_x(side, b)
-				for offset: Vector2 in [Vector2(-1, 0), Vector2(1, 0), Vector2(-1, 1),
-						Vector2(1, 0), Vector2(1, 1), Vector2(-1, 1)]:
-					surface.set_normal(Vector3.UP)
-					var z := lerpf(a, b, offset.y)
-					var bank := 0.78 + 0.25 * sin(z * 0.6) + 0.17 * cos(z * 1.8)
-					var ends := smoothstep(0.0, 2.6, minf(z - stretch.x, stretch.y - z))
-					var x := lerpf(start, finish, offset.y) + offset.x * bank * lerpf(0.2, 1.0, ends)
-					surface.add_vertex(Vector3(x, DITCH_FLOOR + 0.16, z))
-	var water := MeshInstance3D.new()
+		for iz in range(-50, 50):
+			for ix in range(-24, 24):
+				var a := Vector2(side * 18.0 + ix * 0.5, iz * 0.5)
+				var b := a + Vector2(0.5, 0)
+				var c := a + Vector2(0.5, 0.5)
+				var d := a + Vector2(0, 0.5)
+				_water_triangle(surface, [a, b, d])
+				_water_triangle(surface, [b, c, d])
+	var water := WATER_SURFACE.new()
 	water.name = "DitchPools"
 	water.mesh = surface.commit()
 	var material := ShaderMaterial.new()
 	material.shader = WATER_SHADER
 	water.material_override = material
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	water.heightfield = _heightfield
+	water.water_level = WATER_LEVEL
 	_world.add_child(water)
+
+
+func _water_triangle(surface: SurfaceTool, triangle: Array[Vector2]) -> void:
+	var clipped: Array[Vector2] = []
+	for index in 3:
+		var a := triangle[index]
+		var b := triangle[(index + 1) % 3]
+		var ha := _heightfield.sample_world(a.x, a.y)
+		var hb := _heightfield.sample_world(b.x, b.y)
+		if ha < WATER_LEVEL:
+			clipped.append(a)
+		if (ha < WATER_LEVEL) != (hb < WATER_LEVEL):
+			clipped.append(a.lerp(b, (WATER_LEVEL - ha) / (hb - ha)))
+	for index in range(1, clipped.size() - 1):
+		for point: Vector2 in [clipped[0], clipped[index], clipped[index + 1]]:
+			surface.set_normal(Vector3.UP)
+			surface.set_color(Color(clampf(WATER_LEVEL - _heightfield.sample_world(point.x, point.y), 0.0, 1.0), 0, 0, 1))
+			surface.add_vertex(Vector3(point.x, WATER_LEVEL, point.y))
 
 
 func _at(point: Vector2, lift := 0.0) -> Vector3:
@@ -385,13 +397,24 @@ func _reserved(point: Vector2, trail_margin: float, ground_cover := false) -> bo
 
 
 func _scatter_understory() -> void:
-	var grass := _model_meshes(load("res://assets/arena_props/grass.glb"))
 	var shrubs := _model_meshes(load("res://assets/arena_props/shrubs.glb"))
 	var ferns := _model_meshes(load("res://game/maps/forest_ridge/art/fern/fern_02_1k.gltf"))
-	_scatter_plants("Grass", grass, 17500, 0.85, Vector2(1.25, 2.75))
+	_lawn_grass()
 	_scatter_plants("Ferns", ferns, 1600, 1.6, Vector2(0.85, 1.75))
 	_scatter_plants("Shrubs", shrubs, 340, 2.3, Vector2(0.80, 1.7))
 	_scatter_plants("LooseStone", _rocks, 450, 0.70, Vector2(0.07, 0.32))
+
+
+func _lawn_grass() -> void:
+	var placements: Array[Transform3D] = []
+	var lawn_rng := RandomNumberGenerator.new()
+	lawn_rng.seed = 91413
+	for x in range(-198, 199):
+		for z in range(-198, 199):
+			var point := Vector2(x, z) * 0.25 + Vector2(lawn_rng.randf_range(-0.035, 0.035), lawn_rng.randf_range(-0.035, 0.035))
+			if _reserved(point, 0.65, true) or _ditch_weight(point) > 0.60:continue
+			placements.append(Transform3D(Basis.IDENTITY, _at(point, -0.015)))
+	_map.TERRAIN_GRASS.queue(_world, placements)
 
 
 func _scatter_plants(label: String, variants: Array[Mesh], amount: int, margin: float, scales: Vector2) -> void:
@@ -424,6 +447,9 @@ func _random_point() -> Vector2:
 
 func _batch(label: String, mesh: Mesh, transforms: Array,
 		shadows := GeometryInstance3D.SHADOW_CASTING_SETTING_ON, material: Material = null) -> void:
+	if label.begins_with("Grass_"):
+		_map.TERRAIN_GRASS.queue(_world, transforms)
+		return
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.mesh = mesh

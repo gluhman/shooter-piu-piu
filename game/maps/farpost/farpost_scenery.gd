@@ -1,5 +1,6 @@
 extends RefCounted
 
+const TERRAIN_GRASS := preload("../foliage/terrain_grass.gd")
 const FIR_MESHES := preload("../forest_ridge/fir_meshes.gd")
 const ART := "res://game/maps/farpost/art/"
 const FOREST := "res://game/maps/forest_ridge/art/"
@@ -211,6 +212,9 @@ func _record(groups: Dictionary, point: Vector2, placement: Transform3D) -> void
 func _draw_groups(label: String, mesh: Mesh, groups: Dictionary, shadows: bool) -> void:
 	for tile: Vector2i in groups:
 		var placements: Array = groups[tile]
+		if label.begins_with("Grass"):
+			TERRAIN_GRASS.queue(_root, placements)
+			continue
 		var batch := MultiMesh.new()
 		batch.transform_format = MultiMesh.TRANSFORM_3D
 		batch.mesh = mesh

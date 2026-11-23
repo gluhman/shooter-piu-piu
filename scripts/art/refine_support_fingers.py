@@ -1,6 +1,7 @@
 """Refine fitted support fingers against exact gun triangles without moving the palm.
 Blender --background --python this_file [-- --weapons id,id]
 Requires bake_weapon_contacts.gd -- --contact-surfaces and the fitted profiles.
+--thumb-height-offset <metres> sets a per-profile offset below/above finger height.
 """
 import json,sys,math
 from pathlib import Path
@@ -53,8 +54,11 @@ for name,profile in profiles.items():
    matrices[1+d*4+j,:3,:3]=B;matrices[1+d*4+j,:3,3]=pos
  all_vertices=(np.einsum('nvij,nvj->nvi',matrices[M],L)*W[:,:,None]).sum(1)[:,:3]
  other_fingers=((M>=5)&(W>.35)).any(1)
- target_top=float(np.percentile(all_vertices[other_fingers,1],98))
- gaps=[]
+ thumb_height_offset=float(data.get('thumb_height_offset_m',0.0))
+ if '--thumb-height-offset' in sys.argv:
+  thumb_height_offset=float(sys.argv[sys.argv.index('--thumb-height-offset')+1])
+ target_top=float(np.percentile(all_vertices[other_fingers,1],98))+thumb_height_offset
+ gaps=list(data.get('skin_contact_error_m',[0.]*5)) if height_reference else []
  for digit in range(5):
   if height_reference and digit!=0:continue
   if not height_reference and digit==0 and data.get("thumb_reference"):continue
@@ -151,9 +155,24 @@ for name,profile in profiles.items():
     if clearance>=.002 and cost<best[0]:best=(cost,x.copy())
     if np.linalg.norm(dx)<1e-5:break
   if not math.isfinite(best[0]):raise RuntimeError(name+': no collision-free '+DIGITS[digit]+' pose')
-  x=best[1];curls[digit]=x[:3];splay[digit]=x[3];gaps.append(contact(skin_finger(x)))
-  if height_reference:thumb_roll=float(x[4])
+  x=best[1];curls[digit]=x[:3];splay[digit]=x[3]
+  vertices=skin_finger(x);gap=contact(vertices)
+  if height_reference:
+   gaps[digit]=gap;thumb_roll=float(x[4])
+   contacts=[]
+   for point in vertices[distal]:
+    hit,_,_,distance=tree.find_nearest(Vector(point))
+    if hit is not None and abs(hit.z-palm[2])<.13:
+     surface=np.array(hit);normal=(point-surface)/max(distance,1e-8)
+     contacts.append((distance,surface,normal))
+   _,surface,normal=min(contacts,key=lambda item:item[0])
+   data['thumb']=(np.linalg.inv(mb)@(surface-origin)).tolist()
+   data['thumb_normal']=(np.linalg.inv(rotation)@normal).tolist()
+  else:gaps.append(gap)
  data['curl']=curls.tolist();data['splay']=splay.tolist();data['skin_contact_error_m']=gaps
- if height_reference:data['thumb_roll']=thumb_roll;data['thumb_reference']=True;data['thumb_pose']='relaxed_forward'
+ if height_reference:
+  data['thumb_roll']=thumb_roll;data['thumb_reference']=True;data['thumb_pose']='relaxed_forward'
+  if thumb_height_offset:data['thumb_height_offset_m']=thumb_height_offset
+  else:data.pop('thumb_height_offset_m',None)
  print('FINGERS',name,[round(g*1000,1) for g in gaps],flush=True)
 (ROOT/'assets/weapon_contacts.json').write_text(json.dumps(profiles,indent=2)+'\n')

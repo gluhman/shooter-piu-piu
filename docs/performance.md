@@ -104,3 +104,21 @@ macOS, Godot 4.7.2, Metal и Forward+. Обе сборки измерялись 
 ## Shared Forest Ridge effects profile
 
 Maps use the original Forest Ridge lighting and effects preset while retaining their individual backgrounds and camera profiles. SSR and SDFGI are disabled; SSIL, SSAO and shadows respect graphics controls. Fog density is 0.0038. Earlier benchmarks describe earlier profiles; this preset has no new FPS measurements.
+
+## Dense lawn and Forest water verification
+
+Reproduce with Godot 4.7.2 Forward+ using `tests/terrain_grass_test.gd -- --maps 11,3,12 --screenshots` and `tests/forest_water_test.gd`. The rendered checks used Apple M5 Pro / Metal 4 at a 1600×960 window. These are correctness checks, not an FPS benchmark. Lawn roots are spaced 25 cm in plantable areas; each short tuft uses 36 five-triangle blades. Terrain3D batches and distance-culls the instances; grass casts no shadows, adds no collision and is omitted on headless servers. Water keeps at most eight visual ripples, with actor sampling every 150 ms.
+
+## Explosion presentation checks
+
+Run `godot --path . --script tests/realistic_explosion_test.gd -- --screenshots` with Forward+. Verification uses the training range, physical daylight exposure, a 1600×960 window and Apple M5 Pro / Metal 4. It checks ground/air dispatch, independent animation state, cleanup, low-detail refraction suppression and rendered fire-to-smoke changes. This is a correctness test, not an FPS benchmark. Each blast adds one camera-facing fire/smoke quad and a short-lived refraction quad instead of many overlapping procedural fire/smoke puffs. Existing range culling and headless exclusion remain in place.
+
+## Terrain white-dot and grass-flicker regression
+
+The glowing dots were reproduced at 2890×1741 on Apple M5 Pro / Metal 4 using the Forest spawn view at heading 60°. With no bots or shots, the calibrated local detector found spots in 42/300 frames with FSR2 and glow enabled, 35/300 with SSIL disabled, and 0/300 with glow disabled. Disabling temporal upscaling cleared the Forest reproduction, but spatial FSR still showed spots in Refinery, so no upscaler workaround is retained.
+
+`match.gd` bypasses glow only for Forest, Village and Refinery on Metal. FSR, antialiasing, SSIL, shadows, blast lights and the saved graphics preferences are retained. Other maps and rendering drivers retain the shared glow profile. `tests/terrain_stability_test.gd` forces FSR2, checks localized neutral bright spikes rather than whole-frame averages, refreshes graphics during each run and verifies that leaving the affected maps restores glow. Final verification found zero localized spikes in 180 frames per map (540 total), plus a 60-frame moving close-up of grass. This is a correctness test, not a performance benchmark.
+
+The grass shader previously hashed the wind-deformed vertex position to choose dry tips. Wind and distance fading therefore changed the palette every frame. Colour selection now uses undeformed positions, and volume lighting uses the same world-up normal on both sides of each blade to prevent view-dependent brightness flips. Close-up captures are `/tmp/grass-stable-closeup-*.png`.
+
+Blast smoke lifetime is now seven seconds with final fading after it rises. The rendered explosion test checks grenade and RPG lift above three metres while opacity remains full, late fading above five metres, independent animation state and cleanup. Longer smoke lifetime increases the number of visible clouds during repeated blasts; no new FPS benchmark is claimed.

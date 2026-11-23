@@ -1,0 +1,12 @@
+[gd_resource type="Terrain3DMeshAsset" format=3]
+
+[ext_resource type="PackedScene" path="res://game/maps/foliage/dense_grass_short.tscn" id="1_eb6u5"]
+
+[resource]
+name = "Dense grass short"
+scene_file = ExtResource("1_eb6u5")
+density = 10.0
+cast_shadows = 0
+last_lod = 0
+last_shadow_lod = 0
+lod0_range = 95.0

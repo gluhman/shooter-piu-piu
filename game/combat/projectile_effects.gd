@@ -5,7 +5,7 @@ const Expanded := preload("res://game/combat/expanded_weapons.gd")
 const Classic := preload("res://game/combat/classic_weapons.gd")
 const Weapon := preload("res://game/combat/weapon.gd")
 const SpatialAudio := preload("res://addons/spatial_audio_3d/spatial_audio_3d.gd")
-const GRENADE_EXPLOSION := preload("res://game/combat/grenade_explosion.tscn")
+const REALISTIC_EXPLOSION := preload("res://game/combat/realistic_explosion.tscn")
 const ShotSmoke := preload("res://game/combat/shot_smoke.gd")
 const FRAG_EXPLOSION := preload("res://game/combat/frag_explosion.tscn")
 const SHOT_HEARING_DISTANCE := 125.0
@@ -204,8 +204,8 @@ func _warm_hidden_effects(ammo: Dictionary) -> void:
 	var fragment := FRAG_EXPLOSION.instantiate() as PyroluxExplosion3D
 	fragment.autoplay = false
 	samples.add_child(fragment)
-	var explosion := GRENADE_EXPLOSION.instantiate() as GPUParticles3D
-	explosion.emitting = false
+	var explosion := REALISTIC_EXPLOSION.instantiate() as Node3D
+	explosion.autoplay = false
 	samples.add_child(explosion)
 	var streaks: Array[Tracer] = []
 	var colors: Dictionary[Color, bool] = {}
@@ -400,7 +400,7 @@ func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> v
 	var distance_sq := camera.global_position.distance_squared_to(at)
 	if distance_sq > 95.0 * 95.0:
 		return
-	if not flash and not launcher:
+	if not flash:
 		var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.05,
 			at - Vector3.UP * 0.35, Balance.WORLD_MASK)
 		var floor_hit := get_world_3d().direct_space_state.intersect_ray(query)
@@ -436,18 +436,16 @@ func grenade_burst(at: Vector3, flash: bool, radius: float, launcher: bool) -> v
 		fade.tween_property(core, "scale", core.scale * 1.55, 0.14)
 		fade.chain().tween_callback(core.queue_free)
 		return
-	var explosion := GRENADE_EXPLOSION.instantiate() as GPUParticles3D
-	explosion.position = center
-	explosion.scale = Vector3.ONE * scale
-	explosion.finished.connect(explosion.queue_free)
-	add_child(explosion)
-	explosion.emitting = true
-	_burst(at + Vector3.UP * 0.18, Vector3.UP, Color(0.53, 0.45, 0.34, 0.35),
-		12, 0.94, 6.3 * scale, 115.0, 0.85 * scale, Vector3.UP * 0.40, "smoke")
 
 
 func _frag_burst(at: Vector3, grounded: bool, distance_sq: float, scale_factor: float = 1.0) -> void:
 	var explosion := FRAG_EXPLOSION.instantiate() as PyroluxExplosion3D
+	# Keep the existing dust, sparks and blast light around the simulated fireball.
+	explosion.debris = 0
+	explosion.sparks = 16
+	explosion.fireball = 0
+	explosion.smoke = 0
+	explosion.shockwave = false
 	explosion.radius *= scale_factor
 	explosion.light_range *= scale_factor
 	explosion.position = to_local(at)
@@ -457,6 +455,11 @@ func _frag_burst(at: Vector3, grounded: bool, distance_sq: float, scale_factor: 
 		explosion.quality = PyroluxEffect3D.QualitySetting.LOW
 		explosion.light_enabled = false
 	add_child(explosion)
+	var fireball := REALISTIC_EXPLOSION.instantiate() as Node3D
+	fireball.heat_enabled = distance_sq <= 35.0 * 35.0
+	fireball.scale = Vector3.ONE * scale_factor
+	fireball.position = to_local(at + Vector3.UP * (1.1 * scale_factor if grounded else 0.0))
+	add_child(fireball)
 
 
 func tracer(ammo: Dictionary) -> Tracer:

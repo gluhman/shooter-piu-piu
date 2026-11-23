@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="ArrayMesh" path="res://game/maps/foliage/dense_grass_tall.res" id="1_q7p4x"]
+
+[node name="DenseGrassTall" type="MeshInstance3D" unique_id=350322148]
+cast_shadow = 0
+mesh = ExtResource("1_q7p4x")

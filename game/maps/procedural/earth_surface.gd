@@ -18,6 +18,7 @@ var _base_shape: Shape3D
 var _visual := MeshInstance3D.new()
 var _shape := CollisionShape3D.new()
 var _soil_material: Material
+var _terrain_3d: Terrain3D
 var _dirt := MeshInstance3D.new()
 var _dirt_shape := CollisionShape3D.new()
 
@@ -40,6 +41,11 @@ func configure(area: Rect2, sampler: Callable, material: Material, exposed_dirt:
 	add_child(_shape)
 	add_child(_dirt)
 	add_child(_dirt_shape)
+
+
+func use_terrain_3d(terrain: Terrain3D) -> void:
+	_terrain_3d = terrain
+	_visual.hide()
 
 
 func tile_at(point: Vector2) -> Vector2i:
@@ -77,6 +83,10 @@ func can_cut(tile: Vector2i) -> bool:
 
 
 func set_cuts(tiles: Array[Vector2i]) -> void:
+	# Excavations need the locally refined mesh and its exact collision collar.
+	if is_instance_valid(_terrain_3d):
+		_terrain_3d.visible = tiles.is_empty()
+		_visual.visible = not tiles.is_empty()
 	cuts.clear()
 	for tile in tiles:
 		cuts[tile] = true

@@ -162,6 +162,11 @@ func _apply_graphics() -> void:
 	if is_breakwater:
 		environment = _breakwater.get_node("WorldEnvironment").environment
 	if environment:
+		# Reproduced white-orb artifacts in Metal's glow pass on Terrain3D maps.
+		# Preserve temporal AA/upscaling and lighting; bypass only the bloom pass.
+		var terrain_metal := RenderingServer.get_current_rendering_driver_name() == "metal" \
+			and map_id in [MAP.FOREST_RIDGE_ID, MAP.VILLAGE_ID, MAP.REFINERY_ID]
+		environment.glow_enabled = bool(VISUAL_TEMPLATE.environment_settings.get("glow_enabled", true)) and not terrain_metal
 		environment.ssao_enabled = GameSettings.ambient_occlusion
 		_apply_indirect_lighting(environment)
 	# SDFGI replaces the ambient fill on nearby surfaces. Use a soft light from the sky side there.
@@ -979,6 +984,9 @@ func _load_arena(layout_seed: int, bot_count: int, difficulty: int, token: int =
 		return
 	_build_arena(layout_seed)
 	await _loading_stage("Подгружаем оружие и звуки…")
+	if not Net.dedicated:
+		var grass_bounds := _breakwater.get_arena_bounds() if is_instance_valid(_breakwater) else Rect2(-Vector2.ONE * arena_width() * 0.5, Vector2.ONE * arena_width())
+		MAP.TERRAIN_GRASS.install($Map, map_id, grass_bounds, layout_seed)
 	if token >= 0 and not _load_current(token):
 		return
 	$Ballistics.prepare_acoustics()

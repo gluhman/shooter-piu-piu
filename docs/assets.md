@@ -6,7 +6,8 @@
 
 | Ресурс | Использование | Источник и условия |
 | --- | --- | --- |
-| Grab3D Soldier Black / Camo | Игроки, боты и тела; зелёный камуфляж по умолчанию и для синей команды, чёрная форма только для красной команды; 774 948 треугольников и 4K PBR | [Grab3D, DanlyVostok и Poly Haven](../assets/operator/CREDITS.md). Тело и текстуры CC0, сохранённые перчатки CC BY 4.0, часы CC0 |
+| Dense lawn grass | Forest, Village and Refinery; original procedural blade meshes and shader | [Brush credits and tutorial references](../game/maps/foliage/CREDITS.md) |
+| Grab3D Soldier Black / Camo | Игроки, боты и тела; зелёный камуфляж по умолчанию и для синей команды, чёрная форма только для красной команды; 776 802 треугольников и 4K PBR | [Grab3D, DanlyVostok и Poly Haven](../assets/operator/CREDITS.md). Тело и текстуры CC0, сохранённые перчатки CC BY 4.0, часы CC0 |
 | Mesh2Motion | 14 исходных клипов, нативный риг из 66 костей и полные пальцы | [Mesh2Motion, CC0](../assets/animations/mesh2motion/CREDITS.md) |
 | Universal Animation Library | Прежние клипы, сохранены как исходные ресурсы | [Quaternius, CC0](../assets/animations/CREDITS.md) |
 | Human Character Dummy и Human Basic Motions FREE | Прежние локальные клипы; новым моделям не требуются | [Кевин Иглесиас и условия использования](../assets/animations/CREDITS.md). Подготовленная библиотека лежит в `assets/animations/local/` |
@@ -30,8 +31,9 @@
 | --- | --- | --- |
 | Impact Sounds, Metal Hit 95 и ветер Dust II | Шаги, звуки попаданий и зацикленный фон карты | [Источники и лицензии](../assets/match_audio/CREDITS.md) |
 | Записи выстрелов и механики | Выстрелы от первого лица, затворы и перезарядка; отдельная запись запуска РПГ в стерео и пространственном моно | [Авторы, исходные записи и лицензии](../assets/weapon_audio/CREDITS.md) |
-| Текстуры дыма взрыва | Кадры дыма и карты нормалей для выстрела гранатомёта | [Duarte David и порт memo1918, MIT](../assets/explosion_vfx/LICENSE.txt) |
-| PYROLUX Lite | Вспышка, огненное облако, дым, пыль, искры и ударное кольцо осколочной гранаты. У взрыва в воздухе нет слоя пыли с поверхности | [gennai](https://gennai.itch.io/pyrolux-lite), [исходный код и пресет](https://github.com/kai777123/godot-4-free-vfx/tree/15b8e21925841b10fa3e19aab99fff1038c1486b/fire), [MIT](../addons/pyrolux_fx/LICENSE.txt). Плотность, яркость и время дыма настроены в [сцене осколочного взрыва](../game/combat/frag_explosion.tscn) |
+| Прежние текстуры взрыва | Сохранённые исходные кадры дыма и карты нормалей; активные взрывы используют aerial flipbook | [Duarte David и порт memo1918, MIT](../assets/explosion_vfx/LICENSE.txt) |
+| Aerial explosion flipbook | Гранаты и гранатомёты: огненный шар, переходящий в дым, сглаживание по motion vectors, тепловой цвет, мягкие пересечения и преломление | [Unity Labs / Thomas Iche и Arnklit, CC0; подготовка и источник](../assets/explosion_vfx/aerial/CREDITS.md) |
+| PYROLUX Lite | Пыль только при взрыве у земли, искры и краткая подсветка окружения | [gennai](https://gennai.itch.io/pyrolux-lite), [MIT](../addons/pyrolux_fx/LICENSE.txt). Огненный шар и дым заменены симулированной последовательностью |
 | Дым выстрела | Короткие рассеивающиеся клубы у дула всех стволов; тот же объёмный billboard-шейдер, что у дымовой гранаты, с ветром карты и ограничением количества | Реализация Shooter: `game/combat/shot_smoke.gd`. Косметический эффект без зоны блокировки обзора ИИ |
 | Дымовая граната | Облако и зона перекрытия обзора сдвигаются по ветру Sky3D, скорость и направление заданы для каждой карты | Реализация Shooter. Общий вектор ветра для дыма использован как приём из [Free Smoke VFX от gennai](https://gennai.itch.io/free-smoke-vfx-godot-4) |
 | Ресурсы меню | Фон, музыкальная петля и звуки интерфейса | [Папка ресурсов](../assets/menu). Для этих файлов в репозитории нет сведений об авторах и лицензиях |
@@ -98,3 +100,7 @@ godot --headless --path . --script res://addons/gut/gut_cmdln.gd -gdir=res://tes
 Вторая партия пользовательских GLB: M1, RPG-7, M79, GPMG, M249, SQUAD LMG, Breacher, Shotgun, Scout, Longshot и M700. GPMG больше не использует модель M249. Сохранены исходные материалы и подвижные детали; полётная ракета соответствует заряженной. [Авторы и лицензии](../assets/detailed_weapons/CREDITS.md): Shotgun — CC BY-NC 4.0, остальные модели партии — CC BY 4.0.
 
 GPMG использует 4K PBR-карты Metal Plate 02 и Dark Wood и HDRI Studio Small 09 из Poly Haven (CC0); [источники и авторы](../assets/detailed_weapons/gpmg_pbr/CREDITS.md). В M249 оптика удаляется целыми исходными деталями, без срезов рукоятки переноса.
+
+Terrain3D 1.1.0 (`addons/terrain_3d/`), by Cory Petkovsek, Roope Palmroos and contributors, is used for Forest Ridge, Village and Refinery ground rendering. The supplied addon is unmodified; its [MIT license](../addons/terrain_3d/LICENSE.txt) is included. Map textures retain their existing map-specific credits; the Terrain3D demo is not a runtime dependency.
+
+The shared Terrain3D [short/tall grass brushes](../game/maps/foliage/CREDITS.md) derive from the existing CC0 Poly Haven Grass Medium 01 source. Both prepared mesh scenes, the brush asset library and unchanged extracted opacity/PBR textures live in `game/maps/foliage/`. Wind and per-instance color are implemented by the local grass shader.

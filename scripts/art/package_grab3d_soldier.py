@@ -3,6 +3,7 @@ import copy
 import json
 from pathlib import Path
 from build_operator_variants import GLB, ROOT
+from operator_wrist import correct_wrist
 
 ART = ROOT.parent / 'art/player'
 rig = json.loads((ROOT / 'assets/animations/mesh2motion/rig.json').read_text())
@@ -52,6 +53,7 @@ g['asset']['extras'] = {'source':'Grab3D Soldier', 'license':'CC0-1.0',
     'hands':'Existing articulated military gloves, fitted at cuffs',
     'surface':'Original 4K PBR textures; vertex alpha is exposed-skin region mask',
     'armor':'Integrated cosmetic carrier remains visible without ballistic plates'}
+correct_wrist(glb)
 glb.compact()
 for team in ['blue','red']:
     g['asset']['extras']['team'] = team

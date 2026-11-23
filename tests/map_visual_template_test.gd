@@ -50,6 +50,9 @@ func _run() -> void:
 				continue
 			var actual: Variant = world.environment.get(key)
 			var expected: Variant = TEMPLATE.environment_settings[key]
+			if key == "glow_enabled" and RenderingServer.get_current_rendering_driver_name() == "metal" \
+					and map_id in [MAP.FOREST_RIDGE_ID, MAP.VILLAGE_ID, MAP.REFINERY_ID]:
+				expected = false
 			var matches: bool = is_equal_approx(actual, expected) if expected is float else actual == expected
 			_check(matches, "%s: %s (actual %s, expected %s)" % [map_id, key, actual, expected])
 		_check(world.camera_attributes != null, "Camera profile restored")

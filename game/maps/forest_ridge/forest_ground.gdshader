@@ -25,7 +25,7 @@ void fragment() {
 	float footpath = smoothstep(0.07, 0.91, COLOR.r + breakup);
 	float stone = smoothstep(0.08, 0.35, 1.0 - upness) * smoothstep(3.5, 8.0, ground_position.y);
 	float exposed = max(footpath, max(stone * 0.82, COLOR.g * 0.55));
-	vec3 forest = texture(floor_color, uv).rgb * mix(vec3(0.74, 1.18, 0.52), vec3(0.48, 0.93, 0.32), patch);
+	vec3 forest = texture(floor_color, uv).rgb * mix(vec3(0.75, 0.98, 0.62), vec3(0.61, 0.82, 0.44), patch);
 	vec3 gravel = texture(trail_color, uv * 0.81).rgb * mix(vec3(1.13, 1.07, 0.91), vec3(0.9, 0.93, 0.88), stone);
 	ALBEDO = mix(forest, gravel, exposed) * mix(1.0, 0.60, COLOR.g);
 	NORMAL_MAP = mix(texture(floor_normal, uv).rgb, texture(trail_normal, uv * 0.81).rgb, exposed);

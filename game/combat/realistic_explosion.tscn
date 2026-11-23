@@ -1,0 +1,35 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://game/combat/realistic_explosion.gd" id="1"]
+[ext_resource type="Shader" path="res://game/combat/realistic_explosion.gdshader" id="2"]
+[ext_resource type="Texture2D" path="res://assets/explosion_vfx/aerial/explosion.png" id="3"]
+[ext_resource type="Texture2D" path="res://assets/explosion_vfx/aerial/flow.png" id="4"]
+[ext_resource type="Texture2D" path="res://assets/explosion_vfx/aerial/masks.png" id="5"]
+[ext_resource type="Shader" path="res://game/combat/explosion_heat.gdshader" id="6"]
+
+[sub_resource type="ShaderMaterial" id="Fire"]
+shader = ExtResource("2")
+shader_parameter/explosion_texture = ExtResource("3")
+shader_parameter/flow_texture = ExtResource("4")
+shader_parameter/mask_texture = ExtResource("5")
+
+[sub_resource type="ShaderMaterial" id="Heat"]
+render_priority = -1
+shader = ExtResource("6")
+
+[sub_resource type="QuadMesh" id="Quad"]
+size = Vector2(4.5, 4.5)
+
+[node name="RealisticExplosion" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Heat" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+scale = Vector3(1.3, 1.3, 1.3)
+mesh = SubResource("Quad")
+material_override = SubResource("Heat")
+
+[node name="FireSmoke" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = SubResource("Quad")
+material_override = SubResource("Fire")

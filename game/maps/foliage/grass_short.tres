@@ -1,0 +1,12 @@
+[gd_resource type="Terrain3DMeshAsset" format=3 uid="uid://disdnq476uv3x"]
+
+[ext_resource type="PackedScene" path="res://game/maps/foliage/grass_short.tscn" id="1_sf66i"]
+
+[resource]
+name = "Grass short (20 cm)"
+scene_file = ExtResource("1_sf66i")
+density = 10.0
+cast_shadows = 0
+last_lod = 0
+last_shadow_lod = 0
+lod0_range = 65.0

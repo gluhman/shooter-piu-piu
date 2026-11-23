@@ -17,6 +17,7 @@ class PerforatedCover:
 	var moving_surface: MeshInstance3D
 	var original_material: Material
 
+const TERRAIN_GRASS := preload("res://game/maps/foliage/terrain_grass.gd")
 const GRASS := preload("res://assets/arena_props/grass.glb")
 const SHRUBS := preload("res://assets/arena_props/shrubs.glb")
 const VILLAGE := preload("res://game/maps/procedural/village_layout.gd")
@@ -842,6 +843,9 @@ func _plant_transform(point: Vector2, rng: RandomNumberGenerator, min_scale: flo
 
 
 func _add_plants(scene: PackedScene, transforms: Array[Transform3D], rng: RandomNumberGenerator) -> void:
+	if scene == GRASS:
+		TERRAIN_GRASS.queue(self, transforms)
+		return
 	var source := scene.instantiate()
 	var variants := source.find_children("*", "MeshInstance3D", true, false)
 	var groups: Array[Array] = []

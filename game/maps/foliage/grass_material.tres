@@ -1,0 +1,14 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://game/maps/foliage/grass.gdshader" id="1_t4k85"]
+[ext_resource type="Texture2D" path="res://game/maps/foliage/grass_albedo.png" id="2_id5t4"]
+[ext_resource type="Texture2D" path="res://game/maps/foliage/grass_normal.jpg" id="3_3x735"]
+[ext_resource type="Texture2D" path="res://game/maps/foliage/grass_roughness.jpg" id="4_tg3uh"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_t4k85")
+shader_parameter/grass_albedo = ExtResource("2_id5t4")
+shader_parameter/grass_normal = ExtResource("3_3x735")
+shader_parameter/grass_roughness = ExtResource("4_tg3uh")
+shader_parameter/wind_strength = 0.055

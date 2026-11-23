@@ -1,0 +1,7 @@
+[gd_resource type="Terrain3DAssets" format=3 uid="uid://cp73x1uek2x8c"]
+
+[ext_resource type="Terrain3DMeshAsset" uid="uid://disdnq476uv3x" path="res://game/maps/foliage/grass_short.tres" id="1_afnrq"]
+[ext_resource type="Terrain3DMeshAsset" uid="uid://dm7t2u8664khd" path="res://game/maps/foliage/grass_tall.tres" id="2_nmot6"]
+
+[resource]
+mesh_list = Array[Terrain3DMeshAsset]([ExtResource("1_afnrq"), ExtResource("2_nmot6")])

@@ -1,6 +1,7 @@
 extends RefCounted
 
 const EarthSurface := preload("res://game/maps/procedural/earth_surface.gd")
+const TERRAIN_3D := preload("../terrain_3d_surface.gd")
 const Terrain := preload("res://game/maps/procedural/village_terrain.gd")
 const Fixtures := preload("res://game/maps/procedural/village_fixtures.gd")
 const GROUND_SHADER := preload("res://game/maps/procedural/village_ground.gdshader")
@@ -121,6 +122,14 @@ func _build_ground(half: float) -> void:
 	body.configure(Rect2(-Vector2.ONE * extent, Vector2.ONE * extent * 2.0),
 		sample, ground, dirt, terrain.make_mesh())
 	_map.add_child(body)
+	if DisplayServer.get_name() != "headless":
+		var layers: Array[Dictionary] = [{"name": "Village soil", "color": "res://assets/map_textures/village/dirt_color.jpg",
+			"normal": "res://assets/map_textures/village/dirt_normal.jpg",
+			"roughness": "res://assets/map_textures/village/dirt_roughness.jpg", "roughness_channel": 0,
+			"tint": Color(0.80, 0.80, 0.64), "scale": 0.5}]
+		var paint := func(_point: Vector2) -> Vector4: return Vector4(0, 0, 0, 1)
+		var surface := TERRAIN_3D.build(_map, body.bounds, sample, paint, layers)
+		body.use_terrain_3d(surface)
 
 
 func _build_boundary(half: float) -> void:
@@ -756,6 +765,18 @@ func _plant_forest(half: float) -> void:
 					_paint(placement * Vector3.UP * 1.2, Vector3(0.47, 2.4, 0.47) * placement.basis.get_scale(), bark)
 	_tree_batch(VILLAGE_TREE, woodland, false)
 	_tree_batch(canopy, backdrop, false)
+	# Visual-only seed grid over the unpaved lots. Keep the gameplay RNG unchanged.
+	if DisplayServer.get_name() != "headless":
+		var grass_rng := RandomNumberGenerator.new()
+		grass_rng.seed = 8153 + roundi(half * 31)
+		var steps := floori((half - 1.0) / 0.25)
+		for x in range(-steps, steps + 1):
+			for z in range(-steps, steps + 1):
+				var point := Vector2(x, z) * 0.25 + Vector2(grass_rng.randf_range(-0.035, 0.035), grass_rng.randf_range(-0.035, 0.035))
+				var patch := Rect2(point - Vector2.ONE * 0.2, Vector2.ONE * 0.4)
+				if _inside_lot(patch) or not _map._is_clear(patch, half, 1.0):continue
+				grass.append(Transform3D(Basis.IDENTITY, Vector3(point.x, ground_height(point), point.y)))
+		_map.set_meta(&"terrain_grass_exclusions", _lots.duplicate())
 	_map._add_plants(_map.GRASS, grass, _rng)
 	_map._add_plants(_map.SHRUBS, shrubs, _rng)
 

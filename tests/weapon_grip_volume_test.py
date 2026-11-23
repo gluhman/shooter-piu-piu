@@ -48,10 +48,19 @@ for team in ['blue', 'red']:
     positions = np.c_[positions, np.ones(len(positions))]
     indices = np.array(glb.read_accessor(attributes['JOINTS_0']), dtype=int)
     weights = np.array(glb.read_accessor(attributes['WEIGHTS_0']))
+    cuff = next(node for node in nodes if node.get('name') == 'Soldier_WristCuffs')
+    cuff_attrs = glb.g['meshes'][cuff['mesh']]['primitives'][0]['attributes']
+    cuff_points = np.array(glb.read_accessor(cuff_attrs['POSITION']))
+    cuff_points = np.c_[cuff_points, np.ones(len(cuff_points))]
+    cuff_joints = np.array(glb.read_accessor(cuff_attrs['JOINTS_0']), dtype=int)
+    cuff_weights = np.array(glb.read_accessor(cuff_attrs['WEIGHTS_0']))
     for side, tag in [('right', 'r'), ('left', 'l')]:
         allowed = [i for i, name in enumerate(names) if name == 'hand_' + tag or
                    any(name.startswith(digit + '_') and name.endswith('_' + tag) for digit in DIGITS)]
         selected = (weights * np.isin(indices, allowed)).sum(axis=1) > .999
+        hand_index = names.index('hand_' + tag)
+        cuff_selected = (cuff_weights * (cuff_joints == hand_index)).sum(axis=1) > .999
+        cuff_local = (binds[hand_index] @ cuff_points[cuff_selected].T).T
         local = np.einsum('nvij,nj->nvi', binds[indices[selected]], positions[selected])
         joint_indices, vertex_weights = indices[selected], weights[selected]
         rest = {name: np.linalg.inv(np.array(by_name[name]['inverseBind']).reshape(4, 4).T)
@@ -124,6 +133,8 @@ for team in ['blue', 'red']:
                 thumb_mask = (vertex_weights * np.isin(joint_indices, thumb_slots)).sum(1) > .35
                 finger_mask = (vertex_weights * np.isin(joint_indices, finger_slots)).sum(1) > .35
                 difference = np.percentile(vertices[thumb_mask, 1], 98) - np.percentile(vertices[finger_mask, 1], 98)
+                if weapon == 'ak47' and difference > -.008:
+                    failures.append(f'{team}/ak47: support thumb rises above its lowered reference')
                 if thumb_axis[2] > .2 or thumb_tip[0] > model_origin[0] + .005 or not -.020 <= difference <= .010:
                     failures.append(f'{team}/{weapon}: support thumb must stay left and level with the curled fingers ({difference*1000:.1f} mm)')
             if side == 'left' and data.get('support_kind') in ['handguard', 'vertical_grip']:
@@ -140,6 +151,10 @@ for team in ['blue', 'red']:
                         digit_masks.append((vertex_weights * np.isin(joint_indices, slots)).sum(1) > .35)
                     np.savez('/tmp/weapon-contact-skin-' + weapon + '.npz', vertices=vertices, hand_mask=hand_skin, digit_masks=np.array(digit_masks))
             planes = np.array(data['volume_planes'])
+            cuff_vertices = (matrices[hand_index] @ cuff_local.T).T[:, :3]
+            cuff_clearance = (cuff_vertices @ planes[:, :3].T + planes[:, 3]).max(axis=1).min()
+            if cuff_clearance < 0:
+                failures.append(f'{team}/{weapon}/{side}: wrist bridge intersects grasp by {-cuff_clearance*1000:.1f} mm')
             clearance = (vertices @ planes[:, :3].T + planes[:, 3]).max(axis=1)
             minimum_clearance = min(minimum_clearance, float(clearance.min()))
             if not np.isfinite(vertices).all() or clearance.min() < .001:

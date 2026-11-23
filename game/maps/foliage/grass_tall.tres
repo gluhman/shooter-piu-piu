@@ -1,0 +1,13 @@
+[gd_resource type="Terrain3DMeshAsset" format=3 uid="uid://dm7t2u8664khd"]
+
+[ext_resource type="PackedScene" path="res://game/maps/foliage/grass_tall.tscn" id="1_dfiws"]
+
+[resource]
+name = "Grass tall (70 cm)"
+id = 1
+scene_file = ExtResource("1_dfiws")
+density = 10.0
+cast_shadows = 0
+last_lod = 0
+last_shadow_lod = 0
+lod0_range = 85.0

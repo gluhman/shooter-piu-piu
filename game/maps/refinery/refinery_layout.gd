@@ -3,6 +3,7 @@ extends RefCounted
 const HEIGHTFIELD := preload("../forest_ridge/art/gdt/terrain_heightfield.gd")
 const TERRAIN_MESH := preload("../forest_ridge/art/gdt/terrain_mesh_builder.gd")
 const GROUND := preload("refinery_ground.gdshader")
+const TERRAIN_3D := preload("../terrain_3d_surface.gd")
 const LADDERS := preload("../procedural/workshop_ladders.gd")
 const SHOT_COLLISION := preload("../../combat/shot_collision.gd")
 const ART := "res://game/maps/refinery/art/"
@@ -127,21 +128,31 @@ func _terrain() -> void:
 	var builder := TERRAIN_MESH.new()
 	builder.configure({"heightfield": _heightfield, "active_total_resolution": QUADS,
 		"active_chunk_resolution": CHUNK, "active_step": 0.5, "active_half_size": HALF})
-	var ground := _ground_material() if _visuals else null
 	for z in QUADS / CHUNK:
 		for x in QUADS / CHUNK:
-			var arrays: Array = builder.build_chunk_mesh_arrays(x, z, 1)
-			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-			var colors := PackedColorArray()
-			for at: Vector3 in vertices:
-				var apron := smoothstep(-31.0, -26.0, at.x) * (1.0 - smoothstep(8.0, 15.0, at.x))
-				var path := 1.0 - smoothstep(1.25, 3.6, absf(at.x - 24.0 - 2.0 * sin(at.z * 0.15)))
-				colors.append(Color(apron, path, 0, 1))
-			arrays[Mesh.ARRAY_COLOR] = colors
-			var mesh: ArrayMesh = builder.create_mesh_from_arrays(arrays)
-			var body := _body(mesh.create_trimesh_shape(), Transform3D.IDENTITY, "concrete")
-			if _visuals:
-				_mesh(body, mesh, Transform3D.IDENTITY, ground)
+			var mesh: ArrayMesh = builder.build_chunk_mesh(x, z, 1)
+			_body(mesh.create_trimesh_shape(), Transform3D.IDENTITY, "concrete")
+	if _visuals:
+		var layers: Array[Dictionary] = []
+		for entry: Array in [[FOREST_GROUND + "forest_ground_04", "1k", Color(0.68, 0.90, 0.52)],
+				[FOREST_GROUND + "rocky_trail", "1k", Color(1.10, 1.02, 0.79)],
+				[ART + "concrete_floor_worn_001", "4k", Color(0.91, 0.90, 0.80)]]:
+			var prefix: String = entry[0]
+			var suffix: String = "_" + entry[1] + ".jpg"
+			layers.append({"name": prefix.get_file(), "color": prefix + "_diff" + suffix,
+				"normal": prefix + "_nor_gl" + suffix, "roughness": prefix + "_arm" + suffix, "tint": entry[2]})
+		var height := func(point: Vector2) -> float: return _heightfield.sample_world(point.x, point.y)
+		TERRAIN_3D.build(_root, Rect2(-Vector2.ONE * HALF, Vector2.ONE * WIDTH), height, _terrain_paint, layers)
+
+
+func _terrain_paint(point: Vector2) -> Vector4:
+	var apron := smoothstep(-31.0, -26.0, point.x) * (1.0 - smoothstep(8.0, 15.0, point.x))
+	if apron > 0.01:
+		return Vector4(0, 2, apron, 1)
+	var path := 1.0 - smoothstep(1.25, 3.6, absf(point.x - 24.0 - 2.0 * sin(point.y * 0.15)))
+	var slope := Vector2(_y(point.x + 0.5, point.y) - _y(point.x - 0.5, point.y),
+		_y(point.x, point.y + 0.5) - _y(point.x, point.y - 0.5)).length()
+	return Vector4(0, 1, maxf(path * 0.65, smoothstep(0.5, 1.5, slope) * 0.88), 1)
 
 
 func _backdrop() -> void:
@@ -353,10 +364,9 @@ func _hills() -> void:
 		_fit_rock(body, rocks[variant], size)
 	if not _visuals:
 		return
-	var grass := _meshes(load("res://assets/arena_props/grass.glb"))
 	var shrubs := _meshes(load("res://assets/arena_props/shrubs.glb"))
 	var trees: Mesh = load("res://assets/arena_props/village/village_tree.res")
-	_scatter(grass, 6400, Vector2(1.8, 4.0))
+	_lawn_grass()
 	_scatter(shrubs, 420, Vector2(0.8, 1.65))
 	var ferns := _meshes(load("res://game/maps/forest_ridge/art/fern/fern_02_1k.gltf"))
 	_scatter(ferns, 630, Vector2(1.2, 2.2))
@@ -377,7 +387,20 @@ func _hills() -> void:
 		_multimesh(trees, transforms, null, true)
 
 
-func _scatter(meshes: Array[Mesh], count: int, size: Vector2, material: Material = null) -> void:
+func _lawn_grass() -> void:
+	var placements: Array[Transform3D] = []
+	var lawn_rng := RandomNumberGenerator.new()
+	lawn_rng.seed = 37619
+	for ix in range(-156, 157):
+		for iz in range(-158, 159):
+			var x := ix * 0.25 + lawn_rng.randf_range(-0.035, 0.035)
+			var z := iz * 0.25 + lawn_rng.randf_range(-0.035, 0.035)
+			if (x > -31.0 and x < 15.0) or absf(x - 24.0) < 3.1 or (x < 21.0 and absf(z) < 3.3):continue
+			placements.append(Transform3D(Basis.IDENTITY, Vector3(x, _y(x, z) - 0.015, z)))
+	_map.TERRAIN_GRASS.queue(_root, placements)
+
+
+func _scatter(meshes: Array[Mesh], count: int, size: Vector2, material: Material = null, grass := false) -> void:
 	var patches: Dictionary = {}
 	for index in count:
 		var x := _rng.randf_range(15.0, 39.4) if index % 5 else _rng.randf_range(-39.0, -31.0)
@@ -391,6 +414,9 @@ func _scatter(meshes: Array[Mesh], count: int, size: Vector2, material: Material
 		patches[id].append(Transform3D(Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3.ONE * scale),
 			Vector3(x, _y(x, z) - 0.035, z)))
 	for id: Vector3i in patches:
+		if grass:
+			_map.TERRAIN_GRASS.queue(_root, patches[id])
+			continue
 		_multimesh(meshes[id.z], patches[id], material, false)
 
 

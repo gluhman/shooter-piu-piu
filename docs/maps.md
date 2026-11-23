@@ -80,7 +80,7 @@ game/maps/
 
 Арена имеет фиксированный размер 100 × 100 м. Четыре угловые поляны содержат по основному маркеру старта и дополнительные позиции для больших матчей. Тропы образуют кольцо и сходятся у каменных руин. На севере проходит хребет, а в двух низинах по сторонам от руин есть канавы с мелководьем и пологими переходами.
 
-Генератор рельефа использует GDT Terrain Generator. Коллизии и высоты спавнов создаются из той же карты высот. Проверка `arena_layout_smoke.gd` проверяет размер, маркеры, свободные стартовые позиции, коллизии вершины и канавы и связность маршрутов до ящиков снабжения. [Ресурсы карты](../game/maps/forest_ridge/CREDITS.md).
+Terrain3D 1.1.0 отображает рельеф с шагом 0,5 м, лесной почвой и нарисованными гравийными тропами. Процедурная карта высот GDT по-прежнему определяет коллизии, высоты спавнов и навигацию. Горизонтальное мелководье обрезается по высоте дна канав; берега, сужения и сухие переходы следуют тому же рельефу. Проверка `arena_layout_smoke.gd` проверяет размер, маркеры, свободные стартовые позиции, коллизии вершины и канавы и связность маршрутов до ящиков снабжения. [Ресурсы карты](../game/maps/forest_ridge/CREDITS.md).
 
 ## НПЗ
 
@@ -111,3 +111,29 @@ game/maps/
 Every map retains its original background, background brightness, sky orientation, time of day and camera exposure. This includes Breakwater's freight panorama, Station's night sky, Farpost's overcast sky, Refinery's hilltop panorama, Office's dark color background and the original dynamic skies on other maps. A background without a sky uses color ambient fill. Local fixtures, bounce probes and gameplay wind remain map-owned. Graphics menu controls still apply.
 
 Run `godot --headless --path . --script res://tests/map_visual_template_test.gd` to check every map and background preservation. Run without `--headless` and add `-- --screenshots` for rendered screenshots at `/tmp/piupiu-forest-template-XX.png`.
+
+## Terrain3D: Forest, Village and Refinery
+
+`terrain_3d_surface.gd` builds native Terrain3D height, control and color regions from the maps' existing deterministic half-meter heightfields. Forest paints gravel trails and darker ditch beds; Refinery paints concrete in the yard and gravel on paths and slopes; Village uses its existing soil textures. Existing textures are packed into cached 512 px albedo/height and normal/roughness arrays at runtime. No demo content is required.
+
+Terrain3D collision is disabled: the original static terrain collision remains authoritative for navigation, shots and gameplay. Spawns, supplies, map sizes, construction seeds and height sampling retain their existing contracts. Village switches to its original locally refined mesh while excavations are present, preserving trench collars and collision; clearing excavations restores Terrain3D. The distant Village plane and Refinery backdrop remain map-owned.
+
+Run `godot --path . --script res://tests/terrain_3d_map_test.gd -- --screenshots` with Forward+ for rendered checks of Forest, all three Village sizes and Refinery. Captures are saved as `/tmp/terrain3d-*.png`, including a close view of Forest water. Also run `tests/village_layout_test.gd`, `tests/arena_layout_smoke.gd` and `tests/fieldworks_test.gd` headlessly for navigation, collision and excavation regressions.
+
+## Terrain3D mesh grass on outdoor maps
+
+All eleven outdoor maps use the shared `foliage/terrain_grass.gd` installer. Existing Forest, Village, Refinery, Farpost and container-yard planting masks feed Terrain3D's native instancer; Dust II, Workshop, Breakwater and the training range receive sparse perimeter patches. Office and Station receive no grass. Forest, Village and Refinery use jittered 25 cm planting grids clipped to existing grass masks, with short overlapping blades forming lawns and only occasional tall accents. Terrain3D ground rendering remains limited to the previously converted maps; the other maps use a grass-only Terrain3D host with terrain render layers disabled and their existing ground surfaces retained.
+
+The two reusable [brush assets](../game/maps/foliage/CREDITS.md) are short grass (20 cm) and tall grass (70 cm), with local scale variation and taller tufts grouped using seeded noise. Industrial and desert vegetation uses smaller tufts; Dust II adds a dry tint. Root and overhead raycasts reject props, cliffs and covered interiors; the lawn brushes also follow grassy slopes. A 2.4 m radius around starting positions stays clear. Grass is decorative, has no collision, and is skipped on headless/dedicated servers. Existing navigation and terrain collision stay authoritative.
+
+For editor painting, load `res://game/maps/foliage/grass_brushes.tres` into a Terrain3D asset library, or add either `grass_short.tscn` or `grass_tall.tscn` as a mesh asset in the Meshes dock. Select the asset and use Terrain3D's mesh brush; the prepared objects have their roots at the origin.
+
+Run `godot --path . --script res://tests/terrain_grass_test.gd -- --screenshots` to verify both brush objects, native instance counts, all outdoor maps, clear spawns and indoor exclusions. Close-up captures are saved to `/tmp/terrain-grass-XX.png`.
+
+Forest ditch water uses shoreline-locked waves, depth tint, Fresnel lighting, refraction and a bounded pool of eight expanding footstep ripples. Moving players and bots disturb submerged areas; standing actors do not continuously emit ripples. Water remains decorative and follows the original clipped banks and dry crossings. Run `tests/forest_water_test.gd` with a rendering display to verify shoreline exclusions, actor wakes and visible animation.
+
+The lawn brushes use 7–14 mm tapered blades with a muted olive palette and occasional straw-coloured tips. Forest and Refinery ground tint uses a restrained green/olive balance instead of the earlier saturated yellow-green. Planting masks, root spacing, collision and navigation are retained.
+
+Grass has no specular highlights. Terrain3D ground layers use a +0.30 roughness adjustment and 0.65 normal-map depth to keep dry soil matte and reduce isolated white sun-reflection dots. Existing indirect-lighting settings remain active.
+
+On Metal, Forest, Village and Refinery bypass the glow pass to avoid reproduced intermittent white-orb artifacts; temporal upscaling and indirect lighting stay enabled. Returning to another map restores its shared glow profile. Grass tip colour is anchored to undeformed geometry, with consistent lighting on both sides of fine blades.
