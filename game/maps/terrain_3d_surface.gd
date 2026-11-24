@@ -10,7 +10,7 @@ static var _textures: Dictionary = {}
 
 
 static func build(parent: Node3D, bounds: Rect2, height: Callable, paint: Callable,
-		layers: Array[Dictionary]) -> Terrain3D:
+		layers: Array[Dictionary], holes: Callable = Callable(), texture_size: int = TEXTURE_SIZE) -> Terrain3D:
 	var terrain := SURFACE.new()
 	terrain.name = "Terrain3DSurface"
 	terrain.region_size = REGION
@@ -28,11 +28,13 @@ static func build(parent: Node3D, bounds: Rect2, height: Callable, paint: Callab
 		asset.name = layer["name"]
 		asset.albedo_color = layer.get("tint", Color.WHITE)
 		asset.uv_scale = layer.get("scale", 0.39)
+		if layer.has("detile_rotation"):asset.detiling_rotation=layer.detile_rotation
+		if layer.has("detile_shift"):asset.detiling_shift=layer.detile_shift
 		# Dry ground should not produce pinprick sun reflections through tiny blades.
 		asset.roughness = 0.30
 		asset.normal_depth = 0.65
-		asset.albedo_texture = _packed(layer["color"], "", 0)
-		asset.normal_texture = _packed(layer["normal"], layer["roughness"], layer.get("roughness_channel", 1))
+		asset.albedo_texture = _packed(layer["color"], "", 0, texture_size)
+		asset.normal_texture = _packed(layer["normal"], layer["roughness"], layer.get("roughness_channel", 1), texture_size)
 		terrain.assets.set_texture_asset(index, asset)
 	parent.add_child(terrain)
 	# Native initialization creates the data and collision objects on tree entry.
@@ -56,7 +58,7 @@ static func build(parent: Node3D, bounds: Rect2, height: Callable, paint: Callab
 					heights.set_pixel(x, z, Color(height.call(sample), 0, 0, 1))
 					var brush: Vector4 = paint.call(sample)
 					var bits := Terrain3DUtil.enc_base(int(brush.x)) | Terrain3DUtil.enc_overlay(int(brush.y)) \
-						| Terrain3DUtil.enc_blend(roundi(clampf(brush.z, 0, 1) * 255)) | Terrain3DUtil.enc_hole(not inside)
+						| Terrain3DUtil.enc_blend(roundi(clampf(brush.z, 0, 1) * 255)) | Terrain3DUtil.enc_hole(not inside or (holes.is_valid() and holes.call(sample)))
 					controls.set_pixel(x, z, Color(Terrain3DUtil.as_float(bits), 0, 0, 1))
 					colors.set_pixel(x, z, Color(brush.w, brush.w, brush.w, 0.5))
 			var region := Terrain3DRegion.new()
@@ -69,14 +71,14 @@ static func build(parent: Node3D, bounds: Rect2, height: Callable, paint: Callab
 	return terrain
 
 
-static func _packed(rgb_path: String, roughness_path: String, channel: int) -> Texture2D:
-	var key := rgb_path + ":" + roughness_path + ":" + str(channel)
+static func _packed(rgb_path: String, roughness_path: String, channel: int, texture_size: int = TEXTURE_SIZE) -> Texture2D:
+	var key := rgb_path + ":" + roughness_path + ":" + str(channel) + ":" + str(texture_size)
 	if _textures.has(key):
 		return _textures[key]
-	var rgb := _image(rgb_path)
-	var roughness := _image(roughness_path) if not roughness_path.is_empty() else null
+	var rgb := _image(rgb_path, texture_size)
+	var roughness := _image(roughness_path, texture_size) if not roughness_path.is_empty() else null
 	if roughness == null:
-		roughness = Image.create(TEXTURE_SIZE, TEXTURE_SIZE, false, Image.FORMAT_RGBA8)
+		roughness = Image.create(texture_size, texture_size, false, Image.FORMAT_RGBA8)
 		roughness.fill(Color(0.5, 0.5, 0.5, 1))
 	var packed := Terrain3DUtil.pack_image(rgb, roughness, null, false, false, false, channel)
 	packed.generate_mipmaps()
@@ -85,11 +87,11 @@ static func _packed(rgb_path: String, roughness_path: String, channel: int) -> T
 	return texture
 
 
-static func _image(path: String) -> Image:
+static func _image(path: String, texture_size: int = TEXTURE_SIZE) -> Image:
 	var texture := load(path) as Texture2D
 	var image := texture.get_image()
 	if image.is_compressed():
 		image.decompress()
 	image.convert(Image.FORMAT_RGBA8)
-	image.resize(TEXTURE_SIZE, TEXTURE_SIZE, Image.INTERPOLATE_LANCZOS)
+	image.resize(texture_size, texture_size, Image.INTERPOLATE_LANCZOS)
 	return image

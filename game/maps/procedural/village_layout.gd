@@ -126,9 +126,9 @@ func _build_ground(half: float) -> void:
 		var layers: Array[Dictionary] = [{"name": "Village soil", "color": "res://assets/map_textures/village/dirt_color.jpg",
 			"normal": "res://assets/map_textures/village/dirt_normal.jpg",
 			"roughness": "res://assets/map_textures/village/dirt_roughness.jpg", "roughness_channel": 0,
-			"tint": Color(0.80, 0.80, 0.64), "scale": 0.5}]
+			"tint": Color(0.80, 0.80, 0.64), "scale": 0.5,"detile_rotation":0.12,"detile_shift":0.6}]
 		var paint := func(_point: Vector2) -> Vector4: return Vector4(0, 0, 0, 1)
-		var surface := TERRAIN_3D.build(_map, body.bounds, sample, paint, layers)
+		var surface := TERRAIN_3D.build(_map, body.bounds, sample, paint, layers, Callable(), 1024)
 		body.use_terrain_3d(surface)
 
 
@@ -769,10 +769,10 @@ func _plant_forest(half: float) -> void:
 	if DisplayServer.get_name() != "headless":
 		var grass_rng := RandomNumberGenerator.new()
 		grass_rng.seed = 8153 + roundi(half * 31)
-		var steps := floori((half - 1.0) / 0.25)
+		var steps := floori((half - 1.0) / _map.TERRAIN_GRASS.LAWN_SPACING)
 		for x in range(-steps, steps + 1):
 			for z in range(-steps, steps + 1):
-				var point := Vector2(x, z) * 0.25 + Vector2(grass_rng.randf_range(-0.035, 0.035), grass_rng.randf_range(-0.035, 0.035))
+				var point: Vector2 = Vector2(x, z) * _map.TERRAIN_GRASS.LAWN_SPACING + Vector2(grass_rng.randf_range(-0.035, 0.035), grass_rng.randf_range(-0.035, 0.035))
 				var patch := Rect2(point - Vector2.ONE * 0.2, Vector2.ONE * 0.4)
 				if _inside_lot(patch) or not _map._is_clear(patch, half, 1.0):continue
 				grass.append(Transform3D(Basis.IDENTITY, Vector3(point.x, ground_height(point), point.y)))

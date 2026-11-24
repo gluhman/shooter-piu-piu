@@ -24,6 +24,7 @@ var _lids: Array[Node3D] = []
 var _open: Array[bool] = []
 var _crate_respawns: Array[float] = []
 var _crate_drop_ids: Array[int] = []
+var _authored_rewards: Array = []
 var _market_crate_count := 0
 var _market_drops: Dictionary[int, int] = {}
 var _lid_tweens: Dictionary[int, Tween] = {}
@@ -41,7 +42,8 @@ var _hover := Vector2i(-1, -1)
 @onready var _hud := get_node("../HUD")
 
 
-func build_crates(placements: Array[Transform3D], market_crate_count := 0) -> void:
+func build_crates(placements: Array[Transform3D], market_crate_count := 0, authored_rewards: Array = []) -> void:
+	_authored_rewards = authored_rewards.duplicate(true)
 	_market_crate_count = market_crate_count
 	for placement in placements:
 		var crate := StaticBody3D.new()
@@ -119,6 +121,7 @@ func clear_map() -> void:
 	_crate_respawns.clear()
 	_crate_drop_ids.clear()
 	_market_crate_count = 0
+	_authored_rewards.clear()
 	_lid_tweens.clear()
 
 
@@ -415,7 +418,18 @@ func _open_crate(actor: Node, index: int, at: Vector3) -> void:
 	if kind == Kind.AMMO and not _match.allows_weapon(weapon):
 		kind = Kind.MEDKIT
 	var amount := 1
-	if index < _market_crate_count:
+	if index < _authored_rewards.size():
+		var reward: Dictionary = _authored_rewards[index]
+		kind = Kind.get(String(reward.kind).to_upper(), Kind.AMMO)
+		weapon = reward.get("weapon", "")
+		amount = int(reward.get("amount", 1))
+		if kind == Kind.WEAPON:
+			if _match.allows_weapon(weapon):amount = int(WEAPON.WEAPONS[weapon].mag)
+			else:
+				kind = Kind.ARMOR
+				weapon = ""
+		_market_drops[index] = _next_id
+	elif index < _market_crate_count:
 		var reward: Array = MARKET_REWARDS[index]
 		kind = reward[0]
 		weapon = reward[1]

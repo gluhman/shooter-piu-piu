@@ -22,12 +22,12 @@ func _run() -> void:
 	var arena := (load("res://game/match/arena.tscn") as PackedScene).instantiate()
 	root.add_child(arena)
 	current_scene = arena
-	var maps: Array = [11, 3, 12, 9, 0, 1, 2, 4, 5, 6, 7, 8, 10]
+	var maps: Array = [11, 13, 3, 12, 9, 0, 1, 2, 4, 5, 6, 7, 8, 10]
 	var args := OS.get_cmdline_user_args()
 	if "--maps" in args:
 		maps = Array(args[args.find("--maps") + 1].split(",")).map(func(id: String) -> int: return int(id))
 	for id: int in maps:
-		await arena.start_solo(0, 1, 0, id, Vector2i.ZERO, 2)
+		await arena.start_solo(0, 1, 0, id, Vector2i.ZERO, 2, true, false, -1, 2 if id==13 else 0)
 		if "--screenshots" in args:
 			root.size = Vector2i(1600, 960)
 			root.always_on_top = true
@@ -42,7 +42,7 @@ func _run() -> void:
 			_check(counts.x > 0 and counts.y > 0, "%s has short and tall grass (%s)" % [MAP.MAP_NAMES[id], counts])
 			if id in GRASS.DENSE_MAPS:
 				_check(map.get_meta(&"terrain_grass_style") == "dense_blades", "Requested map uses tutorial-style blade grass")
-				_check(counts.x + counts.y > {11: 80000, 3: 20000, 12: 12000}[id], "Lawn covers plantable areas with closely spaced tufts")
+				_check(counts.x + counts.y > {11: 160000, 13: 100000, 9: 30000, 3: 40000, 12: 24000}[id], "Lawn covers plantable areas with closely spaced tufts")
 				_check(counts.x > (counts.x + counts.y) * 0.90, "Short lawn dominates instead of scattered tall clumps")
 			var terrains := map.find_children("*", "Terrain3D", true, false)
 			_check(terrains.size() == 1, "One Terrain3D instancer per outdoor map")
@@ -53,7 +53,9 @@ func _run() -> void:
 				if id in GRASS.DENSE_MAPS:
 					var blade_mesh := terrain.assets.get_mesh_asset(0).get_mesh()
 					_check(blade_mesh.resource_name.begins_with("Dense tapered"), "Dense grass uses shaped opaque blades")
-					_check(blade_mesh.get_faces().size() >= 300, "Lawn tufts contain enough blades to overlap")
+					_check(blade_mesh.get_faces().size() >= 240, "Lawn tufts contain enough blades to overlap")
+					var brush: Terrain3DMeshAsset = terrain.assets.get_mesh_asset(0)
+					_check(brush.last_lod==1 and brush.get_mesh(1).get_faces().size()<=blade_mesh.get_faces().size()/3,"Distant lawn uses a cheaper native LOD")
 				_check(terrain.assets.get_mesh_asset(0).get_instance_count() == counts.x
 					and terrain.assets.get_mesh_asset(1).get_instance_count() == counts.y, "Native instance counts match brush placements")
 				_check(terrain.collision_mode == Terrain3DCollision.DISABLED, "Grass does not add collision")

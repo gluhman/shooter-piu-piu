@@ -18,7 +18,7 @@ func _run() -> void:
 		for arena in MAP.MAP_NAMES.size():
 			for size in MAP.SIZE_WIDTHS.size():
 				if not LAYOUT.supports(mode, arena, size):
-					if size != 0 and arena not in [MAP.OFFICE_ID, MAP.TEST_RANGE_ID, MAP.REFINERY_ID]:
+					if size != 0 and arena not in [MAP.OFFICE_ID, MAP.TEST_RANGE_ID, MAP.REFINERY_ID, MAP.FOREST_HILL_ID]:
 						_check(false, "unexpected exclusion")
 					continue
 				await _test_layout(mode, arena, size)
@@ -32,7 +32,7 @@ func _test_layout(mode: int, arena: int, size: int) -> void:
 	map.set_script(MAP)
 	root.add_child(map)
 	var authored: Node3D
-	var width: float = MAP.FOREST_RIDGE.WIDTH if arena == MAP.FOREST_RIDGE_ID else MAP.SIZE_WIDTHS[size]
+	var width: float = MAP.FOREST_RIDGE.WIDTH if arena in [MAP.FOREST_RIDGE_ID, MAP.FOREST_HILL_ID] else MAP.SIZE_WIDTHS[size]
 	if arena == MAP.REFINERY_ID:
 		width = MAP.REFINERY.WIDTH
 	if arena == MAP.BREAKWATER_ID:
@@ -47,7 +47,10 @@ func _test_layout(mode: int, arena: int, size: int) -> void:
 	var fixtures := map.get_node_or_null("VillageFixtures")
 	if fixtures:
 		fixtures.set_door_collision(false)
+	var buried_arches := get_nodes_in_group(&"buried_tunnel_arch")
+	for arch: StaticBody3D in buried_arches:arch.collision_layer = 0
 	NavigationServer3D.parse_source_geometry_data(mesh, geometry, map)
+	for arch: StaticBody3D in buried_arches:arch.collision_layer = 1
 	NavigationServer3D.bake_from_source_geometry_data(mesh, geometry)
 	if fixtures:
 		fixtures.set_door_collision(true)
@@ -88,10 +91,11 @@ func _test_layout(mode: int, arena: int, size: int) -> void:
 		for center: Vector3 in layout.centers:
 			var covers := 0
 			for body in get_nodes_in_group(&"hill_cover"):
-				if map.is_ancestor_of(body) and LAYOUT.contains(body.global_position, center, layout.radius):
+				if map.is_ancestor_of(body) and (LAYOUT.contains(body.global_position, center, layout.radius) or arena==MAP.FOREST_HILL_ID):
 					covers += 1
-			if covers != 1:
-				notes.append("expected one cover prop inside hill %s, found %d" % [center, covers])
+			var expected_cover := 16 if arena==MAP.FOREST_HILL_ID else 1
+			if covers != expected_cover:
+				notes.append("expected %d hill cover pieces, found %d" % [expected_cover, covers])
 			var entries := 0
 			var reach := minf(2.3, layout.radius - 0.30)
 			for direction in 12:

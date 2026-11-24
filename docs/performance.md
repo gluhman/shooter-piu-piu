@@ -1,5 +1,20 @@
 # Графика и замеры производительности
 
+## Shared surfaces and denser lawns, 2.4.0
+
+The graphical `tests/map_surface_review.gd` passed on all 14 maps at an actual 2560 x 1440 framebuffer, Godot 4.7.2, Metal / Forward+, Apple M5 Pro. UV projection, PBR channels, bullet holes and restoring finishes on moving/static cover were checked. The grass suite passed on all 12 outdoor maps; indoor maps retain their exclusions.
+
+At 18 cm spacing and 32 blades per tuft instead of 25 cm / 36 blades, nominal blade density is about 1.71 times higher. Near tufts use 96 triangles instead of 180, keeping nominal near geometry cost per area similar. The far LOD uses 32 triangles and retains every blade. Forest Bastion previously used 50 cm spacing, so its density increase is larger. Large-map totals, including tall accents and planting exclusions: Forest 256,749; Bastion 174,837; Village 77,098; Refinery 57,372; Farpost 81,302.
+
+Focused Forest LOD check: one fresh process per variant, identical density and camera, 120 frames after warmup, no bots, FSR 2.2 at 100% scale, VSync and frame cap disabled.
+
+| Metric | Near mesh only | Native far LOD |
+| --- | ---: | ---: |
+| Median frame | 25.07 ms | 23.42 ms |
+| p95 frame | 25.55 ms | 23.94 ms |
+
+This short fixed-view check does not compare the old and new versions of every map or measure a full multiplayer match. The PBR finish adds fragment work; 1K terrain arrays use more memory than the old 512 px arrays. After several Terrain3D map switches, `RENDER_TEXTURE_MEM_USED` overflowed, so that counter is unsuitable for comparing memory in the sequential suite. The seven Texture RID shutdown warning remains. Editor import reported no GDScript parse errors; the Dummy renderer still reported resources in use at shutdown.
+
 ## Настройки графики
 
 - **Качество изображения.** Масштаб 3D от 50% до 100%, билинейное масштабирование, FSR 1.0 и FSR 2.2. HUD и меню рисуются с разрешением окна. Сглаживание можно выключить или выбрать 2× MSAA, 4× MSAA, FXAA либо TAA. При FSR 2.2 отдельное сглаживание отключается.
@@ -107,7 +122,7 @@ Maps use the original Forest Ridge lighting and effects preset while retaining t
 
 ## Dense lawn and Forest water verification
 
-Reproduce with Godot 4.7.2 Forward+ using `tests/terrain_grass_test.gd -- --maps 11,3,12 --screenshots` and `tests/forest_water_test.gd`. The rendered checks used Apple M5 Pro / Metal 4 at a 1600×960 window. These are correctness checks, not an FPS benchmark. Lawn roots are spaced 25 cm in plantable areas; each short tuft uses 36 five-triangle blades. Terrain3D batches and distance-culls the instances; grass casts no shadows, adds no collision and is omitted on headless servers. Water keeps at most eight visual ripples, with actor sampling every 150 ms.
+Reproduce with Godot 4.7.2 Forward+ using `tests/terrain_grass_test.gd -- --maps 11,3,12 --screenshots` and `tests/forest_water_test.gd`. The rendered checks used Apple M5 Pro / Metal 4 at a 1600×960 window. These are correctness checks, not an FPS benchmark. In that earlier check, lawn roots were spaced 25 cm and each short tuft used 36 five-triangle blades. The current 18 cm / 32-blade geometry and LOD measurements are documented above. Terrain3D batches and distance-culls the instances; grass casts no shadows, adds no collision and is omitted on headless servers. Water keeps at most eight visual ripples, with actor sampling every 150 ms.
 
 ## Explosion presentation checks
 
@@ -122,3 +137,24 @@ The glowing dots were reproduced at 2890×1741 on Apple M5 Pro / Metal 4 using t
 The grass shader previously hashed the wind-deformed vertex position to choose dry tips. Wind and distance fading therefore changed the palette every frame. Colour selection now uses undeformed positions, and volume lighting uses the same world-up normal on both sides of each blade to prevent view-dependent brightness flips. Close-up captures are `/tmp/grass-stable-closeup-*.png`.
 
 Blast smoke lifetime is now seven seconds with final fading after it rises. The rendered explosion test checks grenade and RPG lift above three metres while opacity remains full, late fading above five metres, independent animation state and cleanup. Longer smoke lifetime increases the number of visible clouds during repeated blasts; no new FPS benchmark is claimed.
+
+## Forest Bastion validation
+
+The 100 × 100 m hill uses a half-metre collision grid, locally refined 12.5 cm ground around tunnel openings, and native Terrain3D presentation, three batched fir variants and shared short/tall grass brushes. Underground floors are separate from buried arches during navigation baking; the full arches retain physics collision. Decorative mountain/forest backdrops have no collision. Headless servers skip grass, tree meshes, HDRI and high-resolution tunnel textures.
+
+Reproduce the rendered review with Godot 4.7.2 Forward+ on Metal at 1600 × 960: `godot --path . --script res://tests/forest_hill_test.gd`. It captures the summit, an interior and an overview after walking four passages and twelve surface climbs. This is a visual/traversal check, not a hardware FPS benchmark. No FPS or memory claim is inferred from it. Existing shared graphics settings and the Terrain3D Metal glow workaround apply.
+
+Forest Bastion rock collision is a fitted static triangle mesh shared by movement, shots and navigation. Shapes are reused for repeated variant/size pairs. Headless builds load the source rock geometry during construction to bake the same shapes as rendered clients; there are no server-only bounding boxes. No dynamic concave bodies are created.
+
+## НПЗ: материалы и локальный VoxelGI, 2.4.0
+
+Короткий сравнительный прогон `tests/refinery_graphics_test.gd -- --performance`: Godot 4.7.2, Metal Forward+, Apple M5 Pro, фактический буфер 2560 × 1440, FSR 2.2 при масштабе 100%, без VSync и лимита кадров, без ботов. По 90 кадров в трёх фиксированных видах после прогрева. Все новые материалы присутствуют в обоих вариантах; сравнивается переключатель непрямого освещения, а не полная старая/новая версия карты.
+
+| Показатель | Непрямое освещение выключено | Включено |
+| --- | ---: | ---: |
+| Медиана кадра | 13,05 мс | 13,79 мс |
+| p95 кадра | 16,02 мс | 20,77 мс |
+| Средние вызовы отрисовки | 1366 | 1368 |
+| Счётчик памяти текстур | 1186 МиБ | 1186 МиБ |
+
+Это один прогон; результаты не характеризуют сетевой матч с бойцами. Два запечённых объёма subdivision 128 занимают около 1,1 МиБ на диске. Массивы грунта 2K и кэш исходных изображений увеличивают расход видеопамяти относительно прежних 512 px. При завершении графических CLI-проверок движок сообщает о семи Texture RID; ошибок шейдера и ошибок исполнения во время проверки нет. Этот shutdown-warning не следует считать доказательством отсутствия утечки при длительной игре.

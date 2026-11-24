@@ -15,6 +15,8 @@ var _markers := Control.new()
 var _map: Node3D
 var _player: Node3D
 var _outline: Array[PackedVector2Array] = []
+var _tunnels: Array = []
+var _routes: Array = []
 var _shots: Dictionary[int, Vector4] = {}
 var _station_floors: Array[Array] = []
 var _floor := 0
@@ -45,6 +47,8 @@ func set_layout(map: Node3D, width: float, bounds: Rect2 = Rect2()) -> void:
 	_map = map
 	_width = width
 	_outline = map.minimap_outline(bounds)
+	_tunnels = map.get_meta(&"minimap_tunnels", [])
+	_routes = map.get_meta(&"minimap_routes", [])
 	_floor = 0
 	_station_floors.clear()
 	if map.has_node("Station"):
@@ -117,6 +121,18 @@ func _draw_layout() -> void:
 		_layout.draw_colored_polygon(points, Color("#496371"))
 		points.append(points[0])
 		_layout.draw_polyline(points, Color("#7995a3"), 0.8, true)
+	for route: PackedVector2Array in _routes:
+		var trail := PackedVector2Array()
+		for point in route:trail.append(_project(point))
+		_layout.draw_polyline(trail,Color("#b7b5a5"),1.0,true)
+	for path: Array in _tunnels:
+		for i in range(path.size()-1):
+			var a: Vector3 = path[i]
+			var b: Vector3 = path[i+1]
+			_layout.draw_dashed_line(_project(Vector2(a.x,a.z)),_project(Vector2(b.x,b.z)),Color("#e3c46b"),1.2,3.0)
+		for end in [0,path.size()-1]:
+			var p: Vector3 = path[end]
+			_layout.draw_circle(_project(Vector2(p.x,p.z)),2.0,Color("#e3c46b"),false,1.0)
 	if not _station_floors.is_empty():
 		_layout.draw_string(ThemeDB.fallback_font, Vector2(5, 14), "ПАЛУБА %02d" % _floor,
 			HORIZONTAL_ALIGNMENT_LEFT, -1.0, 12, UI.ACCENT)

@@ -1,6 +1,7 @@
 extends RefCounted
 ## Objective footprints and covered deployment lanes, by arena variant.
 
+const FOREST_HILL := preload("res://game/maps/forest_hill/forest_hill_layout.gd")
 const PLACEMENTS := preload("res://game/maps/objective_placements.gd")
 const REFINERY := preload("res://game/maps/refinery/refinery_layout.gd")
 const STATION_SCENERY := preload("res://game/maps/station/station_scenery.gd")
@@ -16,6 +17,8 @@ const TEAMS := [Color("#409df3"), Color("#f46861")]
 
 
 static func supports(mode: int, arena: int, size: int) -> bool:
+	if arena == FOREST_HILL.MAP_ID:
+		return mode == HILL and size == 2
 	if mode < HILL:
 		return true
 	return mode <= DEFUSE and PLACEMENTS.MAPS.get("%d-%d" % [arena, size], {}).has(str(mode))
@@ -24,6 +27,8 @@ static func supports(mode: int, arena: int, size: int) -> bool:
 static func reason(mode: int, arena: int, size: int) -> String:
 	if supports(mode, arena, size):
 		return ""
+	if arena == FOREST_HILL.MAP_ID:
+		return "Лесной бастион доступен только в режиме «Царь горы», размер 100 × 100 м."
 	if arena == REFINERY.MAP_ID:
 		return "Для НПЗ доступен один размер арены."
 	if arena in [7, 8] or size == 0:
@@ -32,6 +37,7 @@ static func reason(mode: int, arena: int, size: int) -> String:
 
 
 static func _placement(mode: int, arena: int, size: int) -> Dictionary:
+	if arena == FOREST_HILL.MAP_ID:return FOREST_HILL.placement()
 	return PLACEMENTS.MAPS["%d-%d" % [arena, size]][str(mode)]
 
 

@@ -56,6 +56,10 @@ func configure(match_node: Node3D, layout: Dictionary, roster_size: int, seed_va
 			wave = [3, 4, 5, 6][preset] * 60
 			rules = HILL.new()
 			rules.setup(seed_value, preset, game.objective_hill_first)
+			if centers.size() == 1:
+				rules.order.assign([0])
+				rules.active = 0
+				rules.next = -1
 		LAYOUT.FLAG:
 			target = [2, 3, 3, 3][preset]
 			wave = [4, 4, 5, 6][preset] * 60

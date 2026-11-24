@@ -6,8 +6,9 @@ const BALANCE := preload("res://game/combat/combat_balance.gd")
 const ASSET_ROOT := "res://game/maps/foliage/"
 const CANDIDATES := &"terrain_grass_candidates"
 const REGION := 256
-const OUTDOOR_MAPS := [0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 12]
-const DENSE_MAPS := [3, 11, 12]
+const OUTDOOR_MAPS := [0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13]
+const DENSE_MAPS := [3, 9, 11, 12, 13]
+const LAWN_SPACING := 0.18
 
 
 static func queue(parent: Node3D, placements: Array) -> void:
@@ -51,7 +52,7 @@ static func install(map: Node3D, map_id: int, bounds: Rect2, layout_seed: int) -
 		if not bounds.has_point(Vector2(at.x, at.z)):
 			continue
 		if dense:
-			var cell := Vector2i(floori(at.x / 0.16), floori(at.z / 0.16))
+			var cell := Vector2i(floori(at.x / 0.12), floori(at.z / 0.12))
 			if used_cells.has(cell):continue
 			var excluded := false
 			for area: Rect2 in exclusions:
@@ -98,7 +99,7 @@ static func install(map: Node3D, map_id: int, bounds: Rect2, layout_seed: int) -
 	var terrains := map.find_children("Terrain3DSurface", "Terrain3D", true, false)
 	var terrain: Terrain3D = terrains[0] if not terrains.is_empty() else _host(map, bounds)
 	for id in 2:
-		var prefix := "dense_grass_" if dense else "grass_"
+		var prefix := "dense_grass_"
 		var asset := (ResourceLoader.load(ASSET_ROOT + prefix + ("short.tres" if id == 0 else "tall.tres"), "", ResourceLoader.CACHE_MODE_IGNORE) as Terrain3DMeshAsset)
 		terrain.assets.set_mesh_asset(id, asset)
 	terrain.instancer.add_transforms(0, short, short_colors, false)
@@ -106,7 +107,7 @@ static func install(map: Node3D, map_id: int, bounds: Rect2, layout_seed: int) -
 	terrain.instancer.update_mmis()
 	map.set_meta(&"terrain_grass_counts", Vector2i(short.size(), tall.size()))
 	map.set_meta(&"terrain_grass_positions", [short, tall])
-	map.set_meta(&"terrain_grass_style", "dense_blades" if dense else "textured_tufts")
+	map.set_meta(&"terrain_grass_style", "dense_blades" if dense else "blade_patches")
 	map.set_meta(&"terrain_grass_source_count", source_count)
 
 
@@ -163,6 +164,6 @@ static func _boundary_brush(output: Array, bounds: Rect2, map_id: int,
 				continue
 		elif absf(hit.position.y) > 0.3:
 			continue
-		for tuft in 5:
+		for tuft in 9:
 			var at: Vector3 = hit.position + Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25))
 			output.append(Transform3D(Basis.IDENTITY, at))

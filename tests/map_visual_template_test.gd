@@ -37,7 +37,7 @@ func _run() -> void:
 		if map_id not in maps:
 			maps.append(map_id)
 	for map_id in maps:
-		await arena.start_solo(0, 1, 0, map_id, Vector2i.ZERO, MAP.DEFAULT_SIZE)
+		await arena.start_solo(0, 1, 0, map_id, Vector2i.ZERO, MAP.DEFAULT_SIZE, true, false, -1, 2 if map_id==MAP.FOREST_HILL_ID else 0)
 		var world := arena.get_node("WorldEnvironment") as WorldEnvironment
 		var sun := world.get_node("SunLight") as DirectionalLight3D
 		if map_id == MAP.BREAKWATER_ID:
@@ -51,7 +51,7 @@ func _run() -> void:
 			var actual: Variant = world.environment.get(key)
 			var expected: Variant = TEMPLATE.environment_settings[key]
 			if key == "glow_enabled" and RenderingServer.get_current_rendering_driver_name() == "metal" \
-					and map_id in [MAP.FOREST_RIDGE_ID, MAP.VILLAGE_ID, MAP.REFINERY_ID]:
+					and map_id in [MAP.FOREST_RIDGE_ID, MAP.VILLAGE_ID, MAP.REFINERY_ID, MAP.FOREST_HILL_ID]:
 				expected = false
 			var matches: bool = is_equal_approx(actual, expected) if expected is float else actual == expected
 			_check(matches, "%s: %s (actual %s, expected %s)" % [map_id, key, actual, expected])
@@ -82,7 +82,7 @@ func _run() -> void:
 		await process_frame
 	arena.queue_free()
 	await process_frame
-	print("FAIL map visual template" if _failed else "PASS Forest Ridge template and original backgrounds across all 13 maps")
+	print("FAIL map visual template" if _failed else "PASS Forest Ridge template and original backgrounds across all 14 maps")
 	quit(int(_failed))
 
 
@@ -98,7 +98,7 @@ func _check_background(map_id: int, environment: Environment) -> void:
 	if map_id == MAP.BREAKWATER_ID:
 		_check(material is PanoramaSkyMaterial and material.panorama.resource_path.ends_with("freight_station.hdr"),
 			"Breakwater keeps freight station HDRI")
-	elif DisplayServer.get_name() != "headless" and map_id == MAP.OUTPOST_ID:
+	elif DisplayServer.get_name() != "headless" and map_id in [MAP.OUTPOST_ID, MAP.FOREST_HILL_ID]:
 		_check(material is PanoramaSkyMaterial and material.panorama.resource_path.ends_with("kloofendal_overcast_puresky_2k.hdr"),
 			"Farpost keeps its HDRI")
 	elif DisplayServer.get_name() != "headless" and map_id == MAP.STATION_ID:

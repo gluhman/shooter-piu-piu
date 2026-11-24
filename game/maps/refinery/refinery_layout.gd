@@ -2,6 +2,8 @@ extends RefCounted
 
 const HEIGHTFIELD := preload("../forest_ridge/art/gdt/terrain_heightfield.gd")
 const TERRAIN_MESH := preload("../forest_ridge/art/gdt/terrain_mesh_builder.gd")
+const MATERIALS := preload("refinery_materials.gd")
+const VISUALS := preload("refinery_visuals.gd")
 const GROUND := preload("refinery_ground.gdshader")
 const TERRAIN_3D := preload("../terrain_3d_surface.gd")
 const LADDERS := preload("../procedural/workshop_ladders.gd")
@@ -68,12 +70,12 @@ func build() -> Array[Transform3D]:
 	if _visuals:
 		_rock = _material("rock_boulder_dry", Color("#d0c2ab"), 0.0, 0.54)
 		_concrete = _material("concrete_floor_worn_001", Color("#d3cbb4"), 0.0, 0.33)
-		_teal = _material("blue_metal_plate", Color("#4ea9a6"), 0.38, 0.48)
-		_rust = _material("blue_metal_plate", Color("#b2764e"), 0.33, 0.43, false)
-		_white = _material("blue_metal_plate", Color("#b9c3c3"), 0.42, 0.31, false)
-		_frame = _material("blue_metal_plate", Color("#405560"), 0.50, 0.54)
-		_deck = _material("metal_plate", Color("#98a4a5"), 0.45, 0.64)
-		_amber = _material("metal_plate", Color("#ffd265"), 0.27, 0.68, false)
+		_teal = _material("blue_metal_plate", Color("#71908a"), 0.16, 0.48)
+		_rust = _material("blue_metal_plate", Color("#9b7259"), 0.10, 0.43, false)
+		_white = _material("blue_metal_plate", Color("#b5bab4"), 0.12, 0.31, false)
+		_frame = _material("blue_metal_plate", Color("#4f5960"), 0.50, 0.54)
+		_deck = _material("metal_plate", Color("#929d9d"), 0.65, 0.64)
+		_amber = _material("metal_plate", Color("#c2a354"), 0.10, 0.68, false)
 		_glass = _paint(Color("#4a8195"), 0.50)
 	_terrain()
 	if _visuals:
@@ -88,6 +90,7 @@ func build() -> Array[Transform3D]:
 	if _visuals:
 		_detail()
 		_flush_boxes()
+		VISUALS.install(_root)
 	_root.set_meta(&"minimap_outline", _outline)
 	for x: float in SPAWN_LANES:
 		for side in [1.0, -1.0]:
@@ -133,16 +136,24 @@ func _terrain() -> void:
 			var mesh: ArrayMesh = builder.build_chunk_mesh(x, z, 1)
 			_body(mesh.create_trimesh_shape(), Transform3D.IDENTITY, "concrete")
 	if _visuals:
+		if "--bake-refinery" in OS.get_cmdline_user_args():
+			var proxy:=MeshInstance3D.new()
+			proxy.name="BakeGroundProxy"
+			var bake_builder:=TERRAIN_MESH.new()
+			bake_builder.configure({"heightfield":_heightfield,"active_total_resolution":QUADS,"active_chunk_resolution":QUADS,"active_step":0.5,"active_half_size":HALF})
+			proxy.mesh=bake_builder.build_chunk_mesh(0,0,1)
+			proxy.material_override=_paint(Color(0.40,0.41,0.37),0.0)
+			_root.add_child(proxy)
 		var layers: Array[Dictionary] = []
-		for entry: Array in [[FOREST_GROUND + "forest_ground_04", "1k", Color(0.68, 0.90, 0.52)],
-				[FOREST_GROUND + "rocky_trail", "1k", Color(1.10, 1.02, 0.79)],
+		for entry: Array in [[FOREST_GROUND + "forest_ground_04", "1k", Color(0.73, 0.80, 0.64)],
+				[FOREST_GROUND + "rocky_trail", "1k", Color(0.95, 0.94, 0.87)],
 				[ART + "concrete_floor_worn_001", "4k", Color(0.91, 0.90, 0.80)]]:
 			var prefix: String = entry[0]
 			var suffix: String = "_" + entry[1] + ".jpg"
 			layers.append({"name": prefix.get_file(), "color": prefix + "_diff" + suffix,
-				"normal": prefix + "_nor_gl" + suffix, "roughness": prefix + "_arm" + suffix, "tint": entry[2]})
+				"normal": prefix + "_nor_gl" + suffix, "roughness": prefix + "_arm" + suffix, "tint": entry[2],"scale":0.22 if prefix.begins_with(ART) else 0.39,"detile_rotation":0.12,"detile_shift":0.6})
 		var height := func(point: Vector2) -> float: return _heightfield.sample_world(point.x, point.y)
-		TERRAIN_3D.build(_root, Rect2(-Vector2.ONE * HALF, Vector2.ONE * WIDTH), height, _terrain_paint, layers)
+		TERRAIN_3D.build(_root, Rect2(-Vector2.ONE * HALF, Vector2.ONE * WIDTH), height, _terrain_paint, layers, Callable(), 2048)
 
 
 func _terrain_paint(point: Vector2) -> Vector4:
@@ -391,10 +402,12 @@ func _lawn_grass() -> void:
 	var placements: Array[Transform3D] = []
 	var lawn_rng := RandomNumberGenerator.new()
 	lawn_rng.seed = 37619
-	for ix in range(-156, 157):
-		for iz in range(-158, 159):
-			var x := ix * 0.25 + lawn_rng.randf_range(-0.035, 0.035)
-			var z := iz * 0.25 + lawn_rng.randf_range(-0.035, 0.035)
+	var x_steps := floori(39.0/_map.TERRAIN_GRASS.LAWN_SPACING)
+	var z_steps := floori(39.5/_map.TERRAIN_GRASS.LAWN_SPACING)
+	for ix in range(-x_steps, x_steps+1):
+		for iz in range(-z_steps, z_steps+1):
+			var x: float = ix * _map.TERRAIN_GRASS.LAWN_SPACING + lawn_rng.randf_range(-0.035, 0.035)
+			var z: float = iz * _map.TERRAIN_GRASS.LAWN_SPACING + lawn_rng.randf_range(-0.035, 0.035)
 			if (x > -31.0 and x < 15.0) or absf(x - 24.0) < 3.1 or (x < 21.0 and absf(z) < 3.3):continue
 			placements.append(Transform3D(Basis.IDENTITY, Vector3(x, _y(x, z) - 0.015, z)))
 	_map.TERRAIN_GRASS.queue(_root, placements)
@@ -615,9 +628,8 @@ func _metal_box(at: Vector3, size: Vector3, material: Material, basis := Basis.I
 		body.collision_mask = 0
 	_set_perforation(body, size)
 	if _visuals:
-		var mesh := BoxMesh.new()
-		mesh.size = size
-		mesh.material = material
+		var mesh := VISUALS.beveled_box(size)
+		mesh.surface_set_material(0,material)
 		_mesh(body, mesh, Transform3D.IDENTITY)
 	return body
 
@@ -751,7 +763,7 @@ func _fit_rock(body: StaticBody3D, mesh: Mesh, size: Vector3) -> void:
 
 
 func _material(asset: String, tint: Color, metallic: float, tiling: float,
-		textured_color := true) -> StandardMaterial3D:
+		textured_color := true) -> Material:
 	var material := _paint(tint, metallic)
 	if textured_color:
 		material.albedo_texture = load(ART + asset + "_diff_4k.jpg")
@@ -767,7 +779,7 @@ func _material(asset: String, tint: Color, metallic: float, tiling: float,
 	material.uv1_triplanar = true
 	material.uv1_world_triplanar = true
 	material.uv1_scale = Vector3.ONE * tiling
-	return material
+	return MATERIALS.finish(material,0.48 if metallic==0.0 else 0.36,0.22 if tint.r>tint.g*1.2 else 0.07)
 
 
 func _paint(tint: Color, metallic: float) -> StandardMaterial3D:

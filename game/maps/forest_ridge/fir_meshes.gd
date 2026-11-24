@@ -5,13 +5,9 @@ static func build(random: RandomNumberGenerator) -> Array[Mesh]:
 	var bark := StandardMaterial3D.new()
 	bark.albedo_texture = load("res://game/maps/forest_ridge/art/trees/fir_tree_01_bark_diff_1k.jpg")
 	bark.roughness = 0.95
-	var needles := StandardMaterial3D.new()
-	needles.albedo_texture = load("res://game/maps/forest_ridge/art/trees/fir_needles.png")
-	needles.albedo_color = Color("#bbd292")
-	needles.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-	needles.alpha_scissor_threshold = 0.34
-	needles.cull_mode = BaseMaterial3D.CULL_DISABLED
-	needles.roughness = 0.91
+	var needles := ShaderMaterial.new()
+	needles.shader = preload("../foliage/canopy.gdshader")
+	needles.set_shader_parameter("needles",load("res://game/maps/forest_ridge/art/trees/fir_needles.png"))
 	var variants: Array[Mesh] = []
 	for variant in 3:
 		var tree := ArrayMesh.new()

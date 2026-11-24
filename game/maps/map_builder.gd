@@ -27,6 +27,7 @@ const YARD_GROUND := preload("res://game/maps/procedural/yard_ground.gdshader")
 const ROAD_BARRIER := "res://game/maps/breakwater/art/models/concrete_road_barrier.glb"
 const OFFICE := preload("res://game/maps/procedural/office_layout.gd")
 const WORKSHOP := preload("res://game/maps/procedural/workshop_layout.gd")
+const FOREST_HILL := preload("res://game/maps/forest_hill/forest_hill_layout.gd")
 const FOREST_RIDGE := preload("res://game/maps/forest_ridge/forest_ridge_layout.gd")
 const FARPOST := preload("res://game/maps/farpost/farpost_layout.gd")
 const REFINERY := preload("res://game/maps/refinery/refinery_layout.gd")
@@ -54,6 +55,7 @@ const OFFICE_ID := 8
 const OUTPOST_ID := 9
 const STATION_ID := 10
 const FOREST_RIDGE_ID := 11
+const FOREST_HILL_ID := FOREST_HILL.MAP_ID
 const REFINERY_ID := REFINERY.MAP_ID
 const OFFICE_BOUNDS := Rect2(-OFFICE.HALF_X, -OFFICE.HALF_Z, OFFICE.HALF_X * 2.0, OFFICE.HALF_Z * 2.0)
 
@@ -68,7 +70,7 @@ const COLOR_GREEN := Color(0.28, 0.52, 0.34)
 const COLOR_ORANGE := Color(0.95, 0.48, 0.14)
 const COLOR_GREY := Color(0.72, 0.74, 0.72)
 
-const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон", "Малый офис", "Форпост", "Станция", "Лесной хребет", "НПЗ"]
+const MAP_NAMES := ["Контейнерный двор", "Складские ряды", "Перекрёсток", "Лесной посёлок", "Dust II", "Цех № 3", "BREAKWATER 9", "Тренировочный полигон", "Малый офис", "Форпост", "Станция", "Лесной хребет", "НПЗ", "Лесной бастион"]
 
 const PATROL_ROUTES := [
 	[
@@ -171,6 +173,9 @@ func build(map_id: int, layout_seed: int, width: float, objective := 0, size := 
 	_objective_reservations.clear()
 	if objective >= OBJECTIVE_LAYOUT.HILL and map_id < VILLAGE_ID:
 		_objective_reservations = OBJECTIVE_LAYOUT.reserved_areas(objective, map_id, size)
+	if map_id == FOREST_HILL_ID:
+		_half_extent = FOREST_HILL.HALF
+		return FOREST_HILL.new(self).build()
 	if map_id == REFINERY_ID:
 		_half_extent = REFINERY.HALF
 		return REFINERY.new(self).build()
@@ -453,6 +458,8 @@ func clear_map() -> void:
 	_initial_spawns.clear()
 	respawn_points.clear()
 	market_supply_count = 0
+	for key in [&"surface_finish_count", &"minimap_tunnels", &"minimap_routes", &"crate_rewards", &"hill_levels", &"hill_tunnels", &"hill_fence_height"]:
+		if has_meta(key):remove_meta(key)
 	_patrol.clear()
 	_district_origin = Vector3.ZERO
 	_district_yaw = 0.0
@@ -939,27 +946,31 @@ func _apply_bullet_holes(cover: PerforatedCover) -> void:
 		if cover.moving_surface:
 			meshes.assign([cover.moving_surface])
 		for mesh: MeshInstance3D in meshes:
-			var source := mesh.get_active_material(0) as StandardMaterial3D
-			if not source:
-				continue
-			var material := ShaderMaterial.new()
-			material.shader = BULLET_HOLE_SHADER
+			var active: Material = mesh.get_active_material(0)
+			var material: ShaderMaterial
+			if active is ShaderMaterial and active.get_meta(&"perforation_ready",false):
+				material=active.duplicate()
+			else:
+				var source:=active as StandardMaterial3D
+				if not source:continue
+				material=ShaderMaterial.new()
+				material.shader = BULLET_HOLE_SHADER
+				material.set_shader_parameter("color_texture", source.albedo_texture)
+				material.set_shader_parameter("normal_texture", source.normal_texture)
+				material.set_shader_parameter("roughness_texture", source.roughness_texture)
+				material.set_shader_parameter("metallic_texture", source.metallic_texture)
+				material.set_shader_parameter("ao_texture", source.ao_texture)
+				material.set_shader_parameter("tint", source.albedo_color)
+				material.set_shader_parameter("texture_scale", source.uv1_scale)
+				material.set_shader_parameter("blend_sharpness", source.uv1_triplanar_sharpness)
+				material.set_shader_parameter("metalness", source.metallic)
+				material.set_shader_parameter("normal_strength", source.normal_scale if source.normal_enabled else 0.0)
+				material.set_shader_parameter("use_mesh_uv", not source.uv1_triplanar)
+				material.set_shader_parameter("roughness_factor", source.roughness)
+				material.set_shader_parameter("roughness_channel", source.roughness_texture_channel)
 			if cover.moving_surface:
 				material.set_shader_parameter("moving_cover", true)
 				material.set_shader_parameter("mesh_to_cover", cover.body.global_transform.affine_inverse() * mesh.global_transform)
-			material.set_shader_parameter("color_texture", source.albedo_texture)
-			material.set_shader_parameter("normal_texture", source.normal_texture)
-			material.set_shader_parameter("roughness_texture", source.roughness_texture)
-			material.set_shader_parameter("metallic_texture", source.metallic_texture)
-			material.set_shader_parameter("ao_texture", source.ao_texture)
-			material.set_shader_parameter("tint", source.albedo_color)
-			material.set_shader_parameter("texture_scale", source.uv1_scale)
-			material.set_shader_parameter("blend_sharpness", source.uv1_triplanar_sharpness)
-			material.set_shader_parameter("metalness", source.metallic)
-			material.set_shader_parameter("normal_strength", source.normal_scale if source.normal_enabled else 0.0)
-			material.set_shader_parameter("use_mesh_uv", not source.uv1_triplanar)
-			material.set_shader_parameter("roughness_factor", source.roughness)
-			material.set_shader_parameter("roughness_channel", source.roughness_texture_channel)
 			mesh.material_override = material
 			cover.materials.append(material)
 	var points := cover.points.duplicate()
@@ -1060,7 +1071,7 @@ static func navigation_mesh(map_id: int, width: float, authored: Node3D = null) 
 	mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	mesh.geometry_collision_mask = BALANCE.WORLD_MASK
 	var village := map_id == VILLAGE_ID
-	var forest := map_id == FOREST_RIDGE_ID
+	var forest := map_id in [FOREST_RIDGE_ID, FOREST_HILL_ID]
 	var refinery := map_id == REFINERY_ID
 	var farpost := map_id == OUTPOST_ID
 	var station := map_id == STATION_ID
@@ -1076,6 +1087,8 @@ static func navigation_mesh(map_id: int, width: float, authored: Node3D = null) 
 			Vector3(bounds.size.x, 4.5, bounds.size.y))
 	elif refinery:
 		mesh.filter_baking_aabb = REFINERY.BAKE_BOUNDS
+	elif map_id == FOREST_HILL_ID:
+		mesh.filter_baking_aabb = FOREST_HILL.BAKE_BOUNDS
 	elif forest:
 		mesh.filter_baking_aabb = FOREST_RIDGE.TERRAIN_BAKE_BOUNDS
 	elif station:

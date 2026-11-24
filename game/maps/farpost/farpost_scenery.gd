@@ -173,6 +173,23 @@ func _scatter_floor(occupied: Array[Rect2]) -> void:
 	_scatter("Grass", grass, roundi(_half * _half * 8.0), Vector2(0.91, 2.1), breakup, occupied)
 	_scatter("Ferns", ferns, roundi(_half * 13.0), Vector2(0.68, 1.12), breakup, occupied)
 	_scatter("LooseRock", stones, roundi(_half * 12.0), Vector2(0.12, 0.43), breakup, occupied)
+	# Fill the plantable soil between the old accent clumps, keeping roads,
+	# ditches and authored cover footprints open. This RNG is presentation-only.
+	var lawn_rng := RandomNumberGenerator.new()
+	lawn_rng.seed = 90432
+	var lawn: Array[Transform3D] = []
+	var steps := floori((_half-0.7)/TERRAIN_GRASS.LAWN_SPACING)
+	for x in range(-steps,steps+1):
+		for z in range(-steps,steps+1):
+			var point := Vector2(x,z)*TERRAIN_GRASS.LAWN_SPACING+Vector2(lawn_rng.randf_range(-0.035,0.035),lawn_rng.randf_range(-0.035,0.035))
+			if _terrain.path_weight(point)>0.37 or _terrain.ditch_weight(point)>0.46:continue
+			var clear := true
+			for area: Rect2 in occupied:
+				if area.grow(0.15).has_point(point):
+					clear=false
+					break
+			if clear:lawn.append(Transform3D(Basis.IDENTITY,_terrain.position_at(point,-0.018)))
+	TERRAIN_GRASS.queue(_root,lawn)
 
 
 func _scatter(label: String, meshes: Array[Mesh], count: int, sizes: Vector2,

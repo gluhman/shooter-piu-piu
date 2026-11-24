@@ -6,7 +6,8 @@
 
 | Ресурс | Использование | Источник и условия |
 | --- | --- | --- |
-| Dense lawn grass | Forest, Village and Refinery; original procedural blade meshes and shader | [Brush credits and tutorial references](../game/maps/foliage/CREDITS.md) |
+| Dense lawn grass | Все открытые карты; более плотные газоны Forest, Forest Bastion, Village, Refinery и Farpost; тонкие процедурные травинки с LOD | [Brush credits and tutorial references](../game/maps/foliage/CREDITS.md) |
+| Общий износ материалов | Все карты: PBR, грязь, металл, геометрические фаски; исходные текстуры и UV сохранены | [Оригинальная реализация и видеоисточники](../game/maps/materials/CREDITS.md) |
 | Grab3D Soldier Black / Camo | Игроки, боты и тела; зелёный камуфляж по умолчанию и для синей команды, чёрная форма только для красной команды; 776 802 треугольников и 4K PBR | [Grab3D, DanlyVostok и Poly Haven](../assets/operator/CREDITS.md). Тело и текстуры CC0, сохранённые перчатки CC BY 4.0, часы CC0 |
 | Mesh2Motion | 14 исходных клипов, нативный риг из 66 костей и полные пальцы | [Mesh2Motion, CC0](../assets/animations/mesh2motion/CREDITS.md) |
 | Universal Animation Library | Прежние клипы, сохранены как исходные ресурсы | [Quaternius, CC0](../assets/animations/CREDITS.md) |
@@ -18,7 +19,8 @@
 | Арсенал | Модели оружия, гранат и бронежилета, материалы металла и дерева | [Модели проекта, материалы Poly Haven и звук BigSoundBank](../assets/arsenal/CREDITS.md) |
 | Desert Eagle и нож | Модели от первого лица и предметы подбора с PBR-материалами | [SirDraco65 и Poly Haven, CC0](../assets/weapon_models/CREDITS.md) |
 | HDR-панорама двора, 4K | Рассеянный свет и отражения на открытых картах Sky3D | [Poly Haven, CC0](../game/maps/lighting/CREDITS.md) |
-| НПЗ | Рельеф GDT Terrain Generator, дневная HDRI Hilltop Construction, материалы и оборудование Poly Haven | [Источники и лицензии карты](../game/maps/refinery/CREDITS.md) |
+| НПЗ | Рельеф GDT Terrain Generator / Terrain3D 2K, HDRI Hilltop Construction, PBR Poly Haven с процедурным износом, фасками и пятнами грязи; два локальных объёма VoxelGI | [Источники и лицензии карты](../game/maps/refinery/CREDITS.md) |
+| Лесной бастион | Собственный террасный рельеф и тоннели, Terrain3D, повторно используемые скалы, хвойный лес, Rocky Terrain 02 и пасмурная HDRI Poly Haven | [Источники карты](../game/maps/forest_hill/CREDITS.md) |
 | Лесной хребет | Рельеф GDT Terrain Generator, скалы, папоротники, лесная подстилка и текстуры елей Poly Haven | [Источники и лицензии карты](../game/maps/forest_ridge/CREDITS.md) |
 | Материалы Dust II | Песчаник стен и арок, гравий для грунта и пандусов | [Poly Haven, CC0](../assets/map_textures/dust2/CREDITS.md). Карты цвета 4K, нормали и шероховатость 2K |
 | Предметы окружения | Военный ящик, кусты, трава и кузов для металлолома | [Poly Haven и PtDesigns, CC0](../assets/arena_props/CREDITS.md) |
@@ -101,6 +103,6 @@ godot --headless --path . --script res://addons/gut/gut_cmdln.gd -gdir=res://tes
 
 GPMG использует 4K PBR-карты Metal Plate 02 и Dark Wood и HDRI Studio Small 09 из Poly Haven (CC0); [источники и авторы](../assets/detailed_weapons/gpmg_pbr/CREDITS.md). В M249 оптика удаляется целыми исходными деталями, без срезов рукоятки переноса.
 
-Terrain3D 1.1.0 (`addons/terrain_3d/`), by Cory Petkovsek, Roope Palmroos and contributors, is used for Forest Ridge, Village and Refinery ground rendering. The supplied addon is unmodified; its [MIT license](../addons/terrain_3d/LICENSE.txt) is included. Map textures retain their existing map-specific credits; the Terrain3D demo is not a runtime dependency.
+Terrain3D 1.1.0 (`addons/terrain_3d/`), by Cory Petkovsek, Roope Palmroos and contributors, is used for Forest Ridge, Forest Bastion, Village and Refinery ground rendering. The supplied addon is unmodified; its [MIT license](../addons/terrain_3d/LICENSE.txt) is included. Map textures retain their existing map-specific credits; the Terrain3D demo is not a runtime dependency.
 
 The shared Terrain3D [short/tall grass brushes](../game/maps/foliage/CREDITS.md) derive from the existing CC0 Poly Haven Grass Medium 01 source. Both prepared mesh scenes, the brush asset library and unchanged extracted opacity/PBR textures live in `game/maps/foliage/`. Wind and per-instance color are implemented by the local grass shader.

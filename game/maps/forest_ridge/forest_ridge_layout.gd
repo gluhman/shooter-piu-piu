@@ -149,12 +149,12 @@ func _build_ground() -> void:
 func _build_terrain_3d() -> void:
 	var directory := "res://game/maps/forest_ridge/art/ground/"
 	var layers: Array[Dictionary] = []
-	for entry: Array in [["forest_ground_04", Color(0.68, 0.90, 0.52)], ["rocky_trail", Color(1.05, 1.02, 0.90)]]:
+	for entry: Array in [["forest_ground_04", Color(0.73, 0.80, 0.64)], ["rocky_trail", Color(1.05, 1.02, 0.90)]]:
 		var prefix: String = directory + entry[0]
 		layers.append({"name": entry[0], "color": prefix + "_diff_1k.jpg",
-			"normal": prefix + "_nor_gl_1k.jpg", "roughness": prefix + "_arm_1k.jpg", "tint": entry[1]})
+			"normal": prefix + "_nor_gl_1k.jpg", "roughness": prefix + "_arm_1k.jpg", "tint": entry[1], "detile_rotation":0.12,"detile_shift":0.6})
 	var height := func(point: Vector2) -> float: return _heightfield.sample_world(point.x, point.y)
-	TERRAIN_3D.build(_world, Rect2(-Vector2.ONE * HALF, Vector2.ONE * WIDTH), height, _terrain_paint, layers)
+	TERRAIN_3D.build(_world, Rect2(-Vector2.ONE * HALF, Vector2.ONE * WIDTH), height, _terrain_paint, layers, Callable(), 1024)
 
 
 func _terrain_paint(point: Vector2) -> Vector4:
@@ -409,9 +409,10 @@ func _lawn_grass() -> void:
 	var placements: Array[Transform3D] = []
 	var lawn_rng := RandomNumberGenerator.new()
 	lawn_rng.seed = 91413
-	for x in range(-198, 199):
-		for z in range(-198, 199):
-			var point := Vector2(x, z) * 0.25 + Vector2(lawn_rng.randf_range(-0.035, 0.035), lawn_rng.randf_range(-0.035, 0.035))
+	var steps := floori((HALF-0.5)/_map.TERRAIN_GRASS.LAWN_SPACING)
+	for x in range(-steps, steps+1):
+		for z in range(-steps, steps+1):
+			var point: Vector2 = Vector2(x, z) * _map.TERRAIN_GRASS.LAWN_SPACING + Vector2(lawn_rng.randf_range(-0.035, 0.035), lawn_rng.randf_range(-0.035, 0.035))
 			if _reserved(point, 0.65, true) or _ditch_weight(point) > 0.60:continue
 			placements.append(Transform3D(Basis.IDENTITY, _at(point, -0.015)))
 	_map.TERRAIN_GRASS.queue(_world, placements)

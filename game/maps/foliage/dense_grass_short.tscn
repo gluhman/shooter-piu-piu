@@ -1,7 +1,17 @@
 [gd_scene format=3]
 
-[ext_resource type="ArrayMesh" path="res://game/maps/foliage/dense_grass_short.res" id="1_3o7fj"]
+[ext_resource type="ArrayMesh" path="res://game/maps/foliage/dense_grass_short.res" id="1_vt4wn"]
+[ext_resource type="ArrayMesh" path="res://game/maps/foliage/dense_grass_short_lod1.res" id="2_w0420"]
 
-[node name="DenseGrassShort" type="MeshInstance3D" unique_id=519366068]
+[node name="DenseGrassShort" type="Node3D" unique_id=1590922633]
+
+[node name="DenseGrassShort_LOD0" type="MeshInstance3D" parent="." unique_id=938812003]
 cast_shadow = 0
-mesh = ExtResource("1_3o7fj")
+visibility_range_end = 32.0
+mesh = ExtResource("1_vt4wn")
+
+[node name="DenseGrassShort_LOD1" type="MeshInstance3D" parent="." unique_id=707097671]
+cast_shadow = 0
+visibility_range_begin = 32.0
+visibility_range_end = 95.0
+mesh = ExtResource("2_w0420")

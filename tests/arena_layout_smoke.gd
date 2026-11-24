@@ -20,11 +20,11 @@ func _run() -> void:
 		var sizes := [0, 1, 2]
 		if id == MAP.VILLAGE_ID:
 			sizes = [1, 2]
-		elif id in [MAP.OFFICE_ID, MAP.TEST_RANGE_ID, MAP.FOREST_RIDGE_ID, MAP.REFINERY_ID]:
+		elif id in [MAP.OFFICE_ID, MAP.TEST_RANGE_ID, MAP.FOREST_RIDGE_ID, MAP.REFINERY_ID, MAP.FOREST_HILL_ID]:
 			sizes = [2]
 		for size: int in sizes:
 			seed(43)
-			await arena.start_solo(0, 1, 0, id, Vector2i.ZERO, size)
+			await arena.start_solo(0, 1, 0, id, Vector2i.ZERO, size, true, false, -1, 2 if id==MAP.FOREST_HILL_ID else 0)
 			await physics_frame
 			await physics_frame
 			var context := "%s (size %d)" % [MAP.MAP_NAMES[id], size]

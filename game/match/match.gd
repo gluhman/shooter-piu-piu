@@ -33,6 +33,7 @@ const REFINERY_SKY := preload("res://game/maps/refinery/refinery_sky.gdshader")
 const FARPOST_HDRI := "res://game/maps/farpost/art/sky/kloofendal_overcast_puresky_2k.hdr"
 const OFFICE_ENVIRONMENT := preload("res://game/maps/lighting/office_environment.tres")
 const OFFICE_EXPOSURE := preload("res://game/maps/lighting/office_exposure.tres")
+const SURFACE_FINISH := preload("res://game/maps/materials/surface_finish.gd")
 const VISUAL_TEMPLATE := preload("res://game/maps/lighting/forest_ridge_visuals.tres")
 const OFFICE_BOUNCE := "res://game/maps/lighting/office_bounce.res"
 const ARENA_WEATHER := {
@@ -47,6 +48,7 @@ const ARENA_WEATHER := {
 	MAP.OFFICE_ID: {"hour": 12.0, "wind": Vector2.ZERO},
 	MAP.OUTPOST_ID: {"hour": 11.0, "wind": Vector2(35, 1.0)},
 	MAP.STATION_ID: {"hour": 16.0, "wind": Vector2(-45, 0.6)},
+	MAP.FOREST_HILL_ID: {"hour": 15.2, "wind": Vector2(-28, 0.7)},
 	MAP.FOREST_RIDGE_ID: {"hour": 15.2, "wind": Vector2(-28, 0.7)},
 	MAP.REFINERY_ID: {"hour": 14.3, "wind": Vector2(36, 0.65)},
 }
@@ -165,7 +167,7 @@ func _apply_graphics() -> void:
 		# Reproduced white-orb artifacts in Metal's glow pass on Terrain3D maps.
 		# Preserve temporal AA/upscaling and lighting; bypass only the bloom pass.
 		var terrain_metal := RenderingServer.get_current_rendering_driver_name() == "metal" \
-			and map_id in [MAP.FOREST_RIDGE_ID, MAP.VILLAGE_ID, MAP.REFINERY_ID]
+			and map_id in [MAP.FOREST_RIDGE_ID, MAP.VILLAGE_ID, MAP.REFINERY_ID, MAP.FOREST_HILL_ID]
 		environment.glow_enabled = bool(VISUAL_TEMPLATE.environment_settings.get("glow_enabled", true)) and not terrain_metal
 		environment.ssao_enabled = GameSettings.ambient_occlusion
 		_apply_indirect_lighting(environment)
@@ -200,6 +202,8 @@ func _apply_indirect_lighting(environment: Environment) -> void:
 		probe = _breakwater.get_node("HallBounce") as VoxelGI
 	if probe:
 		probe.visible = enabled
+	for local_probe: VoxelGI in get_tree().get_nodes_in_group(&"refinery_bounce"):
+		if $Map.is_ancestor_of(local_probe):local_probe.visible=enabled
 	var baked_bounce := probe != null and probe.visible
 	environment.ssil_enabled = GameSettings.supports_advanced_graphics() \
 		and (enabled or GameSettings.ambient_occlusion) and not environment.sdfgi_enabled and not baked_bounce
@@ -306,6 +310,8 @@ func combatant(id: int) -> Node:
 func arena_width() -> float:
 	if is_instance_valid(_breakwater):
 		return _breakwater.get_arena_bounds().size.x
+	if map_id == MAP.FOREST_HILL_ID:
+		return MAP.FOREST_HILL.WIDTH
 	if map_id == MAP.FOREST_RIDGE_ID:
 		return MAP.FOREST_RIDGE.WIDTH
 	if map_id == MAP.REFINERY_ID:
@@ -314,6 +320,7 @@ func arena_width() -> float:
 
 
 func _selected_map_size(arena: int, size: int) -> int:
+	if arena == MAP.FOREST_HILL_ID:return MAP.DEFAULT_SIZE
 	if arena == MAP.REFINERY_ID:
 		return MAP.REFINERY.SIZE
 	if objective_mode():
@@ -655,7 +662,7 @@ func _map_for_match(selected: int) -> int:
 	if random_map_each_match:
 		var choices: Array[int] = []
 		for arena in MAP_NAMES.size():
-			if arena != MAP.TEST_RANGE_ID and arena != _previous_match_map:
+			if arena != MAP.TEST_RANGE_ID and arena != _previous_match_map and OBJECTIVE_LAYOUT.supports(play_mode, arena, MAP.DEFAULT_SIZE):
 				choices.append(arena)
 		selected = choices.pick_random()
 	_previous_match_map = selected
@@ -1138,7 +1145,7 @@ func _build_arena(layout_seed: int) -> void:
 		var farpost_sky := map_id == MAP.OUTPOST_ID and DisplayServer.get_name() != "headless"
 		var station_sky := map_id == MAP.STATION_ID and DisplayServer.get_name() != "headless"
 		var refinery_sky := map_id == MAP.REFINERY_ID and DisplayServer.get_name() != "headless"
-		if farpost_sky:
+		if farpost_sky or (map_id==MAP.FOREST_HILL_ID and DisplayServer.get_name()!="headless"):
 			_configure_farpost_sky()
 		if station_sky:
 			_configure_station_sky()
@@ -1155,7 +1162,7 @@ func _build_arena(layout_seed: int) -> void:
 			probe.data = load(OFFICE_BOUNCE) as VoxelGIData
 			$Map.add_child(probe)
 		if play_mode != OBJECTIVE_LAYOUT.DEFUSE:
-			$Loot.build_crates(supplies, $Map.market_supply_count)
+			$Loot.build_crates(supplies, $Map.market_supply_count, $Map.get_meta(&"crate_rewards", []))
 	if objective_mode():
 		var layout: Dictionary = $Map.objective_layout(play_mode, map_id, map_size)
 		objectives = OBJECTIVE_DIRECTOR.new()
@@ -1170,6 +1177,7 @@ func _build_arena(layout_seed: int) -> void:
 				_attack_side_by_arena[map_id] = objective_attack_side
 			objectives.rules.attack = objective_attack_side
 		objectives.pending_slots = _objective_pending
+	SURFACE_FINISH.install($Map, map_id)
 	_apply_visual_template(world_environment)
 	# Physical camera profiles enable depth of field when created. Clear it on the
 	# active profile after the map has selected its final exposure settings.
@@ -1185,7 +1193,10 @@ func _build_arena(layout_seed: int) -> void:
 		# Bots can open doors on their path. Bake the openings as traversable.
 		if fixtures:
 			fixtures.set_door_collision(false)
+		var buried_arches := get_tree().get_nodes_in_group(&"buried_tunnel_arch")
+		for arch: StaticBody3D in buried_arches:arch.collision_layer = 0
 		NavigationServer3D.parse_source_geometry_data(mesh, geometry, self)
+		for arch: StaticBody3D in buried_arches:arch.collision_layer = 1
 		if fixtures:
 			fixtures.set_door_collision(true)
 		_navigation_pending = true
@@ -1957,7 +1968,7 @@ func objective_mode() -> bool:
 
 func objective_arena_allowed(arena: int) -> bool:
 	if not objective_mode():
-		return true
+		return OBJECTIVE_LAYOUT.supports(play_mode, arena, MAP.DEFAULT_SIZE)
 	for size in MAP.SIZE_NAMES.size():
 		if OBJECTIVE_LAYOUT.supports(play_mode, arena, size):
 			return true
@@ -1966,6 +1977,7 @@ func objective_arena_allowed(arena: int) -> bool:
 
 func _normalize_objective_layout() -> void:
 	if not objective_mode():
+		if not objective_arena_allowed(map_id):map_id = 0
 		return
 	if not objective_arena_allowed(map_id):
 		for arena in MAP_NAMES.size():
