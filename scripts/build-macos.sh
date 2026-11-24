@@ -98,7 +98,7 @@ if [[ -r "$local_template" ]]; then
 fi
 mkdir "$snapshot/addons"
 for addon in sky_3d spatial_audio_3d hit_reactions_lite pyrolux_fx godot_mcp_toolkit libik \
-    phantom_camera; do
+    phantom_camera terrain_3d; do
     rsync -a "$project_dir/addons/$addon" "$snapshot/addons/"
 done
 for plugin in gut road-generator vfx_animaiton_player; do
